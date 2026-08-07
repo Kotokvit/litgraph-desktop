@@ -632,46 +632,72 @@ export function CanvasRenderer({
         </div>
       )}
 
-      {/* Тепловая карта таймлайна (epsilon по главам) */}
+      {/* Тепловая карта таймлайна (фрагментная) */}
       {nodes.filter((n) => n.type === "chapter" && n.data.meta?.epsilon !== undefined).length > 0 && (
         <div className="absolute bottom-4 left-4 right-20 z-10 bg-white/95 rounded-lg shadow-md p-2 border border-stone-200">
           <div className="flex items-center gap-1 mb-1">
             <span className="text-[9px] text-stone-500 font-semibold uppercase tracking-wider">
-              ε Тепловая карта
+              ε Фрагментная карта
             </span>
             <span className="text-[9px] text-stone-400">
-              {nodes.filter((n) => n.type === "chapter").length} глав
+              {nodes.filter((n) => n.type === "chapter").length} глав · {
+                nodes
+                  .filter((n) => n.type === "chapter")
+                  .reduce((s, n) => s + ((n.data.meta?.fragments as unknown[]) || []).length, 0)
+              } фрагментов
             </span>
           </div>
-          <div className="flex items-end gap-px h-8">
+          <div className="flex items-end gap-px h-8 overflow-x-auto lit-scroll">
             {nodes
               .filter((n) => n.type === "chapter")
               .sort((a, b) => {
-                // Сортируем по номеру главы
                 const aNum = parseInt(a.data.title.match(/Глава\s+(\d+)/)?.[1] || "0");
                 const bNum = parseInt(b.data.title.match(/Глава\s+(\d+)/)?.[1] || "0");
                 return aNum - bNum;
               })
-              .map((n) => {
+              .flatMap((n) => {
                 const eps = (n.data.meta?.epsilon as number) ?? 0;
-                const height = Math.max(2, (eps / 100) * 32);
-                const color = eps > 70 ? "#dc2626" : eps > 40 ? "#f59e0b" : "#65a30d";
+                const fragments = (n.data.meta?.fragments as Array<{ p: number; e: number; emo: number }>) || [];
                 const isSelected = n.id === selectedNodeId;
+
+                // Если нет фрагментов — рисуем один бар для главы
+                if (fragments.length === 0) {
+                  return [{
+                    key: n.id,
+                    eps,
+                    isSelected,
+                    title: `${n.data.title.substring(0, 40)} | ε=${Math.round(eps)}`,
+                    nodeId: n.id,
+                  }];
+                }
+
+                // Иначе — рисуем по бару на каждый фрагмент
+                return fragments.map((f, fi) => ({
+                  key: `${n.id}-f${fi}`,
+                  eps: f.e,
+                  isSelected,
+                  title: `${n.data.title.substring(0, 30)} фрагм.${fi + 1} | ε=${f.e} эмо=${f.emo}`,
+                  nodeId: n.id,
+                }));
+              })
+              .map((bar) => {
+                const height = Math.max(2, (bar.eps / 100) * 32);
+                const color = bar.eps > 70 ? "#dc2626" : bar.eps > 40 ? "#f59e0b" : "#65a30d";
                 return (
                   <div
-                    key={n.id}
-                    onClick={() => onNodeClick(n.id)}
-                    className="flex-1 cursor-pointer transition-all hover:opacity-80"
+                    key={bar.key}
+                    onClick={() => onNodeClick(bar.nodeId)}
+                    className="cursor-pointer transition-all hover:opacity-80 shrink-0"
                     style={{
                       height: `${height}px`,
+                      width: "4px",
                       backgroundColor: color,
-                      opacity: isSelected ? 1 : 0.7,
+                      opacity: bar.isSelected ? 1 : 0.7,
                       borderRadius: "2px 2px 0 0",
-                      minWidth: "3px",
-                      outline: isSelected ? "2px solid #000" : "none",
-                      outlineOffset: "1px",
+                      outline: bar.isSelected ? "1px solid #000" : "none",
+                      outlineOffset: "0",
                     }}
-                    title={`${n.data.title.substring(0, 40)} | ε=${Math.round(eps)}`}
+                    title={bar.title}
                   />
                 );
               })}

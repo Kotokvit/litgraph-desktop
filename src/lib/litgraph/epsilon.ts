@@ -241,3 +241,138 @@ export function clusterChapters(
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+// ====== ФРАГМЕНТНЫЙ АНАЛИЗ (как poler_v6) ======
+// Разбивает главу на окна и считает epsilon для каждого
+// Это убирает "слепоту" — видит горячие точки внутри спокойных глав
+
+export interface FragmentEpsilon {
+  position: number;      // позиция в тексте главы (символы)
+  epsilon: number;       // нормализованный 0-100
+  wordCount: number;
+  emotionCount: number;
+  preview: string;       // первые 80 символов
+}
+
+export interface ChapterEpsilonResult extends EpsilonResult {
+  fragments: FragmentEpsilon[];
+  maxFragmentEpsilon: number;
+}
+
+/**
+ * Разбить текст на фрагменты (окна) по ~1500 символов
+ * С перекрытием 300 символов для плавности
+ */
+export function splitIntoFragments(text: string, windowSize: number = 1500, overlap: number = 300): string[] {
+  const fragments: string[] = [];
+  const step = windowSize - overlap;
+  let pos = 0;
+
+  while (pos < text.length) {
+    let end = pos + windowSize;
+    if (end > text.length) end = text.length;
+
+    // Подгонка под char boundary (UTF-8)
+    // Проверяем что не разрезали multi-byte символ
+    while (end > pos && end < text.length) {
+      const code = text.charCodeAt(end);
+      // Если это продолжение UTF-8 (0x80-0xBF) — двигаем назад
+      if ((code & 0xC0) === 0x80) {
+        end--;
+      } else {
+        break;
+      }
+    }
+
+    fragments.push(text.slice(pos, end));
+
+    if (end >= text.length) break;
+    pos += step;
+  }
+
+  return fragments;
+}
+
+/**
+ * Вычислить epsilon для главы через фрагменты
+ * Глава разбивается на окна, epsilon считается для каждого
+ * Итоговый epsilon главы = МАКСИМАЛЬНЫЙ среди фрагментов
+ * (не средний! — мы ищем горячие точки, а не усреднение)
+ */
+export function computeEpsilonFragmented(
+  chapterText: string,
+  globalCounts: Map<string, number>,
+  totalWords: number,
+  keyword?: string,
+  kappa: number = 1.0,
+): ChapterEpsilonResult {
+  const fragments = splitIntoFragments(chapterText);
+  const fragmentResults: FragmentEpsilon[] = [];
+  const allEpsilons: number[] = [];
+
+  for (let i = 0; i < fragments.length; i++) {
+    const frag = fragments[i];
+    const result = computeEpsilon(frag, globalCounts, totalWords, keyword, kappa);
+    allEpsilons.push(result.epsilon);
+    fragmentResults.push({
+      position: i,
+      epsilon: result.epsilon, // СЫРОЙ — нормализуется позже
+      wordCount: result.wordCount,
+      emotionCount: result.emotionCount,
+      preview: frag.slice(0, 80).replace(/\n/g, " "),
+    });
+  }
+
+  const maxEps = allEpsilons.length > 0 ? Math.max(...allEpsilons) : 0;
+  const avgEps = allEpsilons.length > 0 ? allEpsilons.reduce((a, b) => a + b, 0) / allEpsilons.length : 0;
+  // 70% макс + 30% средний — видит и пики, и общую плотность
+  const chapterEps = maxEps * 0.7 + avgEps * 0.3;
+
+  const totalWordsInChapter = fragmentResults.reduce((s, f) => s + f.wordCount, 0);
+  const totalEmotions = fragmentResults.reduce((s, f) => s + f.emotionCount, 0);
+  const uniqueWords = new Set(tokenize(chapterText)).size;
+
+  return {
+    epsilon: chapterEps,
+    normalized: 0,
+    wordCount: totalWordsInChapter,
+    uniqueWords,
+    emotionCount: totalEmotions,
+    kwCount: 0,
+    kwIntensity: 1.0,
+    dSq: maxEps,
+    lenNorm: Math.sqrt(uniqueWords) || 1,
+    fragments: fragmentResults,
+    maxFragmentEpsilon: maxEps,
+  };
+}
+
+/**
+ * Нормализация фрагментных результатов
+ * Нормализует и главу, и каждый фрагмент по глобальному максимуму
+ */
+export function normalizeFragmentedEpsilons(results: ChapterEpsilonResult[]): ChapterEpsilonResult[] {
+  if (results.length === 0) return results;
+
+  // Глобальный максимум среди всех фрагментов
+  let globalMax = 0;
+  for (const r of results) {
+    for (const f of r.fragments) {
+      if (f.epsilon > globalMax) globalMax = f.epsilon;
+    }
+  }
+  if (globalMax <= 0) return results;
+
+  // Максимум среди chapter-level epsilon
+  const chapterMax = Math.max(...results.map((r) => r.epsilon));
+  if (chapterMax <= 0) return results;
+
+  return results.map((r) => ({
+    ...r,
+    normalized: (r.epsilon / chapterMax) * 100,
+    fragments: r.fragments.map((f) => ({
+      ...f,
+      epsilon: (f.epsilon / globalMax) * 100,
+    })),
+  }));
+}
