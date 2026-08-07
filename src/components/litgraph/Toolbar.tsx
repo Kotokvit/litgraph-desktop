@@ -16,6 +16,7 @@ import {
 import { AssistantDialog } from "./AssistantDialog";
 import { PolerDialog } from "./PolerDialog";
 import { NerDialog } from "./NerDialog";
+import { CharacterGraphDialog } from "./CharacterGraphDialog";
 import {
   Dialog,
   DialogContent,
@@ -68,6 +69,7 @@ export function Toolbar() {
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [polerOpen, setPolerOpen] = useState(false);
   const [nerOpen, setNerOpen] = useState(false);
+  const [charGraphOpen, setCharGraphOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mdFileInputRef = useRef<HTMLInputElement>(null);
@@ -334,6 +336,19 @@ export function Toolbar() {
           <span className="text-xs ml-1 hidden md:inline">NER</span>
         </Button>
 
+        {/* Граф персонажей — POLER на сущностях (полный текст, без обрезки) */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 px-2"
+          onClick={() => setCharGraphOpen(true)}
+          title="Граф персонажей: NER + POLER-физика (полный текст)"
+          style={{ borderColor: "#7C3AED40", color: "#7C3AED" }}
+        >
+          <Lucide.Share2 className="w-4 h-4" />
+          <span className="text-xs ml-1 hidden md:inline">Граф</span>
+        </Button>
+
         {/* Тип связи по умолчанию */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -596,6 +611,12 @@ export function Toolbar() {
         open={nerOpen}
         text={collectedText}
         onClose={() => setNerOpen(false)}
+      />
+
+      <CharacterGraphDialog
+        open={charGraphOpen}
+        text={collectedText}
+        onClose={() => setCharGraphOpen(false)}
       />
     </>
   );

@@ -1,22 +1,55 @@
 /**
- * NER Bridge — вызов Tauri команды extract_entities.
+ * NER Bridge — вызов Tauri команд extract_entities и analyze_characters.
  *
- * В Tauri: вызывает Rust через invoke.
- * В веб-превью: на данный момент NER не работает (нужен Python).
- * В будущем: можно сделать /api/ner-extract endpoint на Next.js.
+ * В Tauri: вызывает Rust через invoke → Python (spaCy + POLER).
+ * В веб-превью: на данный момент не работает (нужен Python).
  */
 
 import { isTauri, callApi } from "@/lib/litgraph/api";
 import type { NerResult } from "./nerTypes";
 
+// === Типы для графа персонажей (POLER на персонажах) ===
+
+export interface CharacterEdge {
+  source: string;
+  target: string;
+  weight: number;
+}
+
+export interface CharacterGraph {
+  nodes: string[];
+  edges: CharacterEdge[];
+  nNodes: number;
+  nEdges: number;
+}
+
+export interface CharacterCluster {
+  cluster: number;
+  characters: string[];
+  size: number;
+  avgDegree: number;
+}
+
+export interface PolerResult {
+  eigenvalues: number[];
+  clusters: CharacterCluster[];
+  silhouette: number;
+  gamma: number;
+  kModes: number;
+}
+
+export interface CharacterAnalysisResult {
+  entities: NerResult;
+  graph: CharacterGraph;
+  poler: PolerResult;
+  error?: string;
+}
+
 /**
- * Извлечь сущности из текста.
+ * Извлечь сущности из текста (NER).
  *
  * В Tauri: вызывает Rust команду → Python spaCy.
  * В веб-превью: возвращает ошибку (нужен Python backend).
- *
- * @param text текст для анализа (русский)
- * @returns результат NER с сущностями и статистикой
  */
 export async function extractEntities(text: string): Promise<NerResult> {
   if (!isTauri) {
@@ -26,12 +59,43 @@ export async function extractEntities(text: string): Promise<NerResult> {
     );
   }
 
-  // callApi сам определит Tauri окружение и вызовет invoke
   const result = await callApi<NerResult>(
-    "extract_entities", // Tauri команда
-    "/api/ner-extract", // веб endpoint (не используется в Tauri)
-    { text },           // параметры
-    undefined           // без wrapper
+    "extract_entities",
+    "/api/ner-extract",
+    { text },
+    undefined
+  );
+
+  return result;
+}
+
+/**
+ * Анализ графа персонажей: NER + POLER-физика.
+ *
+ * Полный пайплайн:
+ * 1. NER извлекает персонажей (spaCy + pymorphy3)
+ * 2. Строится граф co-occurrence (кто с кем в одних сценах)
+ * 3. POLER-оператор H = Π_Λ(L + γJ - B/m)Π_Λ
+ * 4. K-means кластеризация в пространстве собственных векторов
+ *
+ * В Tauri: вызывает Rust команду → Python (poler_entities.py).
+ * Обрабатывает ВЕСЬ текст (чанками по 50k), без обрезки.
+ *
+ * В веб-превью: не работает (нужен Python).
+ */
+export async function analyzeCharacters(text: string): Promise<CharacterAnalysisResult> {
+  if (!isTauri) {
+    throw new Error(
+      "Анализ персонажей доступен только в Tauri-версии (нужен Python + spaCy). " +
+      "Соберите desktop-версию: cargo tauri build"
+    );
+  }
+
+  const result = await callApi<CharacterAnalysisResult>(
+    "analyze_characters",
+    "/api/analyze-characters",
+    { text },
+    undefined
   );
 
   return result;
@@ -39,7 +103,6 @@ export async function extractEntities(text: string): Promise<NerResult> {
 
 /**
  * Проверить доступность NER (есть ли Python и spaCy).
- * Делает тестовый запуск на коротком тексте.
  */
 export async function checkNerAvailability(): Promise<{
   available: boolean;
@@ -62,3 +125,4 @@ export async function checkNerAvailability(): Promise<{
     };
   }
 }
+
