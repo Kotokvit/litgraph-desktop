@@ -446,7 +446,13 @@ def extract_entities(text: str) -> dict:
 
 def main():
     try:
-        text = sys.stdin.read()
+        # V2: читаем текст из файла (argv[1]) — надёжнее для больших текстов
+        # Если argv[1] нет — fallback на stdin (для обратной совместимости)
+        if len(sys.argv) > 1:
+            with open(sys.argv[1], "r", encoding="utf-8") as f:
+                text = f.read()
+        else:
+            text = sys.stdin.read()
         result = extract_entities(text)
         print(json.dumps(result, ensure_ascii=False, indent=2))
     except Exception as e:

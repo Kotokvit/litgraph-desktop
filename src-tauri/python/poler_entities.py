@@ -268,7 +268,12 @@ def build_character_graph(text: str) -> dict:
 
 def main():
     try:
-        text = sys.stdin.read()
+        # V2: читаем текст из файла (argv[1]) — надёжнее для больших текстов
+        if len(sys.argv) > 1:
+            with open(sys.argv[1], "r", encoding="utf-8") as f:
+                text = f.read()
+        else:
+            text = sys.stdin.read()
         result = build_character_graph(text)
         print(json.dumps(result, ensure_ascii=False, indent=2))
     except Exception as e:
