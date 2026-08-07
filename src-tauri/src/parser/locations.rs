@@ -73,12 +73,16 @@ pub fn detect(text: &str) -> Vec<ParsedLocation> {
 }
 
 /// Подсчёт упоминаний локации в тексте
+/// БЕЗ regex — простые строковые поиски
 pub fn count_in_text(aliases: &[String], text: &str) -> usize {
+    let lower = text.to_lowercase();
     let mut total = 0;
     for alias in aliases {
-        let pattern = fancy_regex::escape(alias);
-        if let Ok(re) = Regex::new(&pattern) {
-            total += re.find_iter(text).filter_map(|r| r.ok()).count();
+        let alias_lower = alias.to_lowercase();
+        let mut start = 0;
+        while let Some(pos) = lower[start..].find(&alias_lower) {
+            total += 1;
+            start = start + pos + alias_lower.len();
         }
     }
     total
