@@ -652,7 +652,7 @@ export function CanvasRenderer({
                 const bNum = parseInt(b.data.title.match(/Глава\s+(\d+)/)?.[1] || "0");
                 return aNum - bNum;
               })
-              .map((n, i) => {
+              .map((n) => {
                 const eps = (n.data.meta?.epsilon as number) ?? 0;
                 const height = Math.max(2, (eps / 100) * 32);
                 const color = eps > 70 ? "#dc2626" : eps > 40 ? "#f59e0b" : "#65a30d";
