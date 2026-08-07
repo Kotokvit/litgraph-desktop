@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect } from "react";
 import { CanvasRenderer } from "./CanvasRenderer";
+import { NodeContextMenu, FloatingActions } from "./NodeActions";
 import { useLitStore } from "@/lib/litgraph/store";
 
 function CanvasInner() {
@@ -18,7 +19,6 @@ function CanvasInner() {
   const duplicateNode = useLitStore((s) => s.duplicateNode);
   const deleteEdge = useLitStore((s) => s.deleteEdge);
 
-  // Поскольку Canvas не имеет объектов рёбер для клика, эмулируем через coords
   const onEdgeClick = useCallback(
     (id: string) => setSelectedEdge(id),
     [setSelectedEdge]
@@ -47,21 +47,29 @@ function CanvasInner() {
   }, [selectedNodeId, selectedEdgeId, deleteNode, deleteEdge, duplicateNode]);
 
   return (
-    <CanvasRenderer
-      nodes={nodes}
-      edges={edges}
-      selectedNodeId={selectedNodeId}
-      selectedEdgeId={selectedEdgeId}
-      focusNodeId={focusNodeId}
-      focusEnabled={focusEnabled}
-      onNodeClick={setSelectedNode}
-      onEdgeClick={onEdgeClick}
-      onPaneClick={() => {
-        setSelectedNode(null);
-        setSelectedEdge(null);
-      }}
-      onNodeDoubleClick={setEditingNode}
-    />
+    <>
+      <div className="flex-1 relative">
+        <CanvasRenderer
+          nodes={nodes}
+          edges={edges}
+          selectedNodeId={selectedNodeId}
+          selectedEdgeId={selectedEdgeId}
+          focusNodeId={focusNodeId}
+          focusEnabled={focusEnabled}
+          onNodeClick={setSelectedNode}
+          onEdgeClick={onEdgeClick}
+          onPaneClick={() => {
+            setSelectedNode(null);
+            setSelectedEdge(null);
+          }}
+          onNodeDoubleClick={setEditingNode}
+        />
+        {/* Плавающая панель действий для выбранной ноды */}
+        <FloatingActions />
+      </div>
+      {/* Контекстное меню (правый клик) */}
+      <NodeContextMenu />
+    </>
   );
 }
 

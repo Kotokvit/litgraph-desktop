@@ -61,52 +61,43 @@ export function AIDialog({
     if (!mode) return;
     setState({ loading: true, mode, result: null, error: null });
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
       const project = exportProject();
+      const endpoint =
+        mode === "continue-chapter"
+          ? "/api/ai/continue-chapter"
+          : "/api/ai/analyze-plot";
 
-      // Получаем AI-провайдер из Tauri store
-      const provider = await getAiProvider();
-
-      const payload: Record<string, unknown> = { project, provider };
+      const payload: Record<string, unknown> = { project };
       if (mode === "continue-chapter") {
         if (selectedNodeId) payload.fromChapterId = selectedNodeId;
         if (customPrompt.trim()) payload.customPrompt = customPrompt.trim();
-        payload.provider = provider;
       } else {
         payload.focus = focus;
-        payload.provider = provider;
       }
 
-      const cmdName = mode === "continue-chapter" ? "ai_continue_chapter" : "ai_analyze_plot";
-      const text = await invoke<string>(cmdName, payload);
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Неизвестная ошибка");
+      }
       setState({
         loading: false,
         mode,
-        result: text,
+        result: data.text,
         error: null,
+        meta: data.meta,
       });
     } catch (err) {
       setState({
         loading: false,
         mode,
         result: null,
-        error: String(err),
+        error: (err as Error).message,
       });
-    }
-  }
-
-  // Получить AI-провайдер из Tauri store (config.json)
-  async function getAiProvider() {
-    try {
-      const { Store } = await import("@tauri-apps/plugin-store");
-      const store = await Store.load("config.json");
-      const provider = await store.get<{ type: string; url?: string; model?: string; endpoint?: string; apiKey?: string }>("aiProvider");
-      if (!provider) {
-        throw new Error("AI-провайдер не настроен. Откройте Настройки AI.");
-      }
-      return provider;
-    } catch (err) {
-      throw new Error("Не удалось получить настройки AI: " + String(err));
     }
   }
 

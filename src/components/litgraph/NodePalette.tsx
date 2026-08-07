@@ -2,6 +2,7 @@
 
 import * as Lucide from "lucide-react";
 import { NODE_TYPES, NODE_TYPE_ORDER } from "@/lib/litgraph/types";
+import { useLitStore } from "@/lib/litgraph/store";
 
 const PALETTE_DESCRIPTION =
   "Кликните, чтобы добавить ноду в центр видимой области.";

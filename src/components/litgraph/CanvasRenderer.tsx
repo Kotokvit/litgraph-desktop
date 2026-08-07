@@ -476,15 +476,104 @@ export function CanvasRenderer({
     [viewport]
   );
 
+  // Правый клик — контекстное меню
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const node = findNodeAt(x, y);
+      if (node) {
+        onNodeClick(node.id);
+        window.dispatchEvent(new CustomEvent("litgraph:contextmenu", {
+          detail: { x: e.clientX, y: e.clientY, nodeId: node.id }
+        }));
+      }
+    },
+    [findNodeAt, onNodeClick]
+  );
+
+  // Перетаскивание ноды
+  const [draggingNode, setDraggingNode] = useState<string | null>(null);
+  const [dragNodeStart, setDragNodeStart] = useState({ x: 0, y: 0, nodeX: 0, nodeY: 0 });
+
+  const handleMouseDownEnhanced = useCallback(
+    (e: React.MouseEvent) => {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      const node = findNodeAt(x, y);
+      if (node) {
+        onNodeClick(node.id);
+        // Начинаем перетаскивание ноды
+        setDraggingNode(node.id);
+        setDragNodeStart({
+          x,
+          y,
+          nodeX: node.position.x,
+          nodeY: node.position.y,
+        });
+      } else {
+        onPaneClick();
+        setIsDragging(true);
+        setDragStart({ x: x - viewport.x, y: y - viewport.y });
+      }
+    },
+    [findNodeAt, onNodeClick, onPaneClick, viewport]
+  );
+
+  const handleMouseMoveEnhanced = useCallback(
+    (e: React.MouseEvent) => {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      if (draggingNode) {
+        // Перетаскиваем ноду
+        const dx = (x - dragNodeStart.x) / viewport.zoom;
+        const dy = (y - dragNodeStart.y) / viewport.zoom;
+        const newX = dragNodeStart.nodeX + dx;
+        const newY = dragNodeStart.nodeY + dy;
+        // Обновляем позицию ноды в store
+        import("@/lib/litgraph/store").then(({ useLitStore }) => {
+          useLitStore.getState().updateNode(draggingNode, {
+            position: { x: newX, y: newY },
+          });
+        });
+      } else if (isDragging) {
+        setViewport((vp) => ({ ...vp, x: x - dragStart.x, y: y - dragStart.y }));
+      } else {
+        const node = findNodeAt(x, y);
+        const newHovered = node?.id || null;
+        if (newHovered !== hoveredNodeId) {
+          setHoveredNodeId(newHovered);
+          canvasRef.current!.style.cursor = node ? "pointer" : "grab";
+        }
+      }
+    },
+    [isDragging, dragStart, findNodeAt, hoveredNodeId, draggingNode, dragNodeStart, viewport]
+  );
+
+  const handleMouseUpEnhanced = useCallback(() => {
+    setIsDragging(false);
+    setDraggingNode(null);
+  }, []);
+
   return (
     <div ref={containerRef} className="flex-1 relative lit-canvas-bg overflow-hidden">
       <canvas
         ref={canvasRef}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onMouseDown={handleMouseDownEnhanced}
+        onMouseMove={handleMouseMoveEnhanced}
+        onMouseUp={handleMouseUpEnhanced}
+        onMouseLeave={handleMouseUpEnhanced}
         onDoubleClick={handleDoubleClick}
+        onContextMenu={handleContextMenu}
         onWheel={handleWheel}
         style={{ display: "block", cursor: "grab" }}
       />

@@ -68,25 +68,22 @@ export function AssistantDialog({
 
     try {
       const project = exportProject();
-      const { invoke } = await import("@tauri-apps/api/core");
-      const { Store } = await import("@tauri-apps/plugin-store");
-      const store = await Store.load("config.json");
-      const provider = await store.get<{ type: string }>("aiProvider");
-      if (!provider) {
-        throw new Error("AI-провайдер не настроен. Откройте Настройки AI (кнопка в тулбаре).");
-      }
-
-      const text = await invoke<string>("ai_assistant", {
-        project,
-        message: content,
-        history: messages.map((m) => ({ role: m.role, content: m.content })),
-        selectedNodeId,
-        provider,
+      const res = await fetch("/api/ai/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project,
+          message: content,
+          history: messages.map((m) => ({ role: m.role, content: m.content })),
+          selectedNodeId,
+        }),
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Неизвестная ошибка");
 
       const aiMsg: Message = {
         role: "assistant",
-        content: text,
+        content: data.text,
         timestamp: Date.now(),
       };
       setMessages([...newMessages, aiMsg]);
