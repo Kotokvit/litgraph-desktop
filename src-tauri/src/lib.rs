@@ -1,0 +1,65 @@
+//! LitGraph Desktop — backend entry point.
+//!
+//! Здесь регистрируются Tauri commands и плагины.
+//! См. docs/PROMPT_PLAN.md для полного плана разработки.
+
+mod commands;
+mod parser;
+mod models;
+mod storage;
+mod ai;
+
+use tauri::Manager;
+use tauri_plugin_store::StoreExt;
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
+        .setup(|app| {
+            // Создаём директорию для проектов, если её нет
+            if let Some(proj_dirs) = dirs::project_dir() {
+                let litgraph_dir = proj_dirs.join("litgraph");
+                let projects_dir = litgraph_dir.join("projects");
+                let backups_dir = litgraph_dir.join("backups");
+                std::fs::create_dir_all(&projects_dir).ok();
+                std::fs::create_dir_all(&backups_dir).ok();
+            } else if let Some(home) = dirs::home_dir() {
+                let litgraph_dir = home.join(".local/share/litgraph");
+                let projects_dir = litgraph_dir.join("projects");
+                let backups_dir = litgraph_dir.join("backups");
+                std::fs::create_dir_all(&projects_dir).ok();
+                std::fs::create_dir_all(&backups_dir).ok();
+            }
+
+            // Открываем store для настроек
+            let _store = app.store("config.json")?;
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            // parse-md
+            commands::parse_md::parse_md,
+            // project
+            commands::project::list_projects,
+            commands::project::load_project,
+            commands::project::save_project,
+            commands::project::delete_project,
+            // versions
+            commands::versions::save_version,
+            commands::versions::restore_version,
+            commands::versions::delete_version,
+            commands::versions::list_versions,
+            // export
+            commands::export::export_project,
+            // ai
+            commands::ai::ai_assistant,
+            commands::ai::ai_continue_chapter,
+            commands::ai::ai_analyze_plot,
+            commands::ai::ai_test_connection,
+            commands::ai::ai_list_ollama_models,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
