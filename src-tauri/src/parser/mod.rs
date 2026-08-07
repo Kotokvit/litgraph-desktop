@@ -5,6 +5,7 @@ pub mod chapters;
 pub mod characters;
 pub mod locations;
 pub mod themes;
+pub mod epsilon;
 
 use crate::models::{LitEdge, LitNode, LitNodeData, ParseResult, ParseStats, Position};
 use chrono::Utc;
@@ -42,10 +43,20 @@ pub fn build_graph(
     let (chapters, prologue_text) = chapters::detect(markdown);
     let characters = characters::detect(markdown);
     let locations = locations::detect(markdown);
-    let themes = themes::detect(markdown);
 
     let mut nodes: Vec<LitNode> = Vec::new();
     let mut edges: Vec<LitEdge> = Vec::new();
+
+    // --- Epsilon: вычисляем энергию значимости ---
+    let (global_counts, total_words_count) = epsilon::build_word_counts(markdown);
+    let mut epsilon_results: Vec<epsilon::EpsilonResult> = chapters
+        .iter()
+        .map(|ch| epsilon::compute_epsilon(&ch.full_text, &global_counts, total_words_count, None, 1.0))
+        .collect();
+    epsilon::normalize_epsilons(&mut epsilon_results);
+    let prologue_epsilon = if prologue_text.trim().len() > 100 {
+        Some(epsilon::compute_epsilon(&prologue_text, &global_counts, total_words_count, None, 1.0))
+    } else { None };
 
     // --- Пролог (если есть) ---
     let mut prologue_id: Option<String> = None;
@@ -72,17 +83,15 @@ pub fn build_graph(
                 body,
                 node_type: "chapter".to_string(),
                 tags: vec!["пролог".to_string()],
-                meta: Some(serde_json::json!({ "wordCount": word_count })),
+                meta: Some(if let Some(ref pe) = prologue_epsilon {
+                    serde_json::json!({ "wordCount": word_count, "epsilon": (pe.normalized.round() as i64), "emotion": pe.emotion_count })
+                } else {
+                    serde_json::json!({ "wordCount": word_count })
+                }),
                 full_text: Some(prologue_text.clone()),
                 versions: None,
             },
-        });
-        prologue_id = Some(id);
-    }
-
-    // --- Главы ---
-    let mut chapter_ids: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
-    for ch in &chapters {
+    for (idx, ch) in chapters.iter().enumerate() {
         let id = uid("ch");
         chapter_ids.insert(ch.num, id.clone());
 
@@ -101,6 +110,10 @@ pub fn build_graph(
         let word_count = ch.full_text.split_whitespace().count();
         let mut meta = serde_json::Map::new();
         meta.insert("wordCount".to_string(), serde_json::Value::Number(word_count.into()));
+        let eps = &epsilon_results[idx];
+        meta.insert("epsilon".to_string(), serde_json::Value::Number((eps.normalized.round() as i64).into()));
+        meta.insert("emotion".to_string(), serde_json::Value::Number((eps.emotion_count as i64).into()));
+        meta.insert("uniqueWords".to_string(), serde_json::Value::Number((eps.unique_words as i64).into()));
         if !ch_chars.is_empty() {
             meta.insert(
                 "characters".to_string(),
@@ -200,37 +213,13 @@ pub fn build_graph(
         });
     }
 
-    // --- Темы ---
-    let mut theme_ids: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-    for t in &themes {
-        let id = uid("th");
-        theme_ids.insert(t.name.clone(), id.clone());
-
-        nodes.push(LitNode {
-            id: id.clone(),
-            node_type: "theme".to_string(),
-            position: Position { x: 0.0, y: 0.0 },
-            data: LitNodeData {
-                title: t.name.clone(),
-                body: t.description.clone(),
-                node_type: "theme".to_string(),
-                tags: vec![],
-                meta: Some(serde_json::json!({
-                    "mentions": t.count,
-                    "importance": "medium",
-                })),
-                full_text: None,
-                versions: None,
-            },
-        });
-    }
 
     // --- Связи: поток глав ---
     let mut ordered: Vec<String> = Vec::new();
     if let Some(pid) = &prologue_id {
         ordered.push(pid.clone());
     }
-    for ch in &chapters {
+    for (idx, ch) in chapters.iter().enumerate() {
         if let Some(id) = chapter_ids.get(&ch.num) {
             ordered.push(id.clone());
         }
@@ -251,7 +240,7 @@ pub fn build_graph(
     // --- Связи: персонажи → главы ---
     for c in &characters {
         if let Some(cid) = char_ids.get(&c.name) {
-            for ch in &chapters {
+            for (idx, ch) in chapters.iter().enumerate() {
                 let count = characters::count_in_text(&c.aliases, &ch.full_text);
                 if count >= 3 {
                     if let Some(ch_id) = chapter_ids.get(&ch.num) {
@@ -274,7 +263,7 @@ pub fn build_graph(
     // --- Связи: локации → главы ---
     for l in &locations {
         if let Some(lid) = loc_ids.get(&l.name) {
-            for ch in &chapters {
+            for (idx, ch) in chapters.iter().enumerate() {
                 let count = locations::count_in_text(&l.aliases, &ch.full_text);
                 if count >= 2 {
                     if let Some(ch_id) = chapter_ids.get(&ch.num) {
@@ -297,7 +286,7 @@ pub fn build_graph(
     // --- Связи: темы → главы ---
     for t in &themes {
         if let Some(tid) = theme_ids.get(&t.name) {
-            for ch in &chapters {
+            for (idx, ch) in chapters.iter().enumerate() {
                 let count = themes::count_in_text(&t.name, &ch.full_text);
                 if count >= 2 {
                     if let Some(ch_id) = chapter_ids.get(&ch.num) {
@@ -318,7 +307,7 @@ pub fn build_graph(
     }
 
     // --- Раскладка ---
-    layout_nodes(&mut nodes, &chapters, &prologue_id, &characters, &locations, &themes, &chapter_ids, &char_ids, &loc_ids, &theme_ids);
+    layout_nodes(&mut nodes, &chapters, &prologue_id, &characters, &locations, &chapter_ids, &char_ids, &loc_ids, &theme_ids);
 
     let word_count = markdown.split_whitespace().count();
     let now = Utc::now().timestamp_millis() as u64;
@@ -326,7 +315,7 @@ pub fn build_graph(
     let chapters_count = chapters.len();
     let characters_count = characters.len();
     let locations_count = locations.len();
-    let themes_count = themes.len();
+    
 
     Ok(ParseResult {
         title: project_title.to_string(),
@@ -336,7 +325,7 @@ pub fn build_graph(
             chapters_count,
             characters_count,
             locations_count,
-            themes_count,
+            
             edges_count,
             word_count
         ),
@@ -348,7 +337,7 @@ pub fn build_graph(
             chapters: chapters_count,
             characters: characters_count,
             locations: locations_count,
-            themes: themes_count,
+            themes: 
             edges: edges_count,
             words: word_count,
         },
