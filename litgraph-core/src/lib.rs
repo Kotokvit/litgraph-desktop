@@ -1,0 +1,6 @@
+//! LitGraph Core — логика без Tauri-зависимостей.
+//! Используется для тестирования и как библиотека.
+
+pub mod models;
+pub mod parser;
+pub mod ai;

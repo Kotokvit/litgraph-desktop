@@ -1,0 +1,21 @@
+[package]
+name = "litgraph-core"
+version = "0.2.0"
+edition = "2021"
+description = "Core logic for LitGraph: .md parser, models, AI prompts (no Tauri deps)"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+fancy-regex = "0.13"
+unicode-segmentation = "1.11"
+reqwest = { version = "0.12", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+dirs = "5"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+thiserror = "1"
+
+[lib]
+name = "litgraph_core"
+path = "src/lib.rs"

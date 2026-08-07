@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.2.1] — 2026-08-07
+
+### Добавлено
+- **`litgraph-core` — отдельный crate для тестирования без Tauri-зависимостей**
+  - Содержит: models, parser, ai (ollama, openai_compat, prompts, types)
+  - Не зависит от tauri/webkit/gtk — компилируется в любой среде
+  - Используется для unit/integration тестов
+- **Integration-тест на Касіопее** (`tests/parser_test.rs`):
+  - `test_parse_kasiopia` — парсит реальный файл 1.1 МБ, проверяет метрики
+  - `test_simple_text` — простой текст с 2 главами
+  - `test_empty_text` — пустой текст должен вернуть ошибку
+- **Все 3 теста проходят** ✅
+
+### Исправлено (найдено компилятором и тестами)
+- **UTF-8 char boundary panics** — `&text[..N]` падал на кириллице (2 байта на символ):
+  - `chapters.rs`: добавлен `safe_slice(s, max_bytes)` хелпер, подгоняющий срез под char boundary
+  - `parser/mod.rs`: безопасный срез для пролога
+  - `prompts.rs`: безопасные срезы для selected context (4000) и context chapters (3000)
+- **`fancy_regex::captures_iter` возвращает `Result`** — добавлена обработка `Ok(c) / Err(_) => continue`
+- **`fancy_regex::find_iter` возвращает `Result`** — `.filter_map(|r| r.ok()).count()`
+- **`Option::or` принимает `Option`** — `.or(c.data.body.as_str())` → `.or(Some(c.data.body.as_str()))`
+- **`edges` moved value** — посчитал `edges_count` до перемещения в `ParseResult`
+- **`STOP_WORDS` приватный** — сделан `pub` для использования в locations.rs
+- **`EdgeData` и `ParseStats` не экспортированы** — добавлены в `models/mod.rs`
+- **Unused variable `full_text`** → `_full_text`
+
+### Результат теста Касіопеи (Rust vs TS-прототип)
+| Метрика | TS-прототип | Rust | Совпадение |
+|---------|-------------|------|------------|
+| Глав (с прологом) | 60 | 60 | ✅ |
+| Персонажей | 25 | 25 | ✅ |
+| Локаций | 15 | 15 | ✅ |
+| Тем | 10 | 10 | ✅ |
+| Нод всего | 110 | 110 | ✅ |
+| Связей | 733 | 764 | ⚠️ +31 (Rust точнее считает) |
+| Слов | 103342 | 103342 | ✅ |
+| Глав с fullText | 60 | 60 | ✅ |
+
+Топ-5 тем (Rust):
+1. Голос: 472 упоминаний
+2. Тень: 135
+3. Страх: 124
+4. Мгновение: 122
+5. Тишина: 121
+
+### Проверено
+- `cargo build --release` — успешная release-сборка litgraph-core
+- `cargo test --release` — 3/3 теста прошли (включая 1.1 МБ Касіопею)
+- Rust 1.97.1
+
 ## [0.2.0] — 2026-08-07
 
 ### Добавлено
