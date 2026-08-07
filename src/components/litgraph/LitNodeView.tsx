@@ -17,7 +17,7 @@ export type LitFlowNode = Node<{
 
 function LitNodeViewComponent({ data, selected }: NodeProps<LitFlowNode>) {
   const cfg = NODE_TYPES[data.type];
-  const Icon = Lucide[cfg.icon] as Lucide.LucideIcon | undefined;
+  const Icon = (Lucide as any)[cfg.icon] as Lucide.LucideIcon | undefined;
   const Ico = Icon ?? Lucide.Square;
 
   const dimmed = data.dimmed === true;

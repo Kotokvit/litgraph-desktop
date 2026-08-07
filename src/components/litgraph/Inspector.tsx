@@ -18,7 +18,7 @@ function NodeInspector({ node }: { node: LitNode }) {
   const duplicateNode = useLitStore((s) => s.duplicateNode);
 
   const cfg = NODE_TYPES[node.type];
-  const Icon = Lucide[cfg.icon] as Lucide.LucideIcon | undefined;
+  const Icon = (Lucide as any)[cfg.icon] as Lucide.LucideIcon | undefined;
   const Ico = Icon ?? Lucide.Square;
 
   // связи этой ноды

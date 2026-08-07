@@ -8,7 +8,6 @@ const PALETTE_DESCRIPTION =
   "Кликните, чтобы добавить ноду в центр видимой области.";
 
 export function NodePalette() {
-  const addNode = useLitStore((s) => s.addNode);
 
   function handleAdd(type: keyof typeof NODE_TYPES) {
     // Добавляем в центр видимой области — через window event (слушает CanvasRenderer)
@@ -23,7 +22,7 @@ export function NodePalette() {
       <div className="grid grid-cols-2 gap-2">
         {NODE_TYPE_ORDER.map((type) => {
           const cfg = NODE_TYPES[type];
-          const Icon = Lucide[cfg.icon] as Lucide.LucideIcon | undefined;
+          const Icon = (Lucide as any)[cfg.icon] as Lucide.LucideIcon | undefined;
           const Ico = Icon ?? Lucide.Square;
           return (
             <button

@@ -36,7 +36,7 @@ export function CanvasRenderer({
   focusNodeId,
   focusEnabled,
   onNodeClick,
-  onEdgeClick,
+
   onPaneClick,
   onNodeDoubleClick,
   width = 1200,

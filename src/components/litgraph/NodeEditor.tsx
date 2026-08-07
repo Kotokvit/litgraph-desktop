@@ -46,7 +46,7 @@ function EditorBody({ node }: { node: LitNode }) {
   }
   const [meta, setMeta] = useState<Record<string, string>>(metaInit);
 
-  const Icon = Lucide[cfg.icon] as Lucide.LucideIcon | undefined;
+  const Icon = (Lucide as any)[cfg.icon] as Lucide.LucideIcon | undefined;
   const Ico = Icon ?? Lucide.Square;
 
   // Глава и сцена могут иметь полный текст
