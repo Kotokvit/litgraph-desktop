@@ -15,7 +15,7 @@ export type LitFlowNode = Node<{
   dimmed?: boolean;
 }>;
 
-function LitNodeView({ data, selected }: NodeProps<LitFlowNode>) {
+function LitNodeViewComponent({ data, selected }: NodeProps<LitFlowNode>) {
   const cfg = NODE_TYPES[data.type];
   // @ts-expect-error: dynamic icon
   const Icon = Lucide[cfg.icon] as Lucide.LucideIcon | undefined;
@@ -23,36 +23,33 @@ function LitNodeView({ data, selected }: NodeProps<LitFlowNode>) {
 
   const dimmed = data.dimmed === true;
 
-  const bodyPreview =
-    (data.body || "").length > 110
-      ? (data.body || "").slice(0, 110) + "…"
-      : data.body || "";
+  const body = data.body || "";
+  const bodyPreview = body.length > 110 ? body.slice(0, 110) + "…" : body;
 
-  // Если есть полный текст — индикатор
-  const hasFullText = !!data.fullText && data.fullText.length > 0;
-  const wordCount = hasFullText ? data.fullText!.split(/\s+/).length : 0;
+  const fullText = data.fullText || "";
+  const hasFullText = fullText.length > 0;
+  const wordCount = hasFullText ? fullText.split(/\s+/).length : 0;
+
+  const tags = data.tags || [];
+  const visibleTags = tags.slice(0, 4);
+  const extraTagsCount = tags.length > 4 ? tags.length - 4 : 0;
 
   return (
     <div
-      className={`lit-node-enter relative rounded-xl bg-white shadow-md transition-all ${
-        selected
-          ? "ring-2 ring-offset-1"
-          : "hover:shadow-lg"
+      className={`lit-node-enter relative rounded-xl bg-white shadow-md ${
+        selected ? "ring-2 ring-offset-1" : "hover:shadow-lg"
       }`}
       style={{
         width: 260,
         borderLeft: `4px solid ${cfg.color}`,
         // @ts-expect-error css var
         "--tw-ring-color": cfg.color,
-        boxShadow: selected
-          ? `0 0 0 2px ${cfg.color}40`
-          : undefined,
+        boxShadow: selected ? `0 0 0 2px ${cfg.color}40` : undefined,
         opacity: dimmed ? 0.15 : 1,
         filter: dimmed ? "grayscale(100%)" : undefined,
         pointerEvents: dimmed ? "none" : undefined,
       }}
     >
-      {/* Входной хендл (слева) */}
       <Handle
         type="target"
         position={Position.Left}
@@ -60,7 +57,6 @@ function LitNodeView({ data, selected }: NodeProps<LitFlowNode>) {
         className="react-flow__handle"
       />
 
-      {/* Шапка ноды */}
       <div
         className="flex items-center gap-2 px-3 py-2 rounded-t-[11px]"
         style={{ background: `${cfg.color}18` }}
@@ -88,14 +84,12 @@ function LitNodeView({ data, selected }: NodeProps<LitFlowNode>) {
         )}
       </div>
 
-      {/* Заголовок */}
       <div className="px-3 pt-2 pb-1">
         <div className="text-sm font-semibold text-stone-800 leading-snug line-clamp-2">
           {data.title || "Без названия"}
         </div>
       </div>
 
-      {/* Тело */}
       {bodyPreview && (
         <div className="px-3 pb-2">
           <p className="text-xs text-stone-500 leading-relaxed line-clamp-3 whitespace-pre-wrap">
@@ -104,10 +98,9 @@ function LitNodeView({ data, selected }: NodeProps<LitFlowNode>) {
         </div>
       )}
 
-      {/* Теги */}
-      {data.tags && data.tags.length > 0 && (
+      {visibleTags.length > 0 && (
         <div className="px-3 pb-2 flex flex-wrap gap-1">
-          {data.tags.slice(0, 4).map((t) => (
+          {visibleTags.map((t) => (
             <span
               key={t}
               className="text-[10px] px-1.5 py-0.5 rounded-full"
@@ -116,15 +109,12 @@ function LitNodeView({ data, selected }: NodeProps<LitFlowNode>) {
               #{t}
             </span>
           ))}
-          {data.tags.length > 4 && (
-            <span className="text-[10px] text-stone-400">
-              +{data.tags.length - 4}
-            </span>
+          {extraTagsCount > 0 && (
+            <span className="text-[10px] text-stone-400">+{extraTagsCount}</span>
           )}
         </div>
       )}
 
-      {/* Выходной хендл (справа) */}
       <Handle
         type="source"
         position={Position.Right}
@@ -135,4 +125,21 @@ function LitNodeView({ data, selected }: NodeProps<LitFlowNode>) {
   );
 }
 
-export default memo(LitNodeView);
+// Кастомный comparator для memo — сравниваем только значимые поля
+// Это критично: data объект пересоздаётся каждый рендер, но если
+// значения не изменились — нода не ре-рендерится
+function areEqual(
+  prev: NodeProps<LitFlowNode>,
+  next: NodeProps<LitFlowNode>,
+) {
+  return (
+    prev.selected === next.selected &&
+    prev.data?.title === next.data?.title &&
+    prev.data?.body === next.data?.body &&
+    prev.data?.dimmed === next.data?.dimmed &&
+    prev.data?.fullText === next.data?.fullText &&
+    prev.data?.tags === next.data?.tags
+  );
+}
+
+export default memo(LitNodeViewComponent, areEqual);

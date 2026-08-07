@@ -40,7 +40,7 @@ function CanvasInner() {
   const duplicateNode = useLitStore((s) => s.duplicateNode);
   const deleteEdge = useLitStore((s) => s.deleteEdge);
 
-  // Множество ID нод, которые должны быть в фокусе (выбранная + её соседи)
+  // Множество ID нод, которые должны быть в фокусе
   const focusSet = useMemo(() => {
     if (!focusEnabled || !focusNodeId) return null;
     const set = new Set<string>([focusNodeId]);
@@ -52,6 +52,7 @@ function CanvasInner() {
   }, [focusNodeId, focusEnabled, edges]);
 
   // Преобразуем ноды в формат React Flow
+  // useMemo с правильными зависимостями — не пересоздаётся при перемещении
   const rfNodes = useMemo(
     () =>
       nodes.map((n) => {
@@ -62,12 +63,10 @@ function CanvasInner() {
           position: n.position,
           data: { ...n.data, dimmed: !inFocus },
           selected: n.id === selectedNodeId,
-          // style применяется к wrapper-у React Flow (.react-flow__node)
           style: {
             opacity: inFocus ? 1 : 0.15,
             filter: inFocus ? undefined : "grayscale(80%)",
             pointerEvents: inFocus ? undefined : ("none" as const),
-            transition: "opacity 0.2s ease, filter 0.2s ease",
           },
         };
       }) as LitFlowNode[],
@@ -176,9 +175,26 @@ function CanvasInner() {
         onNodeDoubleClick={onNodeDoubleClick}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
+        // ====== ОПТИМИЗАЦИИ ПРОИЗВОДИТЕЛЬНОСТИ ======
+        // Рендерить только видимые ноды (виртуализация)
+        onlyRenderVisibleElements
+        // Не поднимать ноды по z-index при выборе (меньше repaint)
+        elevateNodesOnSelect={false}
+        // Не двигать холст при соединении нод
+        autoPanOnConnect={false}
+        // Минимальный порог движения для drag (1px)
+        nodeDragThreshold={1}
+        // Радиус соединения (меньше = точнее)
+        connectionRadius={30}
+        // Разрешить интерактивность
+        nodesDraggable
+        nodesConnectable
+        nodesFocusable
+        elementsSelectable
+        // fitView только при первой загрузке
         fitView
         fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
-        minZoom={0.2}
+        minZoom={0.1}
         maxZoom={2.5}
         defaultEdgeOptions={{
           type: "default",

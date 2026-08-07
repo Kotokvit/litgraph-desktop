@@ -12,7 +12,7 @@ export interface LitEdgeData {
   [k: string]: unknown;
 }
 
-function LitEdgeView({
+function LitEdgeViewComponent({
   id,
   sourceX,
   sourceY,
@@ -79,4 +79,19 @@ function LitEdgeView({
   );
 }
 
-export default memo(LitEdgeView);
+function areEqual(
+  prev: EdgeProps & { data?: LitEdgeData },
+  next: EdgeProps & { data?: LitEdgeData },
+) {
+  return (
+    prev.selected === next.selected &&
+    prev.sourceX === next.sourceX &&
+    prev.sourceY === next.sourceY &&
+    prev.targetX === next.targetX &&
+    prev.targetY === next.targetY &&
+    prev.data?.kind === next.data?.kind &&
+    prev.data?.dimmed === next.data?.dimmed
+  );
+}
+
+export default memo(LitEdgeViewComponent, areEqual);
