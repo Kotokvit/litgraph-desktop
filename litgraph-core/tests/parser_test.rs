@@ -37,7 +37,7 @@ fn test_parse_kasiopia() {
     assert!(chapters >= 55, "Должно быть минимум 55 глав (с прологом), получено {}", chapters);
     assert!(characters >= 15, "Должно быть минимум 15 персонажей, получено {}", characters);
     assert!(locations >= 5, "Должно быть минимум 5 локаций, получено {}", locations);
-    assert!(themes >= 5, "Должно быть минимум 5 тем, получено {}", themes);
+    // themes убраны из парсера
     assert!(result.edges.len() >= 100, "Должно быть минимум 100 связей, получено {}", result.edges.len());
     assert!(result.stats.words >= 100000, "Должно быть ~100k слов, получено {}", result.stats.words);
 

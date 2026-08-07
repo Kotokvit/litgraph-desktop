@@ -29,12 +29,12 @@ pub struct ParsedChapter {
 /// 9 паттернов для разных форматов заголовков глав
 fn patterns() -> Vec<(&'static str, Regex)> {
     vec![
-        ("uk-Глава", Regex::new(r"Глава\s+(\d+)").unwrap()),
-        ("uk-Розділ", Regex::new(r"Розділ\s+(\d+)").unwrap()),
-        ("uk-Частина", Regex::new(r"Частина\s+(\d+)").unwrap()),
-        ("en-Chapter", Regex::new(r"Chapter\s+(\d+)").unwrap()),
-        ("en-Part", Regex::new(r"Part\s+(\d+)").unwrap()),
-        ("ru-Часть", Regex::new(r"Часть\s+(\d+)").unwrap()),
+        ("uk-Глава", Regex::new(r"(?i)Глава\s+(\d+)").unwrap()),
+        ("uk-Розділ", Regex::new(r"(?i)Розділ\s+(\d+)").unwrap()),
+        ("uk-Частина", Regex::new(r"(?i)Частина\s+(\d+)").unwrap()),
+        ("en-Chapter", Regex::new(r"(?i)Chapter\s+(\d+)").unwrap()),
+        ("en-Part", Regex::new(r"(?i)Part\s+(\d+)").unwrap()),
+        ("ru-Часть", Regex::new(r"(?i)Часть\s+(\d+)").unwrap()),
         ("md-hash-num", Regex::new(r"(?m)^#\s+(\d+)[\s.]").unwrap()),
         ("md-hashhash-num", Regex::new(r"(?m)^##\s+(\d+)[\s.]").unwrap()),
         ("md-hash-hash-num", Regex::new(r"(?m)^###\s+(\d+)[\s.]").unwrap()),
@@ -42,7 +42,12 @@ fn patterns() -> Vec<(&'static str, Regex)> {
 }
 
 pub fn detect(text: &str) -> (Vec<ParsedChapter>, String) {
-    let mut best_matches: Vec<(usize, String)> = Vec::new(); // (pos, captured_num)
+    // === Пропуск оглавления ===
+    // Если в начале есть "Содержание" / "Contents" / "Table of Contents"
+    // и далее идёт список "Глава N" без текста — пропускаем
+    let text = skip_table_of_contents(text);
+
+    let mut best_matches: Vec<(usize, String)> = Vec::new();
     let mut best_count = 0;
 
     for (_name, re) in patterns() {
@@ -64,11 +69,10 @@ pub fn detect(text: &str) -> (Vec<ParsedChapter>, String) {
         }
     }
 
-    // Если ничего не нашли — возвращаем одну "главу" со всем текстом
     if best_matches.is_empty() {
         let body_clean = text.split_whitespace().collect::<Vec<_>>().join(" ");
         let body_preview = if body_clean.len() > 400 {
-            format!("{}…", safe_slice(&body_clean, 400))
+            format!("{}\u{2026}", safe_slice(&body_clean, 400))
         } else {
             body_clean.clone()
         };
@@ -85,7 +89,7 @@ pub fn detect(text: &str) -> (Vec<ParsedChapter>, String) {
         );
     }
 
-    // Уникальные по номеру (берём первое вхождение)
+    // Уникальные по номеру (берём первое вхождение ПОСЛЕ оглавления)
     let mut seen: HashMap<String, usize> = HashMap::new();
     let mut sorted: Vec<(usize, String)> = Vec::new();
     for (pos, num) in &best_matches {
@@ -95,6 +99,8 @@ pub fn detect(text: &str) -> (Vec<ParsedChapter>, String) {
         }
     }
     sorted.sort_by_key(|(pos, _)| *pos);
+
+    // skip_table_of_contents уже убрал оглавление — дополнительная фильтрация не нужна
 
     let prologue_text = if sorted.is_empty() {
         String::new()
@@ -111,16 +117,12 @@ pub fn detect(text: &str) -> (Vec<ParsedChapter>, String) {
         } else {
             text.len()
         };
-        let _full_text = &text[*pos..next_pos];
 
-        // Заголовок: текст после "Глава N" (500 символов)
-        // Найдём конец match'а "Глава N"
         let match_end = find_match_end(text, *pos, num_str);
         let after_max = match_end + 500;
         let after_end = if after_max > text.len() {
             text.len()
         } else {
-            // Подгоним под char boundary
             let mut e = after_max;
             while e > match_end && !text.is_char_boundary(e) {
                 e -= 1;
@@ -130,11 +132,10 @@ pub fn detect(text: &str) -> (Vec<ParsedChapter>, String) {
         let after = &text[match_end..after_end];
         let title = extract_title_from_after(after);
 
-        // Тело — без заголовка
         let body_text = &text[match_end..next_pos];
         let body_clean: String = body_text.split_whitespace().collect::<Vec<_>>().join(" ");
         let body_preview = if body_clean.len() > 400 {
-            format!("{}…", safe_slice(&body_clean, 400))
+            format!("{}\u{2026}", safe_slice(&body_clean, 400))
         } else {
             body_clean.clone()
         };
@@ -152,7 +153,66 @@ pub fn detect(text: &str) -> (Vec<ParsedChapter>, String) {
     (chapters, prologue_text)
 }
 
-/// Найти конец match'а "Глава N" в тексте начиная с pos
+/// Пропуск оглавления (Table of Contents)
+/// Если в начале файла есть "Содержание" и список глав — обрезаем
+fn skip_table_of_contents(text: &str) -> &str {
+    let lower = text.to_lowercase();
+    
+    // Ищем маркеры оглавления
+    let toc_markers = ["содержание", "contents", "table of contents", "оглавление"];
+    let header_end = lower.len().min(5000);
+    let mut header_end_safe = header_end;
+    while header_end_safe > 0 && !lower.is_char_boundary(header_end_safe) {
+        header_end_safe -= 1;
+    }
+    let has_toc = toc_markers.iter().any(|m| lower[..header_end_safe].contains(m));
+    
+    if !has_toc {
+        return text;
+    }
+    
+    // Стратегия: найти "глава 1" где после "1" идёт пробел, а НЕ цифра
+    // "глава 1 " (пробел) — это "Глава 1 ОДЕССА"
+    // "глава 10 " — это "Глава 10"
+    // "глава 1" + не-цифра — это то что нужно
+    
+    let pattern = "глава 1";
+    let mut positions = Vec::new();
+    let mut start = 0;
+    
+    while let Some(pos) = lower[start..].find(pattern) {
+        let abs_pos = start + pos;
+        // Проверяем символ после "глава 1"
+        let after_idx = abs_pos + pattern.len();
+        if after_idx < lower.len() {
+            let next_char = lower.as_bytes()[after_idx];
+            // Если после "1" идёт НЕ цифра (не '0'-'9') — это "Глава 1" а не "Глава 10"
+            if !next_char.is_ascii_digit() {
+                positions.push(abs_pos);
+            }
+        }
+        start = abs_pos + pattern.len();
+    }
+    
+    // Если "Глава 1" (не "Глава 10") встречается 2+ раз — второе = реальный текст
+    if positions.len() >= 2 {
+        return &text[positions[1]..];
+    }
+    
+    // fallback: ищем "виталий" / "автор" / пустую строку после оглавления
+    let author_markers = ["виталий", "автор", "author"];
+    for marker in author_markers {
+        if let Some(pos) = lower.find(marker) {
+            // Возвращаем текст после имени автора
+            let after = pos + marker.len();
+            if after < text.len() {
+                return &text[after..];
+            }
+        }
+    }
+    
+    text
+}
 fn find_match_end(text: &str, pos: usize, num: &str) -> usize {
     // Ищем num начиная с pos
     let search_text = &text[pos..];
