@@ -67,17 +67,52 @@ pub async fn extract_entities(text: String) -> Result<NerResult, String> {
     }
 
     // Путь к Python скрипту (встроен в бинарник через include_str!)
-    let script = include_str!("../python/ner_extract.py");
+    let script = include_str!("../../python/ner_extract.py");
 
-    // Запускаем python3 с скриптом
-    let mut child = Command::new("python3")
+    // Ищем Python интерпретатор. Приоритет:
+    // 1. Venv ~/.litgraph-venv (если пользователь создал)
+    // 2. Venv в папке проекта ./.venv
+    // 3. Системный python3
+    let home = dirs::home_dir();
+    let candidates: Vec<String> = [
+        home.as_ref().map(|h| h.join(".litgraph-venv/bin/python").to_string_lossy().to_string()),
+        std::env::current_exe().ok().and_then(|p| p.parent().map(|pp| pp.join(".venv/bin/python").to_string_lossy().to_string())),
+        std::env::var("LITGRAPH_PYTHON").ok(), // ручное переопределение
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+
+    let mut python_cmd: Option<String> = None;
+    for candidate in &candidates {
+        if std::path::Path::new(candidate).exists() {
+            python_cmd = Some(candidate.clone());
+            break;
+        }
+    }
+    let python_cmd = python_cmd.unwrap_or_else(|| "python3".to_string());
+
+    // Запускаем python с скриптом
+    let mut child = Command::new(&python_cmd)
         .arg("-c")
         .arg(script)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("Не удалось запустить python3: {}. Установите Python 3 и spaCy: pip install spacy pymorphy3 && python -m spacy download ru_core_news_sm", e))?;
+        .map_err(|e| {
+            format!(
+                "Не удалось запустить Python ({}): {}\n\n\
+                 Для установки NER:\n\
+                 1. Создайте venv: python -m venv ~/.litgraph-venv\n\
+                 2. Активируйте: source ~/.litgraph-venv/bin/activate\n\
+                 3. Установите: pip install spacy pymorphy3\n\
+                 4. Модель: python -m spacy download ru_core_news_sm\n\n\
+                 Или (Arch/CachyOS): pip install --break-system-packages spacy pymorphy3\n\
+                 и: python -m spacy download ru_core_news_sm",
+                python_cmd, e
+            )
+        })?;
 
     // Передаём текст через stdin
     if let Some(mut stdin) = child.stdin.take() {

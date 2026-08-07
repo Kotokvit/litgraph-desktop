@@ -4,6 +4,8 @@
 
 Запуск:
     python3 scripts/test_ner.py
+    # или с venv:
+    ~/.litgraph-venv/bin/python scripts/test_ner.py
 
 Проверяет:
 1. Установлен ли spaCy
@@ -12,19 +14,38 @@
 4. NER работает на тестовом тексте
 """
 import sys
+import os
 import json
 
 print("=" * 60)
 print("NER Test — LitGraph")
 print("=" * 60)
+print(f"Python: {sys.executable}")
+print(f"Version: {sys.version.split()[0]}")
+print()
 
 # 1. spaCy
 try:
     import spacy
     print(f"✓ spaCy v{spacy.__version__}")
 except ImportError:
-    print("✗ spaCy не установлен")
-    print("  Установите: pip install spacy")
+    print("✗ spaCy не установлен в этом Python")
+    print()
+    print("Установка (выберите ОДИН из вариантов):")
+    print()
+    print("ВАРИАНТ 1 — venv (рекомендуется для Arch/CachyOS):")
+    print("  python -m venv ~/.litgraph-venv")
+    print("  source ~/.litgraph-venv/bin/activate")
+    print("  pip install spacy pymorphy3")
+    print("  python -m spacy download ru_core_news_sm")
+    print()
+    print("ВАРИАНТ 2 — системная установка (Debian/Ubuntu):")
+    print("  pip install spacy pymorphy3")
+    print("  python -m spacy download ru_core_news_sm")
+    print()
+    print("ВАРИАНТ 3 — break-system-packages (Arch, на свой риск):")
+    print("  pip install --break-system-packages spacy pymorphy3")
+    print("  python -m spacy download ru_core_news_sm")
     sys.exit(1)
 
 # 2. pymorphy3
