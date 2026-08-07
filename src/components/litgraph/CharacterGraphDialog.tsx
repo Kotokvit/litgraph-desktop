@@ -277,6 +277,149 @@ export function CharacterGraphDialog({ open, text, onClose }: CharacterGraphDial
                 </div>
               )}
 
+              {/* SVO: Агрессоры vs Жертвы (асимметрия J) */}
+              {result.svo && result.svo.asymmetry && result.svo.asymmetry.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs font-medium text-stone-600 flex items-center justify-between">
+                    <span>Агрессоры vs Жертвы (асимметрия J)</span>
+                    <span className="text-[10px] text-stone-400">
+                      ||J|| = {result.poler.jNorm?.toFixed(2) || "?"}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    {result.svo.asymmetry.slice(0, 10).map((a, i) => {
+                      const isAggressor = a.balance > 0.5;
+                      const isVictim = a.balance < -0.5;
+                      const color = isAggressor ? "#dc2626" : isVictim ? "#2563eb" : "#6b7280";
+                      const label = isAggressor ? "🔴 агрессор" : isVictim ? "🔵 жертва" : "⚪ нейтрал";
+                      const maxAbs = Math.max(...result.svo!.asymmetry.map(x => Math.abs(x.balance)), 1);
+                      return (
+                        <div key={i} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded border bg-white">
+                          <span className="font-medium w-20" style={{ color: charColor[a.character] || "#666" }}>
+                            {a.character}
+                          </span>
+                          <span className="text-[10px] w-20" style={{ color }}>
+                            {label}
+                          </span>
+                          <div className="flex-1 flex items-center gap-1">
+                            <span className="text-[10px] text-stone-500 w-12 text-right">
+                              out={a.outgoing.toFixed(1)}
+                            </span>
+                            <div className="flex-1 h-2 bg-stone-100 rounded-full overflow-hidden relative">
+                              {/* Центральная линия */}
+                              <div className="absolute left-1/2 top-0 bottom-0 w-px bg-stone-300" />
+                              {/* Полоса агрессора (вправо от центра) */}
+                              {a.balance > 0 && (
+                                <div
+                                  className="absolute top-0 bottom-0 bg-red-400"
+                                  style={{
+                                    left: "50%",
+                                    width: `${(a.balance / maxAbs) * 50}%`,
+                                  }}
+                                />
+                              )}
+                              {/* Полоса жертвы (влево от центра) */}
+                              {a.balance < 0 && (
+                                <div
+                                  className="absolute top-0 bottom-0 bg-blue-400"
+                                  style={{
+                                    right: "50%",
+                                    width: `${(Math.abs(a.balance) / maxAbs) * 50}%`,
+                                  }}
+                                />
+                              )}
+                            </div>
+                            <span className="text-[10px] text-stone-500 w-12">
+                              in={a.incoming.toFixed(1)}
+                            </span>
+                          </div>
+                          <span className="text-xs font-mono w-12 text-right" style={{ color }}>
+                            {a.balance > 0 ? "+" : ""}{a.balance.toFixed(1)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* SVO: Направленные действия (топ) */}
+              {result.graph.directedEdges && result.graph.directedEdges.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs font-medium text-stone-600">
+                    Направленные действия (SVO, топ-{Math.min(15, result.graph.directedEdges.length)})
+                  </div>
+                  <div className="space-y-1">
+                    {result.graph.directedEdges.slice(0, 15).map((edge, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-2 text-xs px-2 py-1.5 rounded border bg-white"
+                      >
+                        <span className="text-stone-400 w-6">#{i + 1}</span>
+                        <span
+                          className="font-medium"
+                          style={{ color: charColor[edge.source] || "#dc2626" }}
+                        >
+                          {edge.source}
+                        </span>
+                        <Lucide.ArrowRight className="w-3 h-3 text-red-400" />
+                        <span
+                          className="font-medium"
+                          style={{ color: charColor[edge.target] || "#2563eb" }}
+                        >
+                          {edge.target}
+                        </span>
+                        <span className="ml-auto text-stone-600 font-mono">
+                          {edge.weight.toFixed(1)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* SVO: Триплеты */}
+              {result.svo && result.svo.triplets && result.svo.triplets.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs font-medium text-stone-600">
+                    SVO-триплеты (топ-{Math.min(20, result.svo.triplets.length)})
+                  </div>
+                  <div className="space-y-1 max-h-60 overflow-y-auto lit-scroll">
+                    {result.svo.triplets.slice(0, 20).map((t, i) => {
+                      const polColor =
+                        t.polarity === "positive" ? "#16a34a" :
+                        t.polarity === "negative" ? "#dc2626" : "#6b7280";
+                      const polIcon =
+                        t.polarity === "positive" ? "+" :
+                        t.polarity === "negative" ? "−" : "·";
+                      return (
+                        <div key={i} className="text-xs px-2 py-1 rounded border bg-white">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="font-mono w-4 text-center font-bold"
+                              style={{ color: polColor }}
+                              title={t.polarity}
+                            >
+                              {polIcon}
+                            </span>
+                            <span className="font-medium" style={{ color: charColor[t.subjectLemma] || "#666" }}>
+                              {t.subjectLemma}
+                            </span>
+                            <span className="text-stone-500">—{t.verbLemma}→</span>
+                            <span className="font-medium" style={{ color: charColor[t.objectLemma] || "#666" }}>
+                              {t.objectLemma}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-stone-400 italic mt-0.5 ml-6">
+                            "{t.sentence.slice(0, 100)}"
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {result.error && (
                 <div className="rounded-md bg-amber-50 border border-amber-200 p-2.5 text-xs text-amber-700">
                   ⚠ {result.error}

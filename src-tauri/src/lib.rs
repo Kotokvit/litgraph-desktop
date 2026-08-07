@@ -52,6 +52,7 @@ pub fn run() {
             // ner — NER-извлечение через spaCy
             commands::ner::extract_entities,
             commands::ner::analyze_characters,
+            commands::ner::extract_svo,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -210,3 +210,24 @@ pub async fn analyze_characters(text: String) -> Result<serde_json::Value, Strin
 
     Ok(result)
 }
+
+/// Tauri команда: извлечь SVO (Subject-Verb-Object) из текста.
+/// Запускает svo_extract.py который через spaCy dependency parsing
+/// находит триплеты: кто -> что сделал -> с кем/чем.
+#[tauri::command]
+pub async fn extract_svo(text: String) -> Result<serde_json::Value, String> {
+    if text.trim().is_empty() {
+        return Err("Пустой текст".to_string());
+    }
+
+    let script = include_str!("../../python/svo_extract.py");
+    // svo_extract.py импортирует ner_extract, поэтому кладём оба файла рядом
+    let ner_script = include_str!("../../python/ner_extract.py");
+    let extra_files = vec![("ner_extract.py", ner_script)];
+    let stdout = run_python_with_text_file(script, &text, &extra_files)?;
+
+    let result: serde_json::Value = serde_json::from_str(&stdout)
+        .map_err(|e| format!("Не удалось распарсить JSON: {}.", e))?;
+
+    Ok(result)
+}

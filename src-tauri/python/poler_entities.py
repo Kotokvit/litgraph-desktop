@@ -36,7 +36,7 @@ from scipy.sparse.linalg import eigsh
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 
-# Импортируем NER.
+# Импортируем NER и SVO.
 # V3: вычисляем путь к своей директории (где лежит ner_extract.py).
 # Раньше было sys.path.insert(0, ".") — это добавляло текущую рабочую
 # директорию Tauri, а не папку со скриптами → ModuleNotFoundError.
@@ -45,6 +45,7 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
 from ner_extract import extract_entities, NLP
+from svo_extract import extract_svo
 
 
 def extract_character_mentions(text: str, characters: list) -> dict:
@@ -139,19 +140,36 @@ def build_character_cooccurrence(char_positions: dict, window: int = 2000) -> tu
 
 
 def build_character_graph(text: str) -> dict:
-    """Полный пайплайн: текст → NER → граф персонажей → POLER."""
+    """Полный пайплайн: текст → NER + SVO → граф персонажей → POLER."""
     
     # 1. NER — извлекаем персонажей
     ner_result = extract_entities(text)
-    persons = [e for e in ner_result["entities"] if e["label"] == "PER"]
+    ner_persons = [e["lemma"] for e in ner_result["entities"] if e["label"] == "PER"]
     
-    if len(persons) < 2:
+    # 1b. SVO — извлекаем направленные действия (с fallback на всех PROPN)
+    svo_result = extract_svo(text, use_ner=True)
+    
+    # 1c. Объединяем персонажей из NER и из SVO
+    # Это решает проблему: NER на коротком тексте может пропустить имена
+    svo_persons = set()
+    for t in svo_result.get("triplets", []):
+        svo_persons.add(t.get("subjectLemma", t.get("subject", "")))
+        svo_persons.add(t.get("objectLemma", t.get("object", "")))
+    
+    all_persons = set(ner_persons) | svo_persons
+    all_persons.discard("")
+    
+    if len(all_persons) < 2:
         return {
             "entities": ner_result,
             "graph": {"nodes": [], "edges": [], "nNodes": 0, "nEdges": 0},
             "poler": {"eigenvalues": [], "clusters": [], "silhouette": 0},
+            "svo": {"triplets": [], "stats": {"total": 0}},
             "error": "Недостаточно персонажей для анализа (нужно ≥2)"
         }
+    
+    # Преобразуем в формат как раньше
+    persons = [{"lemma": p, "forms": [p], "count": 0, "mentions": []} for p in sorted(all_persons)]
     
     # 2. Извлекаем позиции упоминаний каждого персонажа
     char_positions = extract_character_mentions(text, persons)
@@ -175,6 +193,7 @@ def build_character_graph(text: str) -> dict:
             "entities": ner_result,
             "graph": {"nodes": characters, "edges": [], "nNodes": n, "nEdges": 0},
             "poler": {"eigenvalues": [], "clusters": [], "silhouette": 0},
+            "svo": {"triplets": [], "stats": {"total": 0}},
         }
     
     # Нормированный лапласиан
@@ -189,12 +208,45 @@ def build_character_graph(text: str) -> dict:
     # Проектор Π_Λ = I - (1/n)·1·1^T
     Pi = np.eye(n) - np.ones((n, n)) / n
     
-    # J = 0 (пока нет направленных связей — это для SVO в Фазе 2)
-    gamma = 0.05
-    J = np.zeros((n, n))
+    # === SVO: направленная матрица A_dir для J оператора ===
+    # J = (A_dir - A_dir^T) / 2 — антисимметричная часть
+    # A_dir[i,j] = сколько раз персонаж i действовал на j
+    # svo_result уже извлечён выше
+    A_dir = np.zeros((n, n))
+    char_idx = {c: i for i, c in enumerate(characters)}
+    
+    # Считаем направленные действия (с весом по полярности)
+    for t in svo_result.get("triplets", []):
+        s_lemma = t.get("subjectLemma", t.get("subject", ""))
+        o_lemma = t.get("objectLemma", t.get("object", ""))
+        # Ищем совпадение по lemma или по формам
+        s_idx = char_idx.get(s_lemma)
+        o_idx = char_idx.get(o_lemma)
+        if s_idx is None:
+            # Попробуем найти частичное совпадение
+            for c, i in char_idx.items():
+                if c.startswith(s_lemma[:4]) or s_lemma.startswith(c[:4]):
+                    s_idx = i
+                    break
+        if o_idx is None:
+            for c, i in char_idx.items():
+                if c.startswith(o_lemma[:4]) or o_lemma.startswith(c[:4]):
+                    o_idx = i
+                    break
+        if s_idx is not None and o_idx is not None and s_idx != o_idx:
+            # Вес: негативные действия весом 2, позитивные 1.5, нейтральные 1
+            pol = t.get("polarity", "neutral")
+            weight = {"negative": 2.0, "positive": 1.5, "neutral": 1.0}.get(pol, 1.0)
+            A_dir[s_idx, o_idx] += weight
+    
+    # J = (A_dir - A_dir^T) / 2 — антисимметричная
+    J = (A_dir - A_dir.T) / 2.0
     
     # POLER-оператор
+    gamma = 0.05  # вес резонанса (J)
     H = Pi @ (L + gamma * J - B / m) @ Pi
+    # Симметризуем для вещественных собственных значений
+    # (J антисимметричная, но H должна быть симметричной для eigsh)
     H = (H + H.T) / 2
     
     # 5. Собственные значения и векторы
@@ -242,7 +294,7 @@ def build_character_graph(text: str) -> dict:
     # Сортируем по размеру
     clusters.sort(key=lambda x: -x["size"])
     
-    # 8. Рёбра для визуализации
+    # 8. Рёбра co-occurrence (симметричные) для визуализации
     edges = []
     for i in range(n):
         for j in range(i + 1, n):
@@ -251,16 +303,47 @@ def build_character_graph(text: str) -> dict:
                     "source": characters[i],
                     "target": characters[j],
                     "weight": float(A[i, j]),
+                    "type": "cooccurrence",
                 })
     edges.sort(key=lambda x: -x["weight"])
+    
+    # 9. Направленные рёбра SVO (для визуализации агрессоров/жертв)
+    directed_edges = []
+    for i in range(n):
+        for j in range(n):
+            if i != j and A_dir[i, j] > 0:
+                directed_edges.append({
+                    "source": characters[i],
+                    "target": characters[j],
+                    "weight": float(A_dir[i, j]),
+                    "type": "action",
+                })
+    directed_edges.sort(key=lambda x: -x["weight"])
+    
+    # 10. Асимметрия J — кто «агрессор», кто «жертва»
+    # Положительная сумма строки A_dir = персонаж больше действует
+    # Положительная сумма столбца = персонаж больше подвергается действиям
+    out_sum = A_dir.sum(axis=1)  # исходящие
+    in_sum = A_dir.sum(axis=0)   # входящие
+    asymmetry = []
+    for i, c in enumerate(characters):
+        asymmetry.append({
+            "character": c,
+            "outgoing": float(out_sum[i]),   # сколько действует на других
+            "incoming": float(in_sum[i]),    # сколько подвергается
+            "balance": float(out_sum[i] - in_sum[i]),  # +агрессор, -жертва
+        })
+    asymmetry.sort(key=lambda x: -abs(x["balance"]))
     
     return {
         "entities": ner_result,
         "graph": {
             "nodes": characters,
-            "edges": edges[:100],  # топ-100 рёбер
+            "edges": edges[:100],  # топ-100 co-occurrence рёбер
+            "directedEdges": directed_edges[:50],  # топ-50 SVO рёбер
             "nNodes": n,
             "nEdges": len(edges),
+            "nDirectedEdges": len(directed_edges),
         },
         "poler": {
             "eigenvalues": eigenvalues.tolist(),
@@ -268,6 +351,12 @@ def build_character_graph(text: str) -> dict:
             "silhouette": float(sil),
             "gamma": gamma,
             "kModes": k_modes,
+            "jNorm": float(np.linalg.norm(J)),  # норма антисимметричной части
+        },
+        "svo": {
+            "triplets": svo_result.get("triplets", [])[:100],  # топ-100 триплетов
+            "stats": svo_result.get("stats", {}),
+            "asymmetry": asymmetry,  # агрессоры vs жертвы
         },
     }
 

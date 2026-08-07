@@ -19,8 +19,10 @@ export interface CharacterEdge {
 export interface CharacterGraph {
   nodes: string[];
   edges: CharacterEdge[];
+  directedEdges?: CharacterEdge[];
   nNodes: number;
   nEdges: number;
+  nDirectedEdges?: number;
 }
 
 export interface CharacterCluster {
@@ -36,12 +38,34 @@ export interface PolerResult {
   silhouette: number;
   gamma: number;
   kModes: number;
+  jNorm?: number;
+}
+
+export interface SvoAsymmetry {
+  character: string;
+  outgoing: number;
+  incoming: number;
+  balance: number;
+}
+
+export interface SvoData {
+  triplets: SvoTriplet[];
+  stats: {
+    total: number;
+    uniqueVerbs: number;
+    uniqueSubjects: number;
+    uniqueObjects: number;
+    byPolarity: { positive: number; negative: number; neutral: number };
+    knownPersons?: number;
+  };
+  asymmetry: SvoAsymmetry[];
 }
 
 export interface CharacterAnalysisResult {
   entities: NerResult;
   graph: CharacterGraph;
   poler: PolerResult;
+  svo?: SvoData;
   error?: string;
 }
 
@@ -126,3 +150,63 @@ export async function checkNerAvailability(): Promise<{
   }
 }
 
+
+// === SVO (Subject-Verb-Object) ===
+
+export interface SvoTriplet {
+  subject: string;
+  subjectLemma: string;
+  verb: string;
+  verbLemma: string;
+  object: string;
+  objectLemma: string;
+  sentence: string;
+  position: number;
+  tense: string;
+  polarity: "positive" | "negative" | "neutral";
+}
+
+export interface SvoAsymmetry {
+  character: string;
+  outgoing: number;
+  incoming: number;
+  balance: number; // +агрессор, -жертва
+}
+
+export interface SvoResult {
+  triplets: SvoTriplet[];
+  stats: {
+    total: number;
+    uniqueVerbs: number;
+    uniqueSubjects: number;
+    uniqueObjects: number;
+    byPolarity: { positive: number; negative: number; neutral: number };
+    knownPersons?: number;
+  };
+  nerResult?: NerResult;
+  model: string;
+  version: string;
+}
+
+/**
+ * Извлечь SVO (Subject-Verb-Object) из текста.
+ * Находит триплеты: кто -> что сделал -> с кем/чем.
+ * Классифицирует глаголы по полярности (positive/negative/neutral).
+ */
+export async function extractSvo(text: string): Promise<SvoResult> {
+  if (!isTauri) {
+    throw new Error(
+      "SVO доступен только в Tauri-версии (нужен Python + spaCy). " +
+      "Соберите desktop-версию: cargo tauri build"
+    );
+  }
+
+  const result = await callApi<SvoResult>(
+    "extract_svo",
+    "/api/extract-svo",
+    { text },
+    undefined
+  );
+
+  return result;
+}
