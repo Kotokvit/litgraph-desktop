@@ -14,6 +14,7 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { AssistantDialog } from "./AssistantDialog";
+import { PolerDialog } from "./PolerDialog";
 import {
   Dialog,
   DialogContent,
@@ -64,9 +65,19 @@ export function Toolbar() {
   const [parseError, setParseError] = useState<string | null>(null);
   const [aiMode, setAIMode] = useState<"continue-chapter" | "analyze-plot" | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [polerOpen, setPolerOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mdFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Собираем текст из всех chapter-нод для POLER-анализа
+  const collectedText = useLitStore((s) => {
+    const chapters = s.nodes.filter((n) => n.type === "chapter" && n.data.fullText);
+    return chapters
+      .map((n) => n.data.fullText || "")
+      .filter((t) => t.trim().length > 0)
+      .join("\n\n");
+  });
   
 
   // ====== Экспорт ======
@@ -293,6 +304,19 @@ export function Toolbar() {
         >
           <Lucide.MessageCircle className="w-4 h-4" />
           <span className="text-xs ml-1 hidden lg:inline">Спросить AI</span>
+        </Button>
+
+        {/* POLER — детерминированный анализ текста (без ИИ) */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 px-2"
+          onClick={() => setPolerOpen(true)}
+          title="POLER: детерминированный анализ структуры текста"
+          style={{ borderColor: "#0EA5E940", color: "#0284C7" }}
+        >
+          <Lucide.Network className="w-4 h-4" />
+          <span className="text-xs ml-1 hidden md:inline">POLER</span>
         </Button>
 
         {/* Тип связи по умолчанию */}
@@ -545,6 +569,12 @@ export function Toolbar() {
       <AssistantDialog
         open={assistantOpen}
         onClose={() => setAssistantOpen(false)}
+      />
+
+      <PolerDialog
+        open={polerOpen}
+        text={collectedText}
+        onClose={() => setPolerOpen(false)}
       />
     </>
   );
