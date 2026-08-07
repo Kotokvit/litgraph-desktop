@@ -1,6 +1,6 @@
 {
   "productName": "LitGraph",
-  "version": "0.1.0",
+  "version": "0.2.2",
   "identifier": "com.litgraph.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -34,7 +34,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "category": "Office",
+    "category": "TextEditor",
     "shortDescription": "Нодовый редактор для литературного текста",
     "longDescription": "LitGraph — визуальный редактор, в котором сюжет, персонажи, локации, темы и сцены представлены в виде нод, соединённых связями. Похоже на нодовый редактор в игровых движках, но для литературы."
   }
