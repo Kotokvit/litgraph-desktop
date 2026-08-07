@@ -26,7 +26,15 @@ interface CanvasRendererProps {
 }
 
 const NODE_WIDTH = 260;
-const NODE_HEIGHT = 90; // приближённая высота
+const NODE_BASE_HEIGHT = 70;
+const NODE_MAX_HEIGHT = 140;
+
+// Высота ноды зависит от epsilon (важности главы)
+function getNodeHeight(node: { type: string; data: { meta?: Record<string, unknown> } }): number {
+  if (node.type !== "chapter") return NODE_BASE_HEIGHT;
+  const epsilon = (node.data.meta?.epsilon as number) ?? 30;
+  return NODE_BASE_HEIGHT + (epsilon / 100) * (NODE_MAX_HEIGHT - NODE_BASE_HEIGHT);
+}
 
 export function CanvasRenderer({
   nodes,
@@ -73,7 +81,7 @@ export function CanvasRenderer({
       const minX = Math.min(...nodes.map((n) => n.position.x));
       const minY = Math.min(...nodes.map((n) => n.position.y));
       const maxX = Math.max(...nodes.map((n) => n.position.x + NODE_WIDTH));
-      const maxY = Math.max(...nodes.map((n) => n.position.y + NODE_HEIGHT));
+      const maxY = Math.max(...nodes.map((n) => n.position.y + getNodeHeight(n)));
       const padding = 40;
       const zoomX = (actualSize.width - padding * 2) / (maxX - minX);
       const zoomY = (actualSize.height - padding * 2) / (maxY - minY);
@@ -174,9 +182,9 @@ export function CanvasRenderer({
 
       // Culling: не рисовать рёбра вне видимой области
       const sx = source.position.x + NODE_WIDTH;
-      const sy = source.position.y + NODE_HEIGHT / 2;
+      const sy = source.position.y + getNodeHeight(source) / 2;
       const tx = target.position.x;
-      const ty = target.position.y + NODE_HEIGHT / 2;
+      const ty = target.position.y + getNodeHeight(target) / 2;
 
       const minX = Math.min(sx, tx) - 50;
       const maxX = Math.max(sx, tx) + 50;
@@ -246,12 +254,13 @@ export function CanvasRenderer({
       // Culling
       const nx = node.position.x;
       const ny = node.position.y;
+      const h = getNodeHeight(node);
       const viewLeft = -viewport.x / viewport.zoom;
       const viewTop = -viewport.y / viewport.zoom;
       const viewRight = viewLeft + W / viewport.zoom;
       const viewBottom = viewTop + H / viewport.zoom;
 
-      if (nx + NODE_WIDTH < viewLeft || nx > viewRight || ny + NODE_HEIGHT < viewTop || ny > viewBottom) continue;
+      if (nx + NODE_WIDTH < viewLeft || nx > viewRight || ny + h < viewTop || ny > viewBottom) continue;
 
       // Тень
       if (isSelected || isHovered) {
@@ -265,7 +274,7 @@ export function CanvasRenderer({
       ctx.globalAlpha = inFocus ? 1 : 0.15;
       ctx.fillStyle = "#fff";
       ctx.beginPath();
-      ctx.roundRect(nx, ny, NODE_WIDTH, NODE_HEIGHT, 11);
+      ctx.roundRect(nx, ny, NODE_WIDTH, h, 11);
       ctx.fill();
 
       ctx.shadowColor = "transparent";
@@ -274,7 +283,7 @@ export function CanvasRenderer({
       // Левая цветная полоса
       ctx.fillStyle = cfg.color;
       ctx.beginPath();
-      ctx.roundRect(nx, ny, 4, NODE_HEIGHT, [11, 0, 0, 11]);
+      ctx.roundRect(nx, ny, 4, h, [11, 0, 0, 11]);
       ctx.fill();
 
       // Шапка (цветной фон)
@@ -299,6 +308,16 @@ export function CanvasRenderer({
       ctx.font = "600 10px sans-serif";
       ctx.textAlign = "left";
       ctx.fillText(cfg.singular.toUpperCase(), nx + 35, ny + 14);
+
+      // Epsilon-бейдж (только для глав)
+      if (node.type === "chapter" && node.data.meta?.epsilon !== undefined) {
+        const eps = node.data.meta.epsilon as number;
+        const epsLabel = `ε${Math.round(eps)}`;
+        ctx.font = "600 9px sans-serif";
+        ctx.textAlign = "right";
+        ctx.fillStyle = eps > 60 ? "#dc2626" : eps > 30 ? "#d97706" : "#78716c";
+        ctx.fillText(epsLabel, nx + NODE_WIDTH - 12, ny + 14);
+      }
 
       // Заголовок
       ctx.fillStyle = "#292524";
@@ -333,12 +352,12 @@ export function CanvasRenderer({
             ctx.fillText(line, nx + 12, lineY);
             line = word;
             lineY += 14;
-            if (lineY > ny + NODE_HEIGHT - 10) break;
+            if (lineY > ny + h - 10) break;
           } else {
             line = testLine;
           }
         }
-        if (line && lineY <= ny + NODE_HEIGHT - 10) {
+        if (line && lineY <= ny + h - 10) {
           ctx.fillText(line, nx + 12, lineY);
         }
       }
@@ -349,7 +368,7 @@ export function CanvasRenderer({
         ctx.lineWidth = 2;
         ctx.globalAlpha = 0.4;
         ctx.beginPath();
-        ctx.roundRect(nx - 2, ny - 2, NODE_WIDTH + 4, NODE_HEIGHT + 4, 13);
+        ctx.roundRect(nx - 2, ny - 2, NODE_WIDTH + 4, h + 4, 13);
         ctx.stroke();
       }
 
@@ -360,11 +379,11 @@ export function CanvasRenderer({
       ctx.strokeStyle = cfg.color;
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(nx, ny + NODE_HEIGHT / 2, 6, 0, Math.PI * 2);
+      ctx.arc(nx, ny + h / 2, 6, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
       ctx.beginPath();
-      ctx.arc(nx + NODE_WIDTH, ny + NODE_HEIGHT / 2, 6, 0, Math.PI * 2);
+      ctx.arc(nx + NODE_WIDTH, ny + h / 2, 6, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
     }
@@ -382,11 +401,12 @@ export function CanvasRenderer({
       // Идём с конца (верхние ноды в массиве = нарисованы последними)
       for (let i = nodes.length - 1; i >= 0; i--) {
         const n = nodes[i];
+        const nh = getNodeHeight(n);
         if (
           worldX >= n.position.x &&
           worldX <= n.position.x + NODE_WIDTH &&
           worldY >= n.position.y &&
-          worldY <= n.position.y + NODE_HEIGHT
+          worldY <= n.position.y + nh
         ) {
           return n;
         }
@@ -556,7 +576,7 @@ export function CanvasRenderer({
             const minX = Math.min(...nodes.map((n) => n.position.x));
             const minY = Math.min(...nodes.map((n) => n.position.y));
             const maxX = Math.max(...nodes.map((n) => n.position.x + NODE_WIDTH));
-            const maxY = Math.max(...nodes.map((n) => n.position.y + NODE_HEIGHT));
+            const maxY = Math.max(...nodes.map((n) => n.position.y + getNodeHeight(n)));
             const padding = 40;
             const zoomX = (actualSize.width - padding * 2) / (maxX - minX);
             const zoomY = (actualSize.height - padding * 2) / (maxY - minY);

@@ -13,10 +13,11 @@ export async function callApi<T = unknown>(
   tauriWrapper?: string,
 ): Promise<T> {
   if (isTauri) {
-    // @ts-ignore — модуль доступен только в Tauri-проекте
-    const mod = await import(/* @vite-ignore */ "@tauri-apps/api/core");
+    // В Tauri-проекте @tauri-apps/api/core установлен
+    // Динамический import через Function чтобы webpack/turbopack не пытался резолвить
+    const invoke = (await (new Function('return import("@tauri-apps/api/core")')()) as any).invoke;
     const args = tauriWrapper ? { [tauriWrapper]: payload } : payload;
-    return mod.invoke(tauriCommand, args) as Promise<T>;
+    return invoke(tauriCommand, args) as Promise<T>;
   } else {
     const res = await fetch(webEndpoint, {
       method: "POST",
