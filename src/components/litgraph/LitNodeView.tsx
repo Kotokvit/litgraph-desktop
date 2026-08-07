@@ -17,7 +17,6 @@ export type LitFlowNode = Node<{
 
 function LitNodeViewComponent({ data, selected }: NodeProps<LitFlowNode>) {
   const cfg = NODE_TYPES[data.type];
-  // @ts-expect-error: dynamic icon
   const Icon = Lucide[cfg.icon] as Lucide.LucideIcon | undefined;
   const Ico = Icon ?? Lucide.Square;
 
@@ -42,8 +41,6 @@ function LitNodeViewComponent({ data, selected }: NodeProps<LitFlowNode>) {
       style={{
         width: 260,
         borderLeft: `4px solid ${cfg.color}`,
-        // @ts-expect-error css var
-        "--tw-ring-color": cfg.color,
         boxShadow: selected ? `0 0 0 2px ${cfg.color}40` : undefined,
         opacity: dimmed ? 0.15 : 1,
         filter: dimmed ? "grayscale(100%)" : undefined,

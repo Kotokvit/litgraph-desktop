@@ -46,7 +46,6 @@ function EditorBody({ node }: { node: LitNode }) {
   }
   const [meta, setMeta] = useState<Record<string, string>>(metaInit);
 
-  // @ts-expect-error dynamic icon
   const Icon = Lucide[cfg.icon] as Lucide.LucideIcon | undefined;
   const Ico = Icon ?? Lucide.Square;
 

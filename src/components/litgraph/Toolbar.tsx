@@ -12,7 +12,6 @@ import {
   DropdownMenuTrigger,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { AiSettingsDialog } from "./AiSettingsDialog";
 import { AssistantDialog } from "./AssistantDialog";
 import {
   Dialog,
@@ -27,7 +26,10 @@ import { useLitStore } from "@/lib/litgraph/store";
 import { exportToText, exportToMarkdown, downloadFile, slugify } from "@/lib/litgraph/export";
 import { EDGE_TYPES } from "@/lib/litgraph/types";
 import type { EdgeKind } from "@/lib/litgraph/types";
-import { useReactFlow } from "@xyflow/react";
+// Canvas renderer не использует ReactFlow, fitView через window event
+function fitViewViaEvent() {
+  window.dispatchEvent(new CustomEvent("litgraph:fitview"));
+}
 import { AIDialog } from "./AIDialog";
 
 export function Toolbar() {
@@ -61,11 +63,10 @@ export function Toolbar() {
   const [parseError, setParseError] = useState<string | null>(null);
   const [aiMode, setAIMode] = useState<"continue-chapter" | "analyze-plot" | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mdFileInputRef = useRef<HTMLInputElement>(null);
-  const rf = useReactFlow();
+  
 
   // ====== Экспорт ======
   function handleExport(format: "text" | "markdown") {
@@ -76,17 +77,17 @@ export function Toolbar() {
     setExportOpen(true);
   }
 
-  async function handleDownloadExport() {
+  function handleDownloadExport() {
     const ext = exportFormat === "text" ? "txt" : "md";
     const mime = exportFormat === "text" ? "text/plain" : "text/markdown";
-    await downloadFile(exportText, `${slugify(title)}.${ext}`, mime);
+    downloadFile(exportText, `${slugify(title)}.${ext}`, mime);
     setExportOpen(false);
   }
 
-  async function handleExportJson() {
+  function handleExportJson() {
     const proj = exportProject();
     const json = JSON.stringify(proj, null, 2);
-    await downloadFile(json, `${slugify(title)}.litgraph.json`, "application/json");
+    downloadFile(json, `${slugify(title)}.litgraph.json`, "application/json");
   }
 
   // ====== Импорт JSON ======
@@ -103,7 +104,7 @@ export function Toolbar() {
         const data = JSON.parse(ev.target?.result as string);
         if (!data.nodes || !data.edges) throw new Error("неверный формат");
         loadProject(data);
-        setTimeout(() => rf.fitView({ padding: 0.2, duration: 400 }), 100);
+        setTimeout(() => fitViewViaEvent(), 100);
       } catch (err) {
         alert("Не удалось загрузить файл: " + (err as Error).message);
       }
@@ -141,19 +142,22 @@ export function Toolbar() {
     setParsing(true);
     setParseError(null);
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const data = await invoke<Record<string, unknown>>("parse_md", {
-        params: {
+      const res = await fetch("/api/parse-md", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           markdown: mdText,
           projectTitle: mdTitle || "Импортированный проект",
           author: mdAuthor || "",
-        },
+        }),
       });
-      loadProject(data as any);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Ошибка парсинга");
+      loadProject(data);
       setImportMdOpen(false);
-      setTimeout(() => rf.fitView({ padding: 0.2, duration: 400 }), 100);
+      setTimeout(() => fitViewViaEvent(), 100);
     } catch (err) {
-      setParseError(String(err));
+      setParseError((err as Error).message);
     } finally {
       setParsing(false);
     }
@@ -178,11 +182,11 @@ export function Toolbar() {
     });
     setNodes(newNodes);
     void edges;
-    setTimeout(() => rf.fitView({ padding: 0.2, duration: 400 }), 50);
+    setTimeout(() => fitViewViaEvent(), 50);
   }
 
   function handleFitView() {
-    rf.fitView({ padding: 0.2, duration: 400 });
+    fitViewViaEvent();
   }
 
   function handleClearAll() {
@@ -264,13 +268,6 @@ export function Toolbar() {
               <div className="flex-1">
                 <div className="text-sm font-medium">AI-помощник (чат)</div>
                 <div className="text-[10px] text-stone-500">Спросить о чём угодно</div>
-              </div>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setAiSettingsOpen(true)}>
-              <Lucide.Settings className="w-4 h-4 mr-2 text-stone-600" />
-              <div className="flex-1">
-                <div className="text-sm font-medium">Настройки AI</div>
-                <div className="text-[10px] text-stone-500">Ollama / OpenAI / Z.ai</div>
               </div>
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setAIMode("continue-chapter")}>
@@ -553,11 +550,6 @@ export function Toolbar() {
       <AssistantDialog
         open={assistantOpen}
         onClose={() => setAssistantOpen(false)}
-      />
-
-      <AiSettingsDialog
-        open={aiSettingsOpen}
-        onClose={() => setAiSettingsOpen(false)}
       />
     </>
   );

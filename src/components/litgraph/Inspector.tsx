@@ -18,7 +18,6 @@ function NodeInspector({ node }: { node: LitNode }) {
   const duplicateNode = useLitStore((s) => s.duplicateNode);
 
   const cfg = NODE_TYPES[node.type];
-  // @ts-expect-error dynamic icon
   const Icon = Lucide[cfg.icon] as Lucide.LucideIcon | undefined;
   const Ico = Icon ?? Lucide.Square;
 

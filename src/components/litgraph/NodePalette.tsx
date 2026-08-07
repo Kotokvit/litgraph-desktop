@@ -3,32 +3,16 @@
 import * as Lucide from "lucide-react";
 import { NODE_TYPES, NODE_TYPE_ORDER } from "@/lib/litgraph/types";
 import { useLitStore } from "@/lib/litgraph/store";
-import { useReactFlow } from "@xyflow/react";
 
 const PALETTE_DESCRIPTION =
-  "Перетащите тип ноды на холст — или кликните, чтобы добавить в центр видимой области.";
+  "Кликните, чтобы добавить ноду в центр видимой области.";
 
 export function NodePalette() {
   const addNode = useLitStore((s) => s.addNode);
-  const rf = useReactFlow();
 
   function handleAdd(type: keyof typeof NODE_TYPES) {
-    // По возможности ставим ноду в центр видимой области
-    try {
-      const rfEl = document.querySelector(".react-flow") as HTMLElement | null;
-      if (rfEl) {
-        const rect = rfEl.getBoundingClientRect();
-        const pos = rf.screenToFlowPosition({
-          x: rect.left + rect.width / 2,
-          y: rect.top + rect.height / 2,
-        });
-        addNode(type, { x: pos.x - 130, y: pos.y - 60 });
-        return;
-      }
-    } catch {
-      // ignore
-    }
-    addNode(type);
+    // Добавляем в центр видимой области — через window event (слушает CanvasRenderer)
+    window.dispatchEvent(new CustomEvent("litgraph:add-center", { detail: { type } }));
   }
 
   return (
@@ -39,7 +23,6 @@ export function NodePalette() {
       <div className="grid grid-cols-2 gap-2">
         {NODE_TYPE_ORDER.map((type) => {
           const cfg = NODE_TYPES[type];
-          // @ts-expect-error dynamic icon
           const Icon = Lucide[cfg.icon] as Lucide.LucideIcon | undefined;
           const Ico = Icon ?? Lucide.Square;
           return (
