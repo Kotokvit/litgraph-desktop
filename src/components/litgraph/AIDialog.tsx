@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { callApi } from "@/lib/litgraph/api";
 import {
   Dialog,
   DialogContent,
@@ -62,10 +63,8 @@ export function AIDialog({
     setState({ loading: true, mode, result: null, error: null });
     try {
       const project = exportProject();
-      const endpoint =
-        mode === "continue-chapter"
-          ? "/api/ai/continue-chapter"
-          : "/api/ai/analyze-plot";
+      const cmdName = mode === "continue-chapter" ? "ai_continue_chapter" : "ai_analyze_plot";
+      const endpoint = mode === "continue-chapter" ? "/api/ai/continue-chapter" : "/api/ai/analyze-plot";
 
       const payload: Record<string, unknown> = { project };
       if (mode === "continue-chapter") {
@@ -75,21 +74,12 @@ export function AIDialog({
         payload.focus = focus;
       }
 
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Неизвестная ошибка");
-      }
+      const text = await callApi<string>(cmdName, endpoint, payload);
       setState({
         loading: false,
         mode,
-        result: data.text,
+        result: text,
         error: null,
-        meta: data.meta,
       });
     } catch (err) {
       setState({

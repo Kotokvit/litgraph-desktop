@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { callApi } from "@/lib/litgraph/api";
 import {
   Dialog,
   DialogContent,
@@ -68,27 +69,21 @@ export function AssistantDialog({
 
     try {
       const project = exportProject();
-      const res = await fetch("/api/ai/assistant", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          project,
-          message: content,
-          history: messages.map((m) => ({ role: m.role, content: m.content })),
-          selectedNodeId,
-        }),
+      const text = await callApi<string>("ai_assistant", "/api/ai/assistant", {
+        project,
+        message: content,
+        history: messages.map((m) => ({ role: m.role, content: m.content })),
+        selectedNodeId,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Неизвестная ошибка");
 
       const aiMsg: Message = {
         role: "assistant",
-        content: data.text,
+        content: text,
         timestamp: Date.now(),
       };
       setMessages([...newMessages, aiMsg]);
     } catch (err) {
-      setError((err as Error).message);
+      setError(String(err));
     } finally {
       setLoading(false);
     }

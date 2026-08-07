@@ -3,6 +3,7 @@
 import * as Lucide from "lucide-react";
 import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
+import { callApi } from "@/lib/litgraph/api";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
@@ -142,22 +143,16 @@ export function Toolbar() {
     setParsing(true);
     setParseError(null);
     try {
-      const res = await fetch("/api/parse-md", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          markdown: mdText,
-          projectTitle: mdTitle || "Импортированный проект",
-          author: mdAuthor || "",
-        }),
+      const data = await callApi("parse_md", "/api/parse-md", {
+        markdown: mdText,
+        projectTitle: mdTitle || "Импортированный проект",
+        author: mdAuthor || "",
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Ошибка парсинга");
-      loadProject(data);
+      loadProject(data as any);
       setImportMdOpen(false);
       setTimeout(() => fitViewViaEvent(), 100);
     } catch (err) {
-      setParseError((err as Error).message);
+      setParseError(String(err));
     } finally {
       setParsing(false);
     }
