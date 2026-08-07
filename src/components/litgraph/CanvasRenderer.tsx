@@ -209,8 +209,17 @@ export function CanvasRenderer({
       ctx.moveTo(sx, sy);
       ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, tx, ty);
 
+      // Резонанс: толщина flow-связи зависит от epsilon глав
+      let lineWidth = isSelected ? 3 : 2;
+      if (kind === "flow") {
+        const srcEps = (source.data.meta?.epsilon as number) ?? 30;
+        const tgtEps = (target.data.meta?.epsilon as number) ?? 30;
+        const avgEps = (srcEps + tgtEps) / 2;
+        lineWidth = isSelected ? 4 : 1 + (avgEps / 100) * 4; // 1-5 px
+      }
+
       ctx.strokeStyle = cfg.color;
-      ctx.lineWidth = isSelected ? 3 : 2;
+      ctx.lineWidth = lineWidth;
       ctx.globalAlpha = inFocus ? (isSelected ? 1 : 0.85) : 0.15;
       if (cfg.dashed) {
         ctx.setLineDash([6, 4]);
@@ -315,8 +324,27 @@ export function CanvasRenderer({
         const epsLabel = `ε${Math.round(eps)}`;
         ctx.font = "600 9px sans-serif";
         ctx.textAlign = "right";
-        ctx.fillStyle = eps > 60 ? "#dc2626" : eps > 30 ? "#d97706" : "#78716c";
+        ctx.fillStyle = eps > 70 ? "#dc2626" : eps > 40 ? "#d97706" : "#78716c";
         ctx.fillText(epsLabel, nx + NODE_WIDTH - 12, ny + 14);
+
+        // Цветная полоса epsilon внизу ноды (тепловая индикация)
+        const barY = ny + h - 6;
+        const barW = NODE_WIDTH - 8;
+        // Фон полосы
+        ctx.fillStyle = "#f0f0f0";
+        ctx.fillRect(nx + 4, barY, barW, 4);
+        // Заполнение по epsilon
+        const epsColor = eps > 70 ? "#dc2626" : eps > 40 ? "#f59e0b" : "#65a30d";
+        ctx.fillStyle = epsColor;
+        ctx.fillRect(nx + 4, barY, (barW * eps) / 100, 4);
+
+        // Цветной фон шапки по epsilon (тепловая карта)
+        if (eps > 60) {
+          ctx.fillStyle = `rgba(220, 38, 38, ${0.05 + (eps - 60) * 0.003})`;
+          ctx.beginPath();
+          ctx.roundRect(nx + 4, ny, NODE_WIDTH - 4, h, [0, 11, 11, 0]);
+          ctx.fill();
+        }
       }
 
       // Заголовок
@@ -600,6 +628,57 @@ export function CanvasRenderer({
           <div className="bg-stone-800/85 text-white text-xs px-3 py-1.5 rounded-full shadow-lg flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
             Focus-режим
+          </div>
+        </div>
+      )}
+
+      {/* Тепловая карта таймлайна (epsilon по главам) */}
+      {nodes.filter((n) => n.type === "chapter" && n.data.meta?.epsilon !== undefined).length > 0 && (
+        <div className="absolute bottom-4 left-4 right-20 z-10 bg-white/95 rounded-lg shadow-md p-2 border border-stone-200">
+          <div className="flex items-center gap-1 mb-1">
+            <span className="text-[9px] text-stone-500 font-semibold uppercase tracking-wider">
+              ε Тепловая карта
+            </span>
+            <span className="text-[9px] text-stone-400">
+              {nodes.filter((n) => n.type === "chapter").length} глав
+            </span>
+          </div>
+          <div className="flex items-end gap-px h-8">
+            {nodes
+              .filter((n) => n.type === "chapter")
+              .sort((a, b) => {
+                // Сортируем по номеру главы
+                const aNum = parseInt(a.data.title.match(/Глава\s+(\d+)/)?.[1] || "0");
+                const bNum = parseInt(b.data.title.match(/Глава\s+(\d+)/)?.[1] || "0");
+                return aNum - bNum;
+              })
+              .map((n, i) => {
+                const eps = (n.data.meta?.epsilon as number) ?? 0;
+                const height = Math.max(2, (eps / 100) * 32);
+                const color = eps > 70 ? "#dc2626" : eps > 40 ? "#f59e0b" : "#65a30d";
+                const isSelected = n.id === selectedNodeId;
+                return (
+                  <div
+                    key={n.id}
+                    onClick={() => onNodeClick(n.id)}
+                    className="flex-1 cursor-pointer transition-all hover:opacity-80"
+                    style={{
+                      height: `${height}px`,
+                      backgroundColor: color,
+                      opacity: isSelected ? 1 : 0.7,
+                      borderRadius: "2px 2px 0 0",
+                      minWidth: "3px",
+                      outline: isSelected ? "2px solid #000" : "none",
+                      outlineOffset: "1px",
+                    }}
+                    title={`${n.data.title.substring(0, 40)} | ε=${Math.round(eps)}`}
+                  />
+                );
+              })}
+          </div>
+          <div className="flex justify-between mt-1">
+            <span className="text-[8px] text-stone-400">Начало</span>
+            <span className="text-[8px] text-stone-400">Конец</span>
           </div>
         </div>
       )}
