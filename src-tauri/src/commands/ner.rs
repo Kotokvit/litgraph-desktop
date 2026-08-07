@@ -200,9 +200,13 @@ pub async fn analyze_characters(text: String) -> Result<serde_json::Value, Strin
     }
 
     let script = include_str!("../../python/poler_entities.py");
-    // poler_entities.py импортирует ner_extract, поэтому кладём оба файла рядом
+    // poler_entities.py импортирует ner_extract И svo_extract — кладём все 3 файла
     let ner_script = include_str!("../../python/ner_extract.py");
-    let extra_files = vec![("ner_extract.py", ner_script)];
+    let svo_script = include_str!("../../python/svo_extract.py");
+    let extra_files = vec![
+        ("ner_extract.py", ner_script),
+        ("svo_extract.py", svo_script),
+    ];
     let stdout = run_python_with_text_file(script, &text, &extra_files)?;
 
     let result: serde_json::Value = serde_json::from_str(&stdout)
@@ -221,7 +225,7 @@ pub async fn extract_svo(text: String) -> Result<serde_json::Value, String> {
     }
 
     let script = include_str!("../../python/svo_extract.py");
-    // svo_extract.py импортирует ner_extract, поэтому кладём оба файла рядом
+    // svo_extract.py импортирует ner_extract — кладём оба файла
     let ner_script = include_str!("../../python/ner_extract.py");
     let extra_files = vec![("ner_extract.py", ner_script)];
     let stdout = run_python_with_text_file(script, &text, &extra_files)?;
