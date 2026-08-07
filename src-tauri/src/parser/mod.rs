@@ -91,6 +91,12 @@ pub fn build_graph(
                 full_text: Some(prologue_text.clone()),
                 versions: None,
             },
+        });
+        prologue_id = Some(id);
+    }
+
+    // --- Главы ---
+    let mut chapter_ids: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
     for (idx, ch) in chapters.iter().enumerate() {
         let id = uid("ch");
         chapter_ids.insert(ch.num, id.clone());
@@ -283,31 +289,9 @@ pub fn build_graph(
         }
     }
 
-    // --- Связи: темы → главы ---
-    for t in &themes {
-        if let Some(tid) = theme_ids.get(&t.name) {
-            for (idx, ch) in chapters.iter().enumerate() {
-                let count = themes::count_in_text(&t.name, &ch.full_text);
-                if count >= 2 {
-                    if let Some(ch_id) = chapter_ids.get(&ch.num) {
-                        edges.push(LitEdge {
-                            id: uid("e"),
-                            source: tid.clone(),
-                            target: ch_id.clone(),
-                            source_handle: None,
-                            target_handle: None,
-                            edge_type: Some("smoothstep".to_string()),
-                            animated: Some(false),
-                            data: Some(crate::models::EdgeData { kind: Some("theme".to_string()), note: None }),
-                        });
-                    }
-                }
-            }
-        }
-    }
 
     // --- Раскладка ---
-    layout_nodes(&mut nodes, &chapters, &prologue_id, &characters, &locations, &chapter_ids, &char_ids, &loc_ids, &theme_ids);
+    layout_nodes(&mut nodes, &chapters, &prologue_id, &characters, &locations, &chapter_ids, &char_ids, &loc_ids);
 
     let word_count = markdown.split_whitespace().count();
     let now = Utc::now().timestamp_millis() as u64;
@@ -321,7 +305,7 @@ pub fn build_graph(
         title: project_title.to_string(),
         author: author.to_string(),
         description: format!(
-            "Автоматически разобранный текст: {} глав, {} персонажей, {} локаций, {} тем/мотивов, {} связей. Всего {} слов.",
+            "Автоматически разобранный текст: {} глав, {} персонажей, {} локаций, {} связей. Всего {} слов.",
             chapters_count,
             characters_count,
             locations_count,
@@ -337,7 +321,6 @@ pub fn build_graph(
             chapters: chapters_count,
             characters: characters_count,
             locations: locations_count,
-            themes: 
             edges: edges_count,
             words: word_count,
         },
@@ -351,11 +334,10 @@ fn layout_nodes(
     prologue_id: &Option<String>,
     characters: &[characters::ParsedCharacter],
     locations: &[locations::ParsedLocation],
-    themes: &[themes::ParsedTheme],
     chapter_ids: &std::collections::HashMap<u32, String>,
     char_ids: &std::collections::HashMap<String, String>,
     loc_ids: &std::collections::HashMap<String, String>,
-    theme_ids: &std::collections::HashMap<String, String>,
+    
 ) {
     // Главы — центральная колонка
     let chapter_x = 600.0;
@@ -379,23 +361,6 @@ fn layout_nodes(
             };
         }
     }
-
-    // Темы — слева
-    let theme_x = 200.0;
-    let theme_y_start = 60.0;
-    let theme_y_step = 110.0;
-    for (i, t) in themes.iter().enumerate() {
-        if let Some(id) = theme_ids.get(&t.name) {
-            if let Some(n) = nodes.iter_mut().find(|n| n.id == *id) {
-                n.position = Position {
-                    x: theme_x,
-                    y: theme_y_start + (i as f64) * theme_y_step,
-                };
-            }
-        }
-    }
-
-    // Персонажи — справа
     let char_x = 1100.0;
     let char_y_start = 60.0;
     let char_y_step = 110.0;

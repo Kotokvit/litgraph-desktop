@@ -62,7 +62,6 @@ pub struct ParseStats {
     pub chapters: usize,
     pub characters: usize,
     pub locations: usize,
-    pub themes: usize,
     pub edges: usize,
     pub words: usize,
 }
