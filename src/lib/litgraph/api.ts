@@ -1,21 +1,22 @@
 // Определение окружения: Tauri или веб-превью
-// В Tauri window.__TAURI_INTERNALS__ существует
-
 export const isTauri = typeof window !== "undefined" && (
   "__TAURI_INTERNALS__" in window || "__TAURI__" in window
 );
 
 // Универсальный вызов: в Tauri → invoke, в веб → fetch
+// tauriWrapper: если Rust-команда ожидает параметр обёрнутый в ключ
+//   (например parse_md(params: ParseParams) → нужно { params: {...} })
 export async function callApi<T = unknown>(
   tauriCommand: string,
   webEndpoint: string,
   payload: Record<string, unknown>,
+  tauriWrapper?: string,
 ): Promise<T> {
   if (isTauri) {
-    // Динамический импорт Tauri API — работает только в десктоп-версии
-    // @ts-ignore — модуль @tauri-apps/api/core доступен только в Tauri-проекте
+    // @ts-ignore — модуль доступен только в Tauri-проекте
     const mod = await import(/* @vite-ignore */ "@tauri-apps/api/core");
-    return mod.invoke(tauriCommand, payload) as Promise<T>;
+    const args = tauriWrapper ? { [tauriWrapper]: payload } : payload;
+    return mod.invoke(tauriCommand, args) as Promise<T>;
   } else {
     const res = await fetch(webEndpoint, {
       method: "POST",

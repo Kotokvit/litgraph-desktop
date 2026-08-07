@@ -147,7 +147,7 @@ export function Toolbar() {
         markdown: mdText,
         projectTitle: mdTitle || "Импортированный проект",
         author: mdAuthor || "",
-      });
+      }, "params");
       loadProject(data as any);
       setImportMdOpen(false);
       setTimeout(() => fitViewViaEvent(), 100);
