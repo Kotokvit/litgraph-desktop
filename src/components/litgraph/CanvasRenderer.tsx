@@ -396,51 +396,6 @@ export function CanvasRenderer({
     [nodes, viewport]
   );
 
-  // Mouse handlers
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-
-      const node = findNodeAt(x, y);
-      if (node) {
-        onNodeClick(node.id);
-      } else {
-        onPaneClick();
-        setIsDragging(true);
-        setDragStart({ x: x - viewport.x, y: y - viewport.y });
-      }
-    },
-    [findNodeAt, onNodeClick, onPaneClick, viewport]
-  );
-
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent) => {
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-
-      if (isDragging) {
-        setViewport((vp) => ({ ...vp, x: x - dragStart.x, y: y - dragStart.y }));
-      } else {
-        const node = findNodeAt(x, y);
-        const newHovered = node?.id || null;
-        if (newHovered !== hoveredNodeId) {
-          setHoveredNodeId(newHovered);
-          canvasRef.current!.style.cursor = node ? "pointer" : "grab";
-        }
-      }
-    },
-    [isDragging, dragStart, findNodeAt, hoveredNodeId]
-  );
-
-  const handleMouseUp = useCallback(() => {
-    setIsDragging(false);
-  }, []);
-
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
       const rect = canvasRef.current?.getBoundingClientRect();

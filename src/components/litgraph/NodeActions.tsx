@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useLitStore } from "@/lib/litgraph/store";
 import { NODE_TYPES, NODE_TYPE_ORDER, type LitNodeType } from "@/lib/litgraph/types";
 import {
-  Pencil, Copy, Trash2, ArrowUpCircle, Tag, X, Plus, Minus, Maximize2,
+  Pencil, Copy, Trash2, ArrowUpCircle, X,
 } from "lucide-react";
 
 interface ContextMenuState {
@@ -14,7 +14,6 @@ interface ContextMenuState {
 }
 
 export function NodeContextMenu() {
-  const selectedNodeId = useLitStore((s) => s.selectedNodeId);
   const setEditingNode = useLitStore((s) => s.setEditingNode);
   const deleteNode = useLitStore((s) => s.deleteNode);
   const duplicateNode = useLitStore((s) => s.duplicateNode);
