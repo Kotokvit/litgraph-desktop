@@ -36,8 +36,14 @@ from scipy.sparse.linalg import eigsh
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 
-# Импортируем NER
-sys.path.insert(0, ".")
+# Импортируем NER.
+# V3: вычисляем путь к своей директории (где лежит ner_extract.py).
+# Раньше было sys.path.insert(0, ".") — это добавляло текущую рабочую
+# директорию Tauri, а не папку со скриптами → ModuleNotFoundError.
+import os
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
 from ner_extract import extract_entities, NLP
 
 

@@ -11,7 +11,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::Write;
 use std::process::Command;
 use std::process::Stdio;
 
@@ -79,41 +78,52 @@ fn find_python() -> String {
     "python3".to_string()
 }
 
-/// Создать временный файл с текстом и вернуть его путь.
-fn write_text_to_temp_file(text: &str) -> Result<std::path::PathBuf, String> {
+/// Запустить Python скрипт, передав текст через временный файл.
+///
+/// V3: скрипт и его зависимости (ner_extract.py) записываются во временную
+/// директорию /tmp/litgraph_scripts_PID/, чтобы import ner_extract работал.
+/// Раньше было python -c "script" — но тогда __file__ недоступен и import
+/// ner_extract падал с ModuleNotFoundError.
+fn run_python_with_text_file(
+    script: &str,
+    text: &str,
+    extra_files: &[(&str, &str)], // (filename, content) — доп. файлы рядом
+) -> Result<String, String> {
+    let python_cmd = find_python();
+
+    // Создаём временную директорию для скриптов
     let temp_dir = std::env::temp_dir();
+    let pid = std::process::id();
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    let pid = std::process::id();
-    let path = temp_dir.join(format!("litgraph_text_{}_{}.txt", pid, timestamp));
+    let script_dir = temp_dir.join(format!("litgraph_scripts_{}_{}", pid, timestamp));
+    fs::create_dir_all(&script_dir)
+        .map_err(|e| format!("Не удалось создать temp директорию: {}", e))?;
 
-    let mut file = fs::File::create(&path)
-        .map_err(|e| format!("Не удалось создать временный файл {:?}: {}", path, e))?;
-    file.write_all(text.as_bytes())
-        .map_err(|e| format!("Не удалось записать текст во временный файл: {}", e))?;
-    Ok(path)
-}
+    // Записываем главный скрипт
+    let main_script_path = script_dir.join("main_script.py");
+    fs::write(&main_script_path, script)
+        .map_err(|e| format!("Не удалось записать скрипт: {}", e))?;
 
-/// Запустить Python скрипт, передав текст через временный файл.
-///
-/// V1 передавала через stdin, но на текстах >100k символов pipe buffer
-/// переполнялся и write_all блокировался → "Канал оборвано (os error 32)".
-///
-/// V2: пишем текст в /tmp/litgraph_text_PID_TIMESTAMP.txt, передаём путь
-/// через argv как единственный позиционный аргумент. Python читает файл.
-fn run_python_with_text_file(script: &str, text: &str) -> Result<String, String> {
-    let python_cmd = find_python();
-    let text_file = write_text_to_temp_file(text)?;
+    // Записываем дополнительные файлы (ner_extract.py и т.д.)
+    for (filename, content) in extra_files {
+        let path = script_dir.join(filename);
+        fs::write(&path, content)
+            .map_err(|e| format!("Не удалось записать {}: {}", filename, e))?;
+    }
+
+    // Записываем текст в файл
+    let text_file = script_dir.join("input_text.txt");
+    fs::write(&text_file, text)
+        .map_err(|e| format!("Не удалось записать текст: {}", e))?;
 
     let result = (|| {
-        // Запускаем python с скриптом и путём к файлу
         let output = Command::new(&python_cmd)
-            .arg("-c")
-            .arg(script)
+            .arg(&main_script_path)
             .arg(&text_file)
-            .stdin(Stdio::null()) // не используем stdin
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -131,7 +141,6 @@ fn run_python_with_text_file(script: &str, text: &str) -> Result<String, String>
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            // Если stderr пустой, может быть проблема с памятью (OOM killed)
             let msg = if stderr.is_empty() {
                 format!(
                     "Python процесс завершился с кодом {:?} (возможно OOM killed).\n\
@@ -148,8 +157,8 @@ fn run_python_with_text_file(script: &str, text: &str) -> Result<String, String>
         Ok(stdout)
     })();
 
-    // Удаляем временный файл в любом случае
-    let _ = fs::remove_file(&text_file);
+    // Удаляем временную директорию со всеми файлами
+    let _ = fs::remove_dir_all(&script_dir);
 
     result
 }
@@ -162,7 +171,8 @@ pub async fn extract_entities(text: String) -> Result<NerResult, String> {
     }
 
     let script = include_str!("../../python/ner_extract.py");
-    let stdout = run_python_with_text_file(script, &text)?;
+    // ner_extract.py не имеет зависимостей от других наших скриптов
+    let stdout = run_python_with_text_file(script, &text, &[])?;
 
     let result: NerResult = serde_json::from_str(&stdout).map_err(|e| {
         format!(
@@ -190,7 +200,10 @@ pub async fn analyze_characters(text: String) -> Result<serde_json::Value, Strin
     }
 
     let script = include_str!("../../python/poler_entities.py");
-    let stdout = run_python_with_text_file(script, &text)?;
+    // poler_entities.py импортирует ner_extract, поэтому кладём оба файла рядом
+    let ner_script = include_str!("../../python/ner_extract.py");
+    let extra_files = vec![("ner_extract.py", ner_script)];
+    let stdout = run_python_with_text_file(script, &text, &extra_files)?;
 
     let result: serde_json::Value = serde_json::from_str(&stdout)
         .map_err(|e| format!("Не удалось распарсить JSON: {}.", e))?;
