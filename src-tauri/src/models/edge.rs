@@ -1,18 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum EdgeKind {
-    Flow,
-    Cause,
-    Character,
-    Location,
-    Reference,
-    Conflict,
-    Foreshadow,
-    Alternative,
-    Theme,
-}
+/// Тип связи (как строка, чтобы соответствовать формату TS).
+/// Возможные значения: "flow", "cause", "character", "location", "reference",
+/// "conflict", "foreshadow", "alternative", "theme".
+pub type EdgeKind = String;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

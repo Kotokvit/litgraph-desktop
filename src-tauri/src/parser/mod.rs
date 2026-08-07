@@ -1,15 +1,15 @@
 //! Автопарсер .md → граф.
-//!
-//! См. docs/PROMPT_PLAN.md раздел 3.1.
-//! Переписать с src/app/api/parse-md/route.ts (705 строк TS).
+//! Переписано с src/app/api/parse-md/route.ts (705 строк TS).
 
 pub mod chapters;
 pub mod characters;
 pub mod locations;
 pub mod themes;
 
-use crate::models::{GraphData, LitEdge, LitNode, ParseResult, ParseStats};
+use crate::models::{LitEdge, LitNode, LitNodeData, ParseResult, ParseStats, Position};
+use chrono::Utc;
 use thiserror::Error;
+use uuid::Uuid;
 
 #[derive(Debug, Error)]
 pub enum ParseError {
@@ -21,6 +21,15 @@ pub enum ParseError {
     Json(#[from] serde_json::Error),
 }
 
+fn uid(prefix: &str) -> String {
+    format!(
+        "{}_{}_{}",
+        prefix,
+        Utc::now().timestamp_millis(),
+        &Uuid::new_v4().to_string()[..8]
+    )
+}
+
 pub fn build_graph(
     markdown: &str,
     project_title: &str,
@@ -30,37 +39,395 @@ pub fn build_graph(
         return Err(ParseError::Empty);
     }
 
-    // TODO: реализовать полностью — этап 4 в PROMPT_PLAN.md
-    // 1. chapters::detect(markdown) → Vec<ParsedChapter>
-    // 2. characters::detect(markdown) → Vec<ParsedCharacter>
-    // 3. locations::detect(markdown) → Vec<ParsedLocation>
-    // 4. themes::detect(markdown) → Vec<ParsedTheme>
-    // 5. Сборка графа + раскладка
+    let (chapters, prologue_text) = chapters::detect(markdown);
+    let characters = characters::detect(markdown);
+    let locations = locations::detect(markdown);
+    let themes = themes::detect(markdown);
+
+    let mut nodes: Vec<LitNode> = Vec::new();
+    let mut edges: Vec<LitEdge> = Vec::new();
+
+    // --- Пролог (если есть) ---
+    let mut prologue_id: Option<String> = None;
+    if prologue_text.trim().len() > 100 {
+        let id = uid("ch");
+        let body_preview: String = prologue_text.split_whitespace().collect::<Vec<_>>().join(" ");
+        let body = if body_preview.len() > 400 {
+            format!("{}…", &body_preview[..400])
+        } else {
+            body_preview
+        };
+        let word_count = prologue_text.split_whitespace().count();
+        nodes.push(LitNode {
+            id: id.clone(),
+            node_type: "chapter".to_string(),
+            position: Position { x: 0.0, y: 0.0 },
+            data: LitNodeData {
+                title: "Пролог".to_string(),
+                body,
+                node_type: "chapter".to_string(),
+                tags: vec!["пролог".to_string()],
+                meta: Some(serde_json::json!({ "wordCount": word_count })),
+                full_text: Some(prologue_text.clone()),
+                versions: None,
+            },
+        });
+        prologue_id = Some(id);
+    }
+
+    // --- Главы ---
+    let mut chapter_ids: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+    for ch in &chapters {
+        let id = uid("ch");
+        chapter_ids.insert(ch.num, id.clone());
+
+        // Найдём персонажей и локации в этой главе
+        let ch_chars: Vec<String> = characters
+            .iter()
+            .filter(|c| characters::count_in_text(&c.aliases, &ch.full_text) > 0)
+            .map(|c| c.name.clone())
+            .collect();
+        let ch_locs: Vec<String> = locations
+            .iter()
+            .filter(|l| locations::count_in_text(&l.aliases, &ch.full_text) > 0)
+            .map(|l| l.name.clone())
+            .collect();
+
+        let word_count = ch.full_text.split_whitespace().count();
+        let mut meta = serde_json::Map::new();
+        meta.insert("wordCount".to_string(), serde_json::Value::Number(word_count.into()));
+        if !ch_chars.is_empty() {
+            meta.insert(
+                "characters".to_string(),
+                serde_json::Value::String(ch_chars.iter().take(5).cloned().collect::<Vec<_>>().join(", ")),
+            );
+        }
+        if !ch_locs.is_empty() {
+            meta.insert(
+                "locations".to_string(),
+                serde_json::Value::String(ch_locs.iter().take(3).cloned().collect::<Vec<_>>().join(", ")),
+            );
+        }
+
+        nodes.push(LitNode {
+            id: id.clone(),
+            node_type: "chapter".to_string(),
+            position: Position { x: 0.0, y: 0.0 },
+            data: LitNodeData {
+                title: format!("Глава {}: {}", ch.num, ch.title),
+                body: ch.body.clone(),
+                node_type: "chapter".to_string(),
+                tags: vec![],
+                meta: Some(serde_json::Value::Object(meta)),
+                full_text: Some(ch.full_text.clone()),
+                versions: None,
+            },
+        });
+    }
+
+    // --- Персонажи ---
+    let mut char_ids: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for c in &characters {
+        let id = uid("chr");
+        char_ids.insert(c.name.clone(), id.clone());
+
+        let chapters_with: Vec<&chapters::ParsedChapter> = chapters
+            .iter()
+            .filter(|ch| characters::count_in_text(&c.aliases, &ch.full_text) > 0)
+            .collect();
+        let first_chapter = chapters_with
+            .first()
+            .map(|ch| format!("Глава {}", ch.num))
+            .unwrap_or_else(|| "—".to_string());
+
+        nodes.push(LitNode {
+            id: id.clone(),
+            node_type: "character".to_string(),
+            position: Position { x: 0.0, y: 0.0 },
+            data: LitNodeData {
+                title: c.name.clone(),
+                body: c.description.clone(),
+                node_type: "character".to_string(),
+                tags: vec![],
+                meta: Some(serde_json::json!({
+                    "mentions": c.count,
+                    "chapters": format!("{} глав", chapters_with.len()),
+                    "firstChapter": first_chapter,
+                })),
+                full_text: None,
+                versions: None,
+            },
+        });
+    }
+
+    // --- Локации ---
+    let mut loc_ids: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for l in &locations {
+        let id = uid("loc");
+        loc_ids.insert(l.name.clone(), id.clone());
+
+        let chapters_with: Vec<&chapters::ParsedChapter> = chapters
+            .iter()
+            .filter(|ch| locations::count_in_text(&l.aliases, &ch.full_text) > 0)
+            .collect();
+        let first_chapter = chapters_with
+            .first()
+            .map(|ch| format!("Глава {}", ch.num))
+            .unwrap_or_else(|| "—".to_string());
+
+        nodes.push(LitNode {
+            id: id.clone(),
+            node_type: "location".to_string(),
+            position: Position { x: 0.0, y: 0.0 },
+            data: LitNodeData {
+                title: l.name.clone(),
+                body: l.description.clone(),
+                node_type: "location".to_string(),
+                tags: vec![],
+                meta: Some(serde_json::json!({
+                    "mentions": l.count,
+                    "chapters": format!("{} глав", chapters_with.len()),
+                    "firstChapter": first_chapter,
+                })),
+                full_text: None,
+                versions: None,
+            },
+        });
+    }
+
+    // --- Темы ---
+    let mut theme_ids: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for t in &themes {
+        let id = uid("th");
+        theme_ids.insert(t.name.clone(), id.clone());
+
+        nodes.push(LitNode {
+            id: id.clone(),
+            node_type: "theme".to_string(),
+            position: Position { x: 0.0, y: 0.0 },
+            data: LitNodeData {
+                title: t.name.clone(),
+                body: t.description.clone(),
+                node_type: "theme".to_string(),
+                tags: vec![],
+                meta: Some(serde_json::json!({
+                    "mentions": t.count,
+                    "importance": "medium",
+                })),
+                full_text: None,
+                versions: None,
+            },
+        });
+    }
+
+    // --- Связи: поток глав ---
+    let mut ordered: Vec<String> = Vec::new();
+    if let Some(pid) = &prologue_id {
+        ordered.push(pid.clone());
+    }
+    for ch in &chapters {
+        if let Some(id) = chapter_ids.get(&ch.num) {
+            ordered.push(id.clone());
+        }
+    }
+    for i in 0..ordered.len().saturating_sub(1) {
+        edges.push(LitEdge {
+            id: uid("e"),
+            source: ordered[i].clone(),
+            target: ordered[i + 1].clone(),
+            source_handle: None,
+            target_handle: None,
+            edge_type: Some("smoothstep".to_string()),
+            animated: Some(true),
+            data: Some(crate::models::EdgeData { kind: Some("flow".to_string()), note: None }),
+        });
+    }
+
+    // --- Связи: персонажи → главы ---
+    for c in &characters {
+        if let Some(cid) = char_ids.get(&c.name) {
+            for ch in &chapters {
+                let count = characters::count_in_text(&c.aliases, &ch.full_text);
+                if count >= 3 {
+                    if let Some(ch_id) = chapter_ids.get(&ch.num) {
+                        edges.push(LitEdge {
+                            id: uid("e"),
+                            source: cid.clone(),
+                            target: ch_id.clone(),
+                            source_handle: None,
+                            target_handle: None,
+                            edge_type: Some("smoothstep".to_string()),
+                            animated: Some(false),
+                            data: Some(crate::models::EdgeData { kind: Some("character".to_string()), note: None }),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Связи: локации → главы ---
+    for l in &locations {
+        if let Some(lid) = loc_ids.get(&l.name) {
+            for ch in &chapters {
+                let count = locations::count_in_text(&l.aliases, &ch.full_text);
+                if count >= 2 {
+                    if let Some(ch_id) = chapter_ids.get(&ch.num) {
+                        edges.push(LitEdge {
+                            id: uid("e"),
+                            source: lid.clone(),
+                            target: ch_id.clone(),
+                            source_handle: None,
+                            target_handle: None,
+                            edge_type: Some("smoothstep".to_string()),
+                            animated: Some(false),
+                            data: Some(crate::models::EdgeData { kind: Some("location".to_string()), note: None }),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Связи: темы → главы ---
+    for t in &themes {
+        if let Some(tid) = theme_ids.get(&t.name) {
+            for ch in &chapters {
+                let count = themes::count_in_text(&t.name, &ch.full_text);
+                if count >= 2 {
+                    if let Some(ch_id) = chapter_ids.get(&ch.num) {
+                        edges.push(LitEdge {
+                            id: uid("e"),
+                            source: tid.clone(),
+                            target: ch_id.clone(),
+                            source_handle: None,
+                            target_handle: None,
+                            edge_type: Some("smoothstep".to_string()),
+                            animated: Some(false),
+                            data: Some(crate::models::EdgeData { kind: Some("theme".to_string()), note: None }),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Раскладка ---
+    layout_nodes(&mut nodes, &chapters, &prologue_id, &characters, &locations, &themes, &chapter_ids, &char_ids, &loc_ids, &theme_ids);
 
     let word_count = markdown.split_whitespace().count();
-    let graph = GraphData {
-        nodes: vec![],
-        edges: vec![],
-    };
+    let now = Utc::now().timestamp_millis() as u64;
 
     Ok(ParseResult {
         title: project_title.to_string(),
         author: author.to_string(),
         description: format!(
-            "Автоматически разобранный текст: 0 глав, 0 персонажей, 0 локаций, 0 тем, 0 связей. Всего {} слов.",
+            "Автоматически разобранный текст: {} глав, {} персонажей, {} локаций, {} тем/мотивов, {} связей. Всего {} слов.",
+            chapters.len(),
+            characters.len(),
+            locations.len(),
+            themes.len(),
+            edges.len(),
             word_count
         ),
-        nodes: graph.nodes,
-        edges: graph.edges,
-        created_at: 0,
-        updated_at: 0,
+        nodes,
+        edges,
+        created_at: now,
+        updated_at: now,
         stats: ParseStats {
-            chapters: 0,
-            characters: 0,
-            locations: 0,
-            themes: 0,
-            edges: 0,
+            chapters: chapters.len(),
+            characters: characters.len(),
+            locations: locations.len(),
+            themes: themes.len(),
+            edges: edges.len(),
             words: word_count,
         },
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn layout_nodes(
+    nodes: &mut Vec<LitNode>,
+    chapters: &[chapters::ParsedChapter],
+    prologue_id: &Option<String>,
+    characters: &[characters::ParsedCharacter],
+    locations: &[locations::ParsedLocation],
+    themes: &[themes::ParsedTheme],
+    chapter_ids: &std::collections::HashMap<u32, String>,
+    char_ids: &std::collections::HashMap<String, String>,
+    loc_ids: &std::collections::HashMap<String, String>,
+    theme_ids: &std::collections::HashMap<String, String>,
+) {
+    // Главы — центральная колонка
+    let chapter_x = 600.0;
+    let chapter_y_start = 60.0;
+    let chapter_y_step = 130.0;
+    for (i, ch) in chapters.iter().enumerate() {
+        if let Some(id) = chapter_ids.get(&ch.num) {
+            if let Some(n) = nodes.iter_mut().find(|n| n.id == *id) {
+                n.position = Position {
+                    x: chapter_x,
+                    y: chapter_y_start + (i as f64) * chapter_y_step,
+                };
+            }
+        }
+    }
+    if let Some(pid) = prologue_id {
+        if let Some(n) = nodes.iter_mut().find(|n| n.id == *pid) {
+            n.position = Position {
+                x: chapter_x,
+                y: chapter_y_start - chapter_y_step,
+            };
+        }
+    }
+
+    // Темы — слева
+    let theme_x = 200.0;
+    let theme_y_start = 60.0;
+    let theme_y_step = 110.0;
+    for (i, t) in themes.iter().enumerate() {
+        if let Some(id) = theme_ids.get(&t.name) {
+            if let Some(n) = nodes.iter_mut().find(|n| n.id == *id) {
+                n.position = Position {
+                    x: theme_x,
+                    y: theme_y_start + (i as f64) * theme_y_step,
+                };
+            }
+        }
+    }
+
+    // Персонажи — справа
+    let char_x = 1100.0;
+    let char_y_start = 60.0;
+    let char_y_step = 110.0;
+    for (i, c) in characters.iter().enumerate() {
+        if let Some(id) = char_ids.get(&c.name) {
+            if let Some(n) = nodes.iter_mut().find(|n| n.id == *id) {
+                n.position = Position {
+                    x: char_x,
+                    y: char_y_start + (i as f64) * char_y_step,
+                };
+            }
+        }
+    }
+
+    // Локации — ещё правее
+    let loc_x = 1500.0;
+    let loc_y_start = 60.0;
+    let loc_y_step = 110.0;
+    for (i, l) in locations.iter().enumerate() {
+        if let Some(id) = loc_ids.get(&l.name) {
+            if let Some(n) = nodes.iter_mut().find(|n| n.id == *id) {
+                n.position = Position {
+                    x: loc_x,
+                    y: loc_y_start + (i as f64) * loc_y_step,
+                };
+            }
+        }
+    }
+}
+
+// Утилита для генерации ID (используется в storage тоже)
+pub fn new_uid(prefix: &str) -> String {
+    uid(prefix)
 }

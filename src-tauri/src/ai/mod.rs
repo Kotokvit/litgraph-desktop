@@ -3,6 +3,7 @@
 
 pub mod ollama;
 pub mod openai_compat;
+pub mod prompts;
 pub mod types;
 
 use serde::{Deserialize, Serialize};

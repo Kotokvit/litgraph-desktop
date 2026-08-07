@@ -10,7 +10,6 @@ mod storage;
 mod ai;
 
 use tauri::Manager;
-use tauri_plugin_store::StoreExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -18,24 +17,15 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .setup(|app| {
+        .setup(|_app| {
             // Создаём директорию для проектов, если её нет
-            if let Some(proj_dirs) = dirs::project_dir() {
-                let litgraph_dir = proj_dirs.join("litgraph");
-                let projects_dir = litgraph_dir.join("projects");
-                let backups_dir = litgraph_dir.join("backups");
-                std::fs::create_dir_all(&projects_dir).ok();
-                std::fs::create_dir_all(&backups_dir).ok();
-            } else if let Some(home) = dirs::home_dir() {
+            if let Some(home) = dirs::home_dir() {
                 let litgraph_dir = home.join(".local/share/litgraph");
                 let projects_dir = litgraph_dir.join("projects");
                 let backups_dir = litgraph_dir.join("backups");
                 std::fs::create_dir_all(&projects_dir).ok();
                 std::fs::create_dir_all(&backups_dir).ok();
             }
-
-            // Открываем store для настроек
-            let _store = app.store("config.json")?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
