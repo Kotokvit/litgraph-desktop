@@ -5,3 +5,4 @@ pub mod project;
 pub mod versions;
 pub mod export;
 pub mod ai;
+pub mod ner;

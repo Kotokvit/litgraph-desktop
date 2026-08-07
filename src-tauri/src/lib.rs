@@ -49,6 +49,8 @@ pub fn run() {
             commands::ai::ai_analyze_plot,
             commands::ai::ai_test_connection,
             commands::ai::ai_list_ollama_models,
+            // ner — NER-извлечение через spaCy
+            commands::ner::extract_entities,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,0 +1,12 @@
+# Python зависимости для NER-модуля LitGraph
+#
+# Установка:
+#   pip install -r src-tauri/python/requirements.txt
+#   python -m spacy download ru_core_news_sm
+
+spacy>=3.8.0,<4.0.0
+pymorphy3>=2.0.0
+
+# Модель ru_core_news_sm ставится отдельно:
+#   python -m spacy download ru_core_news_sm
+# (это скачает ~10 MB модель для русского языка)

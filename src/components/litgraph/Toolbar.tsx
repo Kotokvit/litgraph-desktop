@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { AssistantDialog } from "./AssistantDialog";
 import { PolerDialog } from "./PolerDialog";
+import { NerDialog } from "./NerDialog";
 import {
   Dialog,
   DialogContent,
@@ -66,6 +67,7 @@ export function Toolbar() {
   const [aiMode, setAIMode] = useState<"continue-chapter" | "analyze-plot" | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [polerOpen, setPolerOpen] = useState(false);
+  const [nerOpen, setNerOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mdFileInputRef = useRef<HTMLInputElement>(null);
@@ -317,6 +319,19 @@ export function Toolbar() {
         >
           <Lucide.Network className="w-4 h-4" />
           <span className="text-xs ml-1 hidden md:inline">POLER</span>
+        </Button>
+
+        {/* NER — извлечение персонажей и локаций (spaCy + pymorphy3) */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 px-2"
+          onClick={() => setNerOpen(true)}
+          title="NER: извлечение персонажей и локаций (spaCy)"
+          style={{ borderColor: "#D9770640", color: "#D97706" }}
+        >
+          <Lucide.Users className="w-4 h-4" />
+          <span className="text-xs ml-1 hidden md:inline">NER</span>
         </Button>
 
         {/* Тип связи по умолчанию */}
@@ -575,6 +590,12 @@ export function Toolbar() {
         open={polerOpen}
         text={collectedText}
         onClose={() => setPolerOpen(false)}
+      />
+
+      <NerDialog
+        open={nerOpen}
+        text={collectedText}
+        onClose={() => setNerOpen(false)}
       />
     </>
   );
