@@ -18,7 +18,7 @@ import os
 import json
 
 print("=" * 60)
-print("NER Test — LitGraph")
+print("NER Test — LitGraph v0.2.0")
 print("=" * 60)
 print(f"Python: {sys.executable}")
 print(f"Version: {sys.version.split()[0]}")

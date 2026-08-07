@@ -146,3 +146,63 @@ pub async fn extract_entities(text: String) -> Result<NerResult, String> {
 
     Ok(result)
 }
+
+/// Tauri команда: анализ графа персонажей (NER + POLER).
+/// Запускает poler_entities.py который:
+/// 1. Извлекает персонажей через spaCy NER
+/// 2. Строит граф co-occurrence
+/// 3. Запускает POLER-динамику
+/// 4. Возвращает кластеры персонажей
+#[tauri::command]
+pub async fn analyze_characters(text: String) -> Result<serde_json::Value, String> {
+    if text.trim().is_empty() {
+        return Err("Пустой текст".to_string());
+    }
+
+    let script = include_str!("../../python/poler_entities.py");
+
+    // Ищем Python (тот же что и для NER)
+    let home = dirs::home_dir();
+    let candidates: Vec<String> = [
+        home.as_ref().map(|h| h.join(".litgraph-venv/bin/python").to_string_lossy().to_string()),
+        std::env::var("LITGRAPH_PYTHON").ok(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+
+    let mut python_cmd: Option<String> = None;
+    for candidate in &candidates {
+        if std::path::Path::new(candidate).exists() {
+            python_cmd = Some(candidate.clone());
+            break;
+        }
+    }
+    let python_cmd = python_cmd.unwrap_or_else(|| "python3".to_string());
+
+    let mut child = Command::new(&python_cmd)
+        .arg("-c")
+        .arg(script)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Не удалось запустить Python ({}): {}", python_cmd, e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(text.as_bytes()).map_err(|e| format!("Ошибка stdin: {}", e))?;
+    }
+
+    let output = child.wait_with_output().map_err(|e| format!("Ошибка ожидания: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Python скрипт завершился с ошибкой: {}", stderr));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let result: serde_json::Value = serde_json::from_str(&stdout)
+        .map_err(|e| format!("Не удалось распарсить JSON: {}", e))?;
+
+    Ok(result)
+}

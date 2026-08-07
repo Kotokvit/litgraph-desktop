@@ -1,11 +1,17 @@
-# Python зависимости для NER-модуля LitGraph
+# Python зависимости для NER + POLER модулей LitGraph
 #
 # Установка:
 #   pip install -r src-tauri/python/requirements.txt
 #   python -m spacy download ru_core_news_sm
 
+# NER (ner_extract.py)
 spacy>=3.8.0,<4.0.0
 pymorphy3>=2.0.0
+
+# POLER (poler_entities.py) — линейная алгебра и кластеризация
+numpy>=1.24.0
+scipy>=1.10.0
+scikit-learn>=1.3.0
 
 # Модель ru_core_news_sm ставится отдельно:
 #   python -m spacy download ru_core_news_sm
