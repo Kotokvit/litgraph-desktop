@@ -1,0 +1,203 @@
+{
+  "triplets": [
+    {
+      "subject": "Корнеев",
+      "subjectLemma": "Корней",
+      "subjectGender": "Masc",
+      "verb": "позвонил",
+      "verbLemma": "позвонить",
+      "object": "ему",
+      "objectLemma": "Алёша",
+      "objectGender": "Unknown",
+      "sentence": "Но однажды, в марте, ему позвонил Корнеев.",
+      "position": 2387,
+      "tense": "past",
+      "polarity": "neutral",
+      "negated": false,
+      "pronounResolved": true,
+      "pronounResolvedTo": "Алёша"
+    },
+    {
+      "subject": "Алексей Николаевич",
+      "subjectLemma": "Алексей",
+      "subjectGender": "Masc",
+      "verb": "Соедините",
+      "verbLemma": "соединить",
+      "object": "Корнеевым",
+      "objectLemma": "Корнеев",
+      "objectGender": "Masc",
+      "sentence": "— Соедините меня с Корнеевым.\n\n— Алёша? — узнала она.",
+      "position": 2908,
+      "tense": "unknown",
+      "polarity": "neutral",
+      "negated": false,
+      "pronounResolved": false,
+      "pronounResolvedTo": null
+    }
+  ],
+  "stats": {
+    "total": 2,
+    "uniqueVerbs": 2,
+    "uniqueSubjects": 2,
+    "uniqueObjects": 2,
+    "byPolarity": {
+      "positive": 0,
+      "negative": 0,
+      "neutral": 2
+    },
+    "knownPersons": 6,
+    "pronounResolved": 1,
+    "negated": 0
+  },
+  "nerResult": {
+    "entities": [
+      {
+        "lemma": "Алексей",
+        "label": "PER",
+        "count": 8,
+        "forms": [
+          "Алексеем Николаевичем",
+          "Алексей",
+          "Алексей Николаевич"
+        ],
+        "firstMention": 561,
+        "mentions": [
+          {
+            "text": "Алексей",
+            "start": 561,
+            "end": 568,
+            "sentence": "Алексей тогда работал в аналитическом отделе ФСБ и занимался расчётом рисков по финансовым потокам."
+          },
+          {
+            "text": "Алексей",
+            "start": 876,
+            "end": 883,
+            "sentence": "Алексей поднял голову от монитора."
+          },
+          {
+            "text": "Алексей",
+            "start": 2583,
+            "end": 2590,
+            "sentence": "Из тех, что не закрываются.\n\n— Какая? — спросил Алексей."
+          },
+          {
+            "text": "Алексей Николаевич",
+            "start": 1114,
+            "end": 1132,
+            "sentence": "Алексей Николаевич кивнул."
+          },
+          {
+            "text": "Алексей Николаевич",
+            "start": 2056,
+            "end": 2074,
+            "sentence": "Так Алексей Николаевич стал Нулевым Фактором."
+          },
+          {
+            "text": "Алексей Николаевич",
+            "start": 2908,
+            "end": 2926,
+            "sentence": "Алексей Николаевич подумал, что у каждого человека есть нулевой фактор — точка, в которой он не существует."
+          },
+          {
+            "text": "Алексеем Николаевичем",
+            "start": 147,
+            "end": 168,
+            "sentence": "Мать звала его Алёшенькой, отец — просто сын, а бабушка — Алексеем Николаевичем, потому что считала, что у каждого мужчины должно быть полное имя."
+          },
+          {
+            "text": "Алексеем Николаевичем",
+            "start": 376,
+            "end": 397,
+            "sentence": "К тридцати — Алексеем Николаевичем."
+          }
+        ]
+      },
+      {
+        "lemma": "Лёша",
+        "label": "PER",
+        "count": 4,
+        "forms": [
+          "Лёша"
+        ],
+        "firstMention": 29,
+        "mentions": [
+          {
+            "text": "Лёша",
+            "start": 29,
+            "end": 33,
+            "sentence": "Человек без лица\n\nЛёша родился в маленьком городке, где все знали друг друга."
+          },
+          {
+            "text": "Лёша",
+            "start": 1001,
+            "end": 1005,
+            "sentence": "Корнеев стоял, скрестив руки на груди, и смотрел на него с тем особым выражением, которое Лёша уже научился читать."
+          },
+          {
+            "text": "Лёша",
+            "start": 1828,
+            "end": 1832,
+            "sentence": "Лёша принёс Корнееву распечатку."
+          },
+          {
+            "text": "Лёша",
+            "start": 2631,
+            "end": 2635,
+            "sentence": "Лёша помнил."
+          }
+        ]
+      },
+      {
+        "lemma": "Нулевой Фактор",
+        "label": "PER",
+        "count": 4,
+        "forms": [
+          "Нулевой Фактор",
+          "Нулевым Фактором"
+        ],
+        "firstMention": 1999,
+        "mentions": [
+          {
+            "text": "Нулевой Фактор",
+            "start": 1999,
+            "end": 2013,
+            "sentence": "С этого дня ты и есть Нулевой Фактор."
+          },
+          {
+            "text": "Нулевой Фактор",
+            "start": 2707,
+            "end": 2721,
+            "sentence": "То, с чего начался Нулевой Фактор.\n\n— Помню, — сказал он.\n\n— Так вот."
+          },
+          {
+            "text": "Нулевым Фактором",
+            "start": 419,
+            "end": 435,
+            "sentence": "А к тридцати пяти — Нулевым Фактором."
+          },
+          {
+            "text": "Нулевым Фактором",
+            "start": 2080,
+            "end": 2096,
+            "sentence": "Так Алексей Николаевич стал Нулевым Фактором."
+          }
+        ]
+      }
+    ],
+    "stats": {
+      "total": 3,
+      "persons": 3,
+      "locations": 0,
+      "organizations": 0
+    },
+    "model": "ru_core_news_sm",
+    "version": "0.2.1",
+    "truncated": false,
+    "textLength": 3355,
+    "processedLength": 3355,
+    "commentsStripped": 0,
+    "chunksProcessed": 1
+  },
+  "model": "ru_core_news_sm",
+  "version": "0.2.0"
+}
