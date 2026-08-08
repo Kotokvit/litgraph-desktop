@@ -1,7 +1,7 @@
 "use client";
 
 import * as Lucide from "lucide-react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,6 +11,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { getConflictGraph } from "@/lib/conflict/api";
+import {
+  exportConflictToPng,
+  exportConflictToPdf,
+} from "@/lib/conflict/export";
 import {
   type ConflictGraph,
   type ConflictNode,
@@ -32,6 +36,35 @@ export function ConflictGraphDialog({ open, text, onClose }: ConflictGraphDialog
   const [result, setResult] = useState<ConflictGraph | null>(null);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [hoveredEdge, setHoveredEdge] = useState<number | null>(null);
+  const [exporting, setExporting] = useState<null | "png" | "pdf">(null);
+  const [exportMsg, setExportMsg] = useState<string | null>(null);
+  const exportRootRef = useRef<HTMLDivElement>(null);
+
+  async function handleExport(kind: "png" | "pdf") {
+    if (!exportRootRef.current) return;
+    setExporting(kind);
+    setExportMsg(null);
+    try {
+      const stamp = new Date().toISOString().slice(0, 10);
+      const fname =
+        kind === "png"
+          ? `conflict-graph-${stamp}.png`
+          : `conflict-graph-${stamp}.pdf`;
+      const saved =
+        kind === "png"
+          ? await exportConflictToPng(exportRootRef.current, fname)
+          : await exportConflictToPdf(exportRootRef.current, fname);
+      setExportMsg(
+        saved
+          ? `Сохранено: ${saved}`
+          : "Отменено",
+      );
+    } catch (err) {
+      setExportMsg(`Ошибка экспорта: ${String(err)}`);
+    } finally {
+      setExporting(null);
+    }
+  }
 
   async function handleAnalyze() {
     if (!text.trim()) {
@@ -149,7 +182,7 @@ export function ConflictGraphDialog({ open, text, onClose }: ConflictGraphDialog
           )}
 
           {result && (
-            <div className="space-y-3">
+            <div ref={exportRootRef} className="space-y-3 bg-white p-1">
               {/* Метрики */}
               <div className="grid grid-cols-4 gap-2">
                 <MetricBox
@@ -494,16 +527,44 @@ export function ConflictGraphDialog({ open, text, onClose }: ConflictGraphDialog
           )}
         </div>
 
-        <DialogFooter className="border-t pt-3">
+        <DialogFooter className="border-t pt-3 flex-wrap gap-2">
           {result && (
-            <Button
-              variant="outline"
-              onClick={() => setResult(null)}
-              className="mr-auto"
-            >
-              <Lucide.RefreshCw className="w-4 h-4 mr-1.5" />
-              Заново
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setResult(null)}
+                className="mr-auto"
+              >
+                <Lucide.RefreshCw className="w-4 h-4 mr-1.5" />
+                Заново
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => handleExport("png")}
+                disabled={exporting !== null}
+                title="Сохранить отчёт как PNG-картинку"
+              >
+                {exporting === "png" ? (
+                  <Lucide.Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                ) : (
+                  <Lucide.Image className="w-4 h-4 mr-1.5" />
+                )}
+                PNG
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => handleExport("pdf")}
+                disabled={exporting !== null}
+                title="Сохранить отчёт как PDF-документ"
+              >
+                {exporting === "pdf" ? (
+                  <Lucide.Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                ) : (
+                  <Lucide.FileText className="w-4 h-4 mr-1.5" />
+                )}
+                PDF
+              </Button>
+            </>
           )}
           <Button variant="outline" onClick={onClose}>
             Закрыть
@@ -524,6 +585,11 @@ export function ConflictGraphDialog({ open, text, onClose }: ConflictGraphDialog
             </Button>
           )}
         </DialogFooter>
+        {exportMsg && (
+          <div className="px-4 pb-3 text-xs text-stone-600 truncate" title={exportMsg}>
+            {exportMsg}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
