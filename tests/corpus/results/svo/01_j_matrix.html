@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>LitGraph: J-матрица конфликта</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #F8FAFC;
+    font-family: system-ui, 'Noto Sans SC', 'Segoe UI', sans-serif;
+    color: #0F172A;
+    min-height: 100vh;
+  }
+  #chart { width: 980px; height: 700px; margin: 40px auto; }
+  .legend-bar {
+    max-width: 980px; margin: 0 auto 16px; padding: 16px 24px;
+    background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px;
+  }
+  .header-block { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #E2E8F0; }
+  .title { font-size: 19px; font-weight: bold; color: #0F172A; }
+  .subtitle { font-size: 12px; color: #475569; margin-top: 4px; }
+  .legend-items { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; font-size: 12px; color: #475569; }
+  .legend-item { display: flex; align-items: center; gap: 8px; }
+  .swatch { width: 14px; height: 14px; border-radius: 3px; border: 2px solid; }
+  .edge-line { width: 28px; height: 0; border-top: 3px solid; }
+  .edge-line.dashed { border-top-style: dashed; }
+</style>
+</head>
+<body>
+  <div class="legend-bar">
+    <div class="header-block">
+      <div class="title">LitGraph: рентген сцены конфликта</div>
+      <div class="subtitle">01_conflict_scene.md  •  4 персонажа  •  5 направленных действий  •  J-матрица v0.2.0</div>
+    </div>
+    <div class="legend-items">
+      <div class="legend-item">
+        <span class="swatch" style="background:#FEE2E2;border-color:#DC2626"></span>
+        Агрессор (net J &gt; 0)
+      </div>
+      <div class="legend-item">
+        <span class="swatch" style="background:#DBEAFE;border-color:#1D4ED8"></span>
+        Жертва (net J &lt; 0)
+      </div>
+      <div class="legend-item">
+        <span class="edge-line" style="border-color:#DC2626"></span>
+        Агрессия (neg polarity)
+      </div>
+      <div class="legend-item">
+        <span class="edge-line" style="border-color:#64748B"></span>
+        Нейтральное действие
+      </div>
+      <div class="legend-item">
+        <span class="edge-line dashed" style="border-color:#475569"></span>
+        Negated (не сделал)
+      </div>
+      <div class="legend-item">
+        Толщина линии ~ вес действия
+      </div>
+    </div>
+  </div>
+  <div id="chart"></div>
+  <script>
+    const chart = echarts.init(document.getElementById('chart'));
+    const option = {
+  "backgroundColor": "#F8FAFC",
+  "textStyle": {
+    "fontFamily": "system-ui, 'Noto Sans SC', 'Segoe UI', sans-serif",
+    "color": "#0F172A"
+  },
+  "tooltip": {
+    "trigger": "item",
+    "backgroundColor": "#1E293B",
+    "borderColor": "#475569",
+    "borderWidth": 1,
+    "textStyle": {
+      "color": "#F1F5F9",
+      "fontSize": 12
+    },
+    "extraCssText": "max-width: 480px; white-space: normal;"
+  },
+  "legend": {
+    "show": false,
+    "data": [
+      "Агрессор",
+      "Жертва",
+      "Нейтрал"
+    ],
+    "top": 20,
+    "right": 32,
+    "textStyle": {
+      "color": "#475569",
+      "fontSize": 11
+    },
+    "itemWidth": 14,
+    "itemHeight": 14
+  },
+  "series": [
+    {
+      "type": "graph",
+      "layout": "none",
+      "data": [
+        {
+          "name": "Алексей",
+          "x": 315.0,
+          "y": 260,
+          "symbolSize": 67.6,
+          "category": 0,
+          "itemStyle": {
+            "color": "#FEE2E2",
+            "borderColor": "#DC2626",
+            "borderWidth": 2.5
+          },
+          "label": {
+            "show": true,
+            "position": "inside",
+            "formatter": "{b}",
+            "fontSize": 13,
+            "fontWeight": "bold",
+            "color": "#0F172A"
+          },
+          "tooltip": {
+            "formatter": "<b>Алексей</b><br/>netAggression: <b>+3.70</b><br/>Роль: Агрессор"
+          }
+        },
+        {
+          "name": "Марина Игоревна",
+          "x": 315.0,
+          "y": 540,
+          "symbolSize": 54.0,
+          "category": 1,
+          "itemStyle": {
+            "color": "#DBEAFE",
+            "borderColor": "#1D4ED8",
+            "borderWidth": 2.5
+          },
+          "label": {
+            "show": true,
+            "position": "inside",
+            "formatter": "{b}",
+            "fontSize": 13,
+            "fontWeight": "bold",
+            "color": "#0F172A"
+          },
+          "tooltip": {
+            "formatter": "<b>Марина Игоревна</b><br/>netAggression: <b>-2.00</b><br/>Роль: Жертва"
+          }
+        },
+        {
+          "name": "Сорокин",
+          "x": 665.0,
+          "y": 260,
+          "symbolSize": 40.4,
+          "category": 0,
+          "itemStyle": {
+            "color": "#FEE2E2",
+            "borderColor": "#DC2626",
+            "borderWidth": 2.5
+          },
+          "label": {
+            "show": true,
+            "position": "inside",
+            "formatter": "{b}",
+            "fontSize": 13,
+            "fontWeight": "bold",
+            "color": "#0F172A"
+          },
+          "tooltip": {
+            "formatter": "<b>Сорокин</b><br/>netAggression: <b>+0.30</b><br/>Роль: Агрессор"
+          }
+        },
+        {
+          "name": "Фёдор",
+          "x": 665.0,
+          "y": 540,
+          "symbolSize": 54.0,
+          "category": 1,
+          "itemStyle": {
+            "color": "#DBEAFE",
+            "borderColor": "#1D4ED8",
+            "borderWidth": 2.5
+          },
+          "label": {
+            "show": true,
+            "position": "inside",
+            "formatter": "{b}",
+            "fontSize": 13,
+            "fontWeight": "bold",
+            "color": "#0F172A"
+          },
+          "tooltip": {
+            "formatter": "<b>Фёдор</b><br/>netAggression: <b>-2.00</b><br/>Роль: Жертва"
+          }
+        }
+      ],
+      "links": [
+        {
+          "source": "Алексей",
+          "target": "Сорокин",
+          "value": 1.0,
+          "lineStyle": {
+            "color": "#64748B",
+            "width": 2.8,
+            "curveness": 0.25,
+            "type": "solid"
+          },
+          "label": {
+            "show": true,
+            "position": "middle",
+            "formatter": "посмотреть",
+            "fontSize": 13,
+            "fontWeight": "bold",
+            "color": "#0F172A",
+            "backgroundColor": "rgba(255,255,255,0.95)",
+            "borderColor": "#64748B",
+            "borderWidth": 1,
+            "padding": [
+              4,
+              8
+            ],
+            "borderRadius": 4
+          },
+          "tooltip": {
+            "formatter": "<b>Алексей → Сорокин</b><br/>Вес: <b>+1.00</b>  •  Полярность: neutral<br/>Глагол(ы): <i>посмотреть</i><br/><hr style='border-color:#475569;margin:6px 0'/><b>Контекст:</b><br/><div style='margin-top:4px;color:#CBD5E1'>«Алексей посмотрел на Сорокина с холодным вызовом.…»</div>"
+          }
+        },
+        {
+          "source": "Сорокин",
+          "target": "Фёдор",
+          "value": 1.0,
+          "lineStyle": {
+            "color": "#64748B",
+            "width": 2.8,
+            "curveness": 0.25,
+            "type": "solid"
+          },
+          "label": {
+            "show": true,
+            "position": "middle",
+            "formatter": "остановить",
+            "fontSize": 13,
+            "fontWeight": "bold",
+            "color": "#0F172A",
+            "backgroundColor": "rgba(255,255,255,0.95)",
+            "borderColor": "#64748B",
+            "borderWidth": 1,
+            "padding": [
+              4,
+              8
+            ],
+            "borderRadius": 4
+          },
+          "tooltip": {
+            "formatter": "<b>Сорокин → Фёдор</b><br/>Вес: <b>+1.00</b>  •  Полярность: neutral<br/>Глагол(ы): <i>остановить</i><br/><hr style='border-color:#475569;margin:6px 0'/><b>Контекст:</b><br/><div style='margin-top:4px;color:#CBD5E1'>«Фёдор, стоявший у двери, сделал шаг вперёд, но Сорокин остановил его едва заметным движением ладони.\n\n— Осторожнее с формулировками, Алексей, — сказал…» <i>[pron→]</i></div>"
+          }
+        },
+        {
+          "source": "Алексей",
+          "target": "Марина Игоревна",
+          "value": 2.0,
+          "lineStyle": {
+            "color": "#64748B",
+            "width": 3.8,
+            "curveness": 0.25,
+            "type": "solid"
+          },
+          "label": {
+            "show": true,
+            "position": "middle",
+            "formatter": "посмотреть, узнать",
+            "fontSize": 13,
+            "fontWeight": "bold",
+            "color": "#0F172A",
+            "backgroundColor": "rgba(255,255,255,0.95)",
+            "borderColor": "#64748B",
+            "borderWidth": 1,
+            "padding": [
+              4,
+              8
+            ],
+            "borderRadius": 4
+          },
+          "tooltip": {
+            "formatter": "<b>Алексей → Марина Игоревна</b><br/>Вес: <b>+2.00</b>  •  Полярность: neutral<br/>Глагол(ы): <i>посмотреть, узнать</i><br/><hr style='border-color:#475569;margin:6px 0'/><b>Контекст:</b><br/><div style='margin-top:4px;color:#CBD5E1'>«Он посмотрел на Марину Игоревну — та по-прежнему не поднимала глаз, но её пальцы под столом сжимались в кулаки.\n\n— Если со мной что-то случится, — ска…»</div><br/><div style='margin-top:4px;color:#CBD5E1'>«Марина Игоревна ждала у лифта — она стояла спиной, но Алексей узнал её по серому пальто.…» <i>[pron→]</i></div>"
+          }
+        },
+        {
+          "source": "Сорокин",
+          "target": "Алексей",
+          "value": 0.3,
+          "lineStyle": {
+            "color": "#475569",
+            "width": 2.5,
+            "curveness": 0.25,
+            "type": "dashed"
+          },
+          "label": {
+            "show": true,
+            "position": "middle",
+            "formatter": "остановить",
+            "fontSize": 13,
+            "fontWeight": "bold",
+            "color": "#0F172A",
+            "backgroundColor": "rgba(255,255,255,0.95)",
+            "borderColor": "#475569",
+            "borderWidth": 1,
+            "padding": [
+              4,
+              8
+            ],
+            "borderRadius": 4
+          },
+          "tooltip": {
+            "formatter": "<b>Сорокин → Алексей</b><br/>Вес: <b>+0.30</b>  •  Полярность: neutral  •  <b>negated</b><br/>Глагол(ы): <i>остановить</i><br/><hr style='border-color:#475569;margin:6px 0'/><b>Контекст:</b><br/><div style='margin-top:4px;color:#CBD5E1'>«Сорокин не остановил его.…» <i>[negated]</i> <i>[pron→]</i></div>"
+          }
+        },
+        {
+          "source": "Алексей",
+          "target": "Фёдор",
+          "value": 1.0,
+          "lineStyle": {
+            "color": "#64748B",
+            "width": 2.8,
+            "curveness": 0.25,
+            "type": "solid"
+          },
+          "label": {
+            "show": true,
+            "position": "middle",
+            "formatter": "увидеть",
+            "fontSize": 13,
+            "fontWeight": "bold",
+            "color": "#0F172A",
+            "backgroundColor": "rgba(255,255,255,0.95)",
+            "borderColor": "#64748B",
+            "borderWidth": 1,
+            "padding": [
+              4,
+              8
+            ],
+            "borderRadius": 4
+          },
+          "tooltip": {
+            "formatter": "<b>Алексей → Фёдор</b><br/>Вес: <b>+1.00</b>  •  Полярность: neutral<br/>Глагол(ы): <i>увидеть</i><br/><hr style='border-color:#475569;margin:6px 0'/><b>Контекст:</b><br/><div style='margin-top:4px;color:#CBD5E1'>«Алексей подошёл к двери, открыл её и увидел в коридоре Фёдора.…»</div>"
+          }
+        }
+      ],
+      "categories": [
+        {
+          "name": "Агрессор",
+          "itemStyle": {
+            "color": "#FEE2E2",
+            "borderColor": "#DC2626"
+          }
+        },
+        {
+          "name": "Жертва",
+          "itemStyle": {
+            "color": "#DBEAFE",
+            "borderColor": "#1D4ED8"
+          }
+        },
+        {
+          "name": "Нейтрал",
+          "itemStyle": {
+            "color": "#F1F5F9",
+            "borderColor": "#64748B"
+          }
+        }
+      ],
+      "roam": true,
+      "draggable": false,
+      "edgeSymbol": [
+        "none",
+        "arrow"
+      ],
+      "edgeSymbolSize": [
+        0,
+        18
+      ],
+      "edgeLabel": {
+        "show": true
+      },
+      "emphasis": {
+        "focus": "adjacency",
+        "lineStyle": {
+          "width": 4
+        },
+        "label": {
+          "fontSize": 13,
+          "fontWeight": "bold"
+        }
+      },
+      "lineStyle": {
+        "curveness": 0.25
+      }
+    }
+  ],
+  "graphic": [
+    {
+      "type": "text",
+      "right": 32,
+      "bottom": 24,
+      "style": {
+        "text": "Главный агрессор: Алексей (+3.7)  •  Жертвы: Марина Игоревна (-2.0), Фёдор (-2.0)",
+        "fontSize": 11,
+        "fill": "#475569",
+        "textAlign": "right"
+      }
+    }
+  ]
+};
+    chart.setOption(option);
+    window.addEventListener('resize', () => chart.resize());
+  </script>
+</body>
+</html>
+
