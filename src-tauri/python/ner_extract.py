@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 """
-NER-извлечение для LitGraph v0.2.0.
+NER-извлечение для LitGraph v0.2.1.
 
-Улучшения v0.2.0:
-1. Chunked processing — обрабатывает текст любого размера по частям
-2. Фильтр ложных срабатываний: если "Вода" появляется как PROPN, но
+Улучшения v0.2.1:
+0. (NEW) Strip HTML-комментариев перед NER — избегает ложных срабатываний
+   из блоков <!-- EXPECTED: ... --> в тестовых файлах корпуса
+1. (NEW) Multi-token PER — поддержка полных ФИО ("Владимир Петрович Сорокин")
+   через объединение смежных PROPN токенов и subtitle pattern matching
+2. (NEW) Context-aware LOC whitelist — типичные локации сцены (кабинет, коридор,
+   лифт, кухня, спальня) извлекаются даже в середине предложения со строчной буквы
+3. Chunked processing — обрабатывает текст любого размера по частям
+4. Фильтр ложных срабатываний: если "Вода" появляется как PROPN, но
    "вода" встречается как нарицательное NOUN — это НЕ персонаж
-3. Минимальная частота ≥ 2 (одиночные упоминания — шум)
-4. Проверка контекста: имя должно встречаться в середине предложений,
-   а не только в начале (где все слова заглавные)
-5. pymorphy3 строгая проверка для PER: только Name/Surn теги
-6. Чёрный список распространённых ложных срабатываний
+5. Минимальная частота ≥ 2 (одиночные упоминания — шум)
+6. pymorphy3 строгая проверка для PER: только Name/Surn теги
+7. Чёрный список распространённых ложных срабатываний
 
 Использование:
+    python3 ner_extract.py path/to/file.md
     echo "Анна пошла в Москву" | python3 ner_extract.py
 """
 
@@ -102,6 +107,33 @@ FALSE_POSITIVE_NOUNS = {
     "спишь", "ходи", "дыши", "живи", "ждёт", "поёт",
 }
 
+# === Контекстные локации: типичные места сцены, которые пишутся со строчной ===
+# Эти слова извлекаются как LOC, даже если встречаются в середине предложения
+# со строчной буквы. Проверка: должны встречаться ≥2 раз в тексте (не случайность).
+# Решение: только если встречаются с предлогом (в/на/из/к/до/у/за/под) рядом.
+CONTEXTUAL_LOCATIONS = {
+    # Помещения
+    "кухня", "спальня", "коридор", "кабинет", "комната", "гостиная", "прихожая",
+    "ванная", "туалет", "кладовка", "подвал", "чердак", "лестница", "лестничная",
+    # Городские локации
+    "улица", "площадь", "переулок", "проспект", "бульвар", "набережная",
+    "мост", "перекрёсток", "двор", "переход", "остановка", "станция",
+    # Транспорт
+    "лифт", "вагон", "машина", "автобус", "поезд", "трамвай", "троллейбус",
+    # Здания
+    "дом", "здание", "подъезд", "крыльцо", "крыша", "балкон", "гараж",
+    # Заводские
+    "завод", "цех", "склад", "офис", "магазин", "магазин", "кафе", "ресторан",
+    # Учреждения
+    "школа", "больница", "поликлиника", "министерство", "отделение", "управление",
+    # Природа
+    "берег", "поляна", "опушка", "тропа", "дорога", "шоссе", "тракт",
+}
+
+# Предлоги места — если контекстная локация встречается рядом с одним из них,
+# это подтверждает что речь идёт о локации, а не о нарицательном существительном
+LOCATION_PREPOSITIONS = {"в", "на", "из", "к", "до", "у", "за", "под", "по", "от"}
+
 # Слова которые ТОЧНО являются именами (даже если pymorphy3 не знает)
 KNOWN_RUSSIAN_NAMES = {
     # Мужские имена
@@ -180,6 +212,18 @@ def is_strictly_person(text: str, lemma: str, lowercase_counts: Counter,
             return False
     
     # 3. Паттерн: заглавная + строчные, длина 3-15
+    # Для multi-token PER (ФИО) — каждый токен проверяем отдельно
+    if " " in text:
+        # Multi-token: проверяем каждый компонент как имя/отчество/фамилию
+        parts = text.split()
+        if len(parts) > 4:  # больше 4 слов — вряд ли ФИО
+            return False
+        for part in parts:
+            if not re.match(r"^[А-ЯЁ][а-яё]{2,20}$", part):
+                return False
+        # Хотя бы одна часть должна быть известным именем или пройти pymorphy3
+        # (полная проверка делается в extract_multitoken_persons)
+        return True
     if not re.match(r"^[А-ЯЁ][а-яё]{2,14}$", text):
         return False
     
@@ -206,7 +250,7 @@ def is_strictly_person(text: str, lemma: str, lowercase_counts: Counter,
 
 
 def is_strictly_location(text: str, lemma: str, lowercase_counts: Counter) -> bool:
-    """Строгая проверка локации."""
+    """Строгая проверка локации (для существительных с заглавной буквы)."""
     lower = text.lower()
     
     # Чёрный список
@@ -222,6 +266,173 @@ def is_strictly_location(text: str, lemma: str, lowercase_counts: Counter) -> bo
         return False
     
     return True
+
+
+def find_contextual_locations(text: str, lowercase_counts: Counter) -> list:
+    """Поиск контекстных локаций (строчная форма + рядом предлог места).
+    
+    Возвращает список словарей: {text, lemma, start, end, sentence}.
+    Это альтернативный путь для слов типа "коридор", "кабинет", "лифт",
+    которые spaCy не помечает как ents, потому что они нарицательные.
+    Но в контексте сцены — это реальные LOC.
+    """
+    results = []
+    # Паттерн: предлог + опционально прилагательное + существительное из whitelist
+    # Примеры: "в коридоре", "на кухню", "из кабинета", "к лифту"
+    pattern = re.compile(
+        r'\b(' + '|'.join(LOCATION_PREPOSITIONS) + r')\s+'
+        r'(?:[а-яё]{3,20}\s+)?'  # опциональное прилагательное
+        r'(' + '|'.join(CONTEXTUAL_LOCATIONS) + r')(\w*)',
+        re.IGNORECASE
+    )
+    for match in pattern.finditer(text):
+        prep = match.group(1).lower()
+        noun_base = match.group(2).lower()
+        noun_suffix = match.group(3) or ""
+        # Полное слово: базовая форма + окончание
+        full_word = noun_base + noun_suffix
+        # Получаем начальную форму через pymorphy3
+        lemma = noun_base.capitalize()
+        if MORPH is not None:
+            try:
+                parsed = MORPH.parse(full_word)
+                for p in parsed:
+                    # Если это существительное в любом падеже — берём normal_form
+                    if "NOUN" in str(p.tag) or "locy" in str(p.tag):
+                        nf = p.normal_form
+                        if nf:
+                            lemma = nf.capitalize()
+                            break
+            except Exception:
+                pass
+        # Находим границы полной формы существительного
+        start = match.start(2)
+        end = match.end(2) + len(noun_suffix)
+        # Контекст предложения
+        sent_start = text.rfind('\n', 0, start) + 1
+        sent_end = text.find('\n', end)
+        if sent_end == -1:
+            sent_end = min(len(text), end + 200)
+        else:
+            sent_end = min(sent_end, end + 200)
+        sentence = text[sent_start:sent_end].strip()[:200]
+        results.append({
+            "text": full_word,
+            "lemma": lemma,
+            "start": start,
+            "end": end,
+            "sentence": sentence,
+        })
+    return results
+
+
+def extract_multitoken_persons(doc, chunk_offset: int, lowercase_counts: Counter,
+                                propn_counts: Counter, entities_by_lemma: dict,
+                                already_covered_tokens: set) -> None:
+    """Извлечение multi-token PER (ФИО, имя+отчество, имя+фамилия).
+    
+    Сканирует последовательности PROPN токенов, проверяет по pymorphy3,
+    добавляет в entities_by_lemma как единую сущность PER.
+    
+    Примеры: "Владимир Петрович Сорокин", "Марина Игоревна Сергеева",
+    "Алексей Викторович", "Дмитрий Петрович".
+    """
+    tokens = list(doc)
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        # Пропускаем уже покрытые spaCy.ents токены
+        if token.i in already_covered_tokens:
+            i += 1
+            continue
+        # Начинаем последовательность только с PROPN
+        if token.pos_ != "PROPN":
+            i += 1
+            continue
+        # Проверяем, что это действительно имя (не название)
+        if not is_strictly_person(token.text, token.lemma_, lowercase_counts, propn_counts):
+            i += 1
+            continue
+        
+        # Собираем последовательность PROPN токенов
+        sequence = [token]
+        j = i + 1
+        while j < len(tokens):
+            next_token = tokens[j]
+            # Следующий PROPN или (для отчества) Part/ADP с заглавной
+            if next_token.pos_ == "PROPN" and next_token.i not in already_covered_tokens:
+                sequence.append(next_token)
+                j += 1
+            else:
+                break
+        
+        # Если только один PROPN — это одиночное имя, fallback обработает
+        if len(sequence) < 2:
+            i += 1
+            continue
+        
+        # Проверяем валидность последовательности:
+        # Хотим имя+отчество, имя+фамилия, имя+отчество+фамилия
+        # Не хотим: список разных имён "Анна и Мария" (есть союз/запятая между)
+        full_text = " ".join(t.text for t in sequence)
+        
+        # Если любой токен в последовательности в чёрном списке — пропускаем
+        all_valid = True
+        for t in sequence:
+            if t.text.lower() in FALSE_POSITIVE_NOUNS:
+                all_valid = False
+                break
+        if not all_valid:
+            i += 1
+            continue
+        
+        # Хотя бы один из токенов должен быть именем (не фамилией)
+        has_name = False
+        for t in sequence:
+            if MORPH is not None:
+                try:
+                    for p in MORPH.parse(t.text):
+                        if "Name" in str(p.tag):
+                            has_name = True
+                            break
+                except Exception:
+                    pass
+            if t.text.lower() in KNOWN_RUSSIAN_NAMES:
+                has_name = True
+                break
+        if not has_name:
+            i += 1
+            continue
+        
+        # Получаем каноническую форму: обычно последнее слово в ФИО = фамилия
+        # Но для графов персонажей удобно сохранять полное ФИО как lemma
+        # Если есть Name+Surn → берём нормальную форму каждого слова
+        canonical_parts = []
+        for t in sequence:
+            part = get_proper_lemma(t.text, t.lemma_)
+            canonical_parts.append(part)
+        lemma_norm = " ".join(canonical_parts)
+        
+        # Помечаем токены как покрытые
+        for t in sequence:
+            already_covered_tokens.add(t.i)
+        
+        # Добавляем в entities_by_lemma
+        key = (lemma_norm, "PER")
+        e = entities_by_lemma[key]
+        e["lemma"] = lemma_norm
+        e["label"] = "PER"
+        e["forms"].add(full_text)
+        e["count"] += 1
+        sent = token.sent
+        e["mentions"].append({
+            "text": full_text,
+            "start": sequence[0].idx + chunk_offset,
+            "end": sequence[-1].idx + len(sequence[-1].text) + chunk_offset,
+            "sentence": sent.text.strip()[:200],
+        })
+        
+        i = j
 
 
 def split_text_into_chunks(text: str, chunk_size: int = 50000) -> list:
@@ -316,7 +527,12 @@ def process_chunk(chunk: str, chunk_offset: int, lowercase_counts: Counter,
             "sentence": sent.text.strip()[:200],
         })
     
-    # 2. Fallback: PROPN токены не вошедшие в ents
+    # 2. Multi-token PER (новое в v0.2.1): ФИО, имя+отчество
+    # Важно: запускаем ДО одиночного PROPN fallback, чтобы не задваивать
+    extract_multitoken_persons(doc, chunk_offset, lowercase_counts, propn_counts,
+                               entities_by_lemma, ent_token_ranges)
+    
+    # 3. Fallback: одиночные PROPN токены не вошедшие в ents и не в multi-token
     for token in doc:
         if token.i in ent_token_ranges:
             continue
@@ -340,19 +556,42 @@ def process_chunk(chunk: str, chunk_offset: int, lowercase_counts: Counter,
         })
 
 
+def strip_html_comments(text: str) -> tuple:
+    """Удалить HTML-комментарии из текста перед NER.
+    
+    Возвращает кортеж (cleaned_text, removed_count).
+    Сохраняет длину оригинального текста, заменяя комментарии пробелами,
+    чтобы не сбить offset-ы упоминаний в исходном файле.
+    """
+    if "<!--" not in text:
+        return text, 0
+    pattern = re.compile(r'<!--.*?-->', re.DOTALL)
+    # Заменяем на пробелы той же длины (без переноса строк) — сохраняем offsets
+    def replace_with_spaces(match):
+        return ' ' * len(match.group())
+    cleaned = pattern.sub(replace_with_spaces, text)
+    removed = len(pattern.findall(text))
+    return cleaned, removed
+
+
 def extract_entities(text: str) -> dict:
     """Главная функция извлечения."""
     if not text or not text.strip():
         return {"entities": [], "stats": {"total": 0, "persons": 0, "locations": 0, "organizations": 0},
-                "model": "ru_core_news_sm", "version": "0.2.0",
+                "model": "ru_core_news_sm", "version": "0.2.1",
                 "truncated": False, "textLength": 0, "processedLength": 0}
     
+    # 0. (NEW v0.2.1) Удаляем HTML-комментарии (<!-- EXPECTED: ... --> и т.п.)
+    # Это критично для тестовых файлов — иначе spaCy находит сущности внутри комментариев
+    cleaned_text, comments_removed = strip_html_comments(text)
+    
     # 1. Считаем частоты строчных слов (для фильтра ложных срабатываний)
-    lowercase_counts = build_lowercase_counts(text)
+    # Используем очищенный текст, чтобы комментарии не учитывались в частотах
+    lowercase_counts = build_lowercase_counts(cleaned_text)
     
     # 2. Разбиваем на чанки (для больших текстов)
     chunk_size = 50000  # 50k символов на чанк
-    chunks = split_text_into_chunks(text, chunk_size)
+    chunks = split_text_into_chunks(cleaned_text, chunk_size)
     
     # 3. ПЕРВЫЙ ПРОХОД: считаем все PROPN токены (для фантастических имён)
     # Это нужно чтобы потом разрешить "Крофт" если он встречается ≥3 раз
@@ -376,6 +615,27 @@ def extract_entities(text: str) -> dict:
     for chunk in chunks:
         process_chunk(chunk, offset, lowercase_counts, entities_by_lemma, propn_counts)
         offset += len(chunk)
+    
+    # 4.5 (NEW v0.2.1) Извлекаем контекстные локации (кухня, коридор, лифт)
+    # Делаем это после основного прохода, чтобы не задваивать с spaCy LOC ents
+    existing_loc_lemmas = {k[0].lower() for k in entities_by_lemma.keys() if k[1] in ("LOC", "GPE")}
+    contextual_locs = find_contextual_locations(cleaned_text, lowercase_counts)
+    for loc in contextual_locs:
+        # Если уже извлечено spaCy с заглавной — не дублируем
+        if loc["lemma"].lower() in existing_loc_lemmas:
+            continue
+        key = (loc["lemma"], "LOC")
+        e = entities_by_lemma[key]
+        e["lemma"] = loc["lemma"]
+        e["label"] = "LOC"
+        e["forms"].add(loc["text"])
+        e["count"] += 1
+        e["mentions"].append({
+            "text": loc["text"],
+            "start": loc["start"],
+            "end": loc["end"],
+            "sentence": loc["sentence"],
+        })
     
     # 4. Группировка падежных форм
     def common_prefix_len(a: str, b: str) -> int:
@@ -436,10 +696,11 @@ def extract_entities(text: str) -> dict:
         "entities": entities,
         "stats": stats,
         "model": "ru_core_news_sm",
-        "version": "0.2.0",
+        "version": "0.2.1",
         "truncated": False,  # Теперь обрабатываем весь текст
         "textLength": len(text),
-        "processedLength": len(text),
+        "processedLength": len(cleaned_text),
+        "commentsStripped": comments_removed,
         "chunksProcessed": len(chunks),
     }
 
