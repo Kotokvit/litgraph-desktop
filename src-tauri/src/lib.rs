@@ -53,6 +53,8 @@ pub fn run() {
             commands::ner::extract_entities,
             commands::ner::analyze_characters,
             commands::ner::extract_svo,
+            // conflict — конфликт-граф (SVO → J-матрица → directed graph)
+            commands::conflict::get_conflict_graph,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

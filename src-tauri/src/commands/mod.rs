@@ -6,3 +6,4 @@ pub mod versions;
 pub mod export;
 pub mod ai;
 pub mod ner;
+pub mod conflict;

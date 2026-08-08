@@ -17,6 +17,7 @@ import { AssistantDialog } from "./AssistantDialog";
 import { PolerDialog } from "./PolerDialog";
 import { NerDialog } from "./NerDialog";
 import { CharacterGraphDialog } from "./CharacterGraphDialog";
+import { ConflictGraphDialog } from "./ConflictGraphDialog";
 import {
   Dialog,
   DialogContent,
@@ -70,6 +71,7 @@ export function Toolbar() {
   const [polerOpen, setPolerOpen] = useState(false);
   const [nerOpen, setNerOpen] = useState(false);
   const [charGraphOpen, setCharGraphOpen] = useState(false);
+  const [conflictGraphOpen, setConflictGraphOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mdFileInputRef = useRef<HTMLInputElement>(null);
@@ -349,6 +351,19 @@ export function Toolbar() {
           <span className="text-xs ml-1 hidden md:inline">Граф</span>
         </Button>
 
+        {/* Конфликт-граф — SVO → J-матрица → агрессоры vs жертвы */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 px-2"
+          onClick={() => setConflictGraphOpen(true)}
+          title="Конфликт-граф: SVO → J-матрица → агрессоры vs жертвы"
+          style={{ borderColor: "#DC262640", color: "#DC2626" }}
+        >
+          <Lucide.Swords className="w-4 h-4" />
+          <span className="text-xs ml-1 hidden md:inline">Конфликты</span>
+        </Button>
+
         {/* Тип связи по умолчанию */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -617,6 +632,12 @@ export function Toolbar() {
         open={charGraphOpen}
         text={collectedText}
         onClose={() => setCharGraphOpen(false)}
+      />
+
+      <ConflictGraphDialog
+        open={conflictGraphOpen}
+        text={collectedText}
+        onClose={() => setConflictGraphOpen(false)}
       />
     </>
   );

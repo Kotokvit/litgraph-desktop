@@ -60,7 +60,7 @@ pub struct NerResult {
 /// 1. ~/.litgraph-venv/bin/python (если пользователь создал venv)
 /// 2. $LITGRAPH_PYTHON (ручное переопределение)
 /// 3. Системный python3
-fn find_python() -> String {
+pub(crate) fn find_python() -> String {
     let home = dirs::home_dir();
     let candidates: Vec<String> = [
         home.as_ref().map(|h| h.join(".litgraph-venv/bin/python").to_string_lossy().to_string()),
@@ -84,7 +84,7 @@ fn find_python() -> String {
 /// директорию /tmp/litgraph_scripts_PID/, чтобы import ner_extract работал.
 /// Раньше было python -c "script" — но тогда __file__ недоступен и import
 /// ner_extract падал с ModuleNotFoundError.
-fn run_python_with_text_file(
+pub(crate) fn run_python_with_text_file(
     script: &str,
     text: &str,
     extra_files: &[(&str, &str)], // (filename, content) — доп. файлы рядом
