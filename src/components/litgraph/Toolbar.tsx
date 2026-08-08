@@ -30,6 +30,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useLitStore } from "@/lib/litgraph/store";
 import { exportToText, exportToMarkdown, downloadFile, slugify } from "@/lib/litgraph/export";
 import { importBackgroundImage, pickImageFileViaDialog } from "@/lib/litgraph/background-layer";
+import { exportWorkspaceToSvg, saveSvgViaDialog } from "@/lib/litgraph/export-svg";
 import { EDGE_TYPES } from "@/lib/litgraph/types";
 import type { EdgeKind } from "@/lib/litgraph/types";
 // Canvas renderer не использует ReactFlow, fitView через window event
@@ -115,6 +116,48 @@ export function Toolbar() {
     const proj = exportProject();
     const json = JSON.stringify(proj, null, 2);
     downloadFile(json, `${slugify(title)}.litgraph.json`, "application/json");
+  }
+
+  // ====== Экспорт SVG (X-ray) ======
+  // Фаза A Centaur Manifest: полный снимок рабочего стола как векторный файл
+  // с data-* атрибутами алгоритмической логики для анализа/дебага парсера.
+  const [svgExporting, setSvgExporting] = useState(false);
+
+  async function handleExportSvgXray() {
+    setSvgExporting(true);
+    try {
+      const state = useLitStore.getState();
+      const proj = exportProject();
+
+      // Viewport: берём из window если CanvasRenderer его опубликовал, иначе null
+      // (SVG всё равно посчитает bounds по нодам — viewport только для справки)
+      const viewport = (window as any).__litgraphViewport ?? null;
+
+      const svg = exportWorkspaceToSvg(
+        state.nodes,
+        state.edges,
+        state.backgroundLayer,
+        viewport,
+        {
+          title: proj.title,
+          author: proj.author,
+          description: proj.description,
+          parserVersion: "0.2.2",
+          createdAt: proj.createdAt,
+        },
+      );
+
+      const ok = await saveSvgViaDialog(svg, `${slugify(title)}.xray.svg`);
+      if (!ok) {
+        // Пользователь отменил — тихо выходим
+        return;
+      }
+    } catch (err) {
+      console.error("[LitGraph] SVG X-ray export failed:", err);
+      alert("Ошибка экспорта SVG: " + (err as Error).message);
+    } finally {
+      setSvgExporting(false);
+    }
   }
 
   // ====== Импорт JSON ======
@@ -535,6 +578,26 @@ export function Toolbar() {
               </DropdownMenuItem>
               <DropdownMenuItem onClick={handleExportJson}>
                 <Lucide.Download className="w-4 h-4 mr-2" />Экспорт JSON
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={handleExportSvgXray}
+                disabled={svgExporting}
+                style={{ background: "#EEF2FF" }}
+              >
+                {svgExporting ? (
+                  <Lucide.Loader2 className="w-4 h-4 mr-2 text-indigo-700 animate-spin" />
+                ) : (
+                  <Lucide.ScanSearch className="w-4 h-4 mr-2 text-indigo-700" />
+                )}
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-indigo-900">
+                    {svgExporting ? "Экспорт…" : "Экспорт SVG (X-ray)"}
+                  </div>
+                  <div className="text-[10px] text-indigo-700">
+                    Рабочий стол + алгоритмическая логика в одном .svg
+                  </div>
+                </div>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => handleExport("text")}>

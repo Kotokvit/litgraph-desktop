@@ -134,6 +134,13 @@ export function CanvasRenderer({
     return () => window.removeEventListener("litgraph:fitview", handleFitView);
   }, [nodes, actualSize]);
 
+  // Публикуем viewport в window для экспорта SVG (X-ray).
+  // Не идеально архитектурно, но avoids добавления ещё одного поля в store
+  // только ради одной функции экспорта.
+  useEffect(() => {
+    (window as any).__litgraphViewport = viewport;
+  }, [viewport]);
+
   // Авто-fit при первой загрузке
   useEffect(() => {
     if (nodes.length > 0 && viewport.x === 0 && viewport.y === 0 && viewport.zoom === 1) {
