@@ -30,7 +30,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useLitStore } from "@/lib/litgraph/store";
 import { exportToText, exportToMarkdown, downloadFile, slugify } from "@/lib/litgraph/export";
 import { importBackgroundImage, pickImageFileViaDialog } from "@/lib/litgraph/background-layer";
-import { exportWorkspaceToSvg, saveSvgViaDialog } from "@/lib/litgraph/export-svg";
+import { exportWorkspaceToHtml, saveHtmlViaDialog } from "@/lib/litgraph/export-html";
 import { EDGE_TYPES } from "@/lib/litgraph/types";
 import type { EdgeKind } from "@/lib/litgraph/types";
 // Canvas renderer не использует ReactFlow, fitView через window event
@@ -118,22 +118,23 @@ export function Toolbar() {
     downloadFile(json, `${slugify(title)}.litgraph.json`, "application/json");
   }
 
-  // ====== Экспорт SVG (X-ray) ======
-  // Фаза A Centaur Manifest: полный снимок рабочего стола как векторный файл
-  // с data-* атрибутами алгоритмической логики для анализа/дебага парсера.
-  const [svgExporting, setSvgExporting] = useState(false);
+  // ====== Экспорт HTML (X-ray) ======
+  // Фаза A-v2 Centaur Manifest: интерактивный мини-экспорт рабочего стола.
+  // Один самодостаточный .html файл — открывается в любом браузере,
+  // работает как GUI: клик по ноде → sidebar с meta+reason+SVO, hover,
+  // pan/zoom, search. Это "слепок экрана", а не "снимок состояния".
+  const [htmlExporting, setHtmlExporting] = useState(false);
 
-  async function handleExportSvgXray() {
-    setSvgExporting(true);
+  async function handleExportHtmlXray() {
+    setHtmlExporting(true);
     try {
       const state = useLitStore.getState();
       const proj = exportProject();
 
-      // Viewport: берём из window если CanvasRenderer его опубликовал, иначе null
-      // (SVG всё равно посчитает bounds по нодам — viewport только для справки)
+      // Viewport: берём из window если CanvasRenderer его опубликовал
       const viewport = (window as any).__litgraphViewport ?? null;
 
-      const svg = exportWorkspaceToSvg(
+      const html = exportWorkspaceToHtml(
         state.nodes,
         state.edges,
         state.backgroundLayer,
@@ -147,16 +148,16 @@ export function Toolbar() {
         },
       );
 
-      const ok = await saveSvgViaDialog(svg, `${slugify(title)}.xray.svg`);
+      const ok = await saveHtmlViaDialog(html, `${slugify(title)}.xray.html`);
       if (!ok) {
         // Пользователь отменил — тихо выходим
         return;
       }
     } catch (err) {
-      console.error("[LitGraph] SVG X-ray export failed:", err);
-      alert("Ошибка экспорта SVG: " + (err as Error).message);
+      console.error("[LitGraph] HTML X-ray export failed:", err);
+      alert("Ошибка экспорта HTML: " + (err as Error).message);
     } finally {
-      setSvgExporting(false);
+      setHtmlExporting(false);
     }
   }
 
@@ -581,21 +582,21 @@ export function Toolbar() {
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onClick={handleExportSvgXray}
-                disabled={svgExporting}
+                onClick={handleExportHtmlXray}
+                disabled={htmlExporting}
                 style={{ background: "#EEF2FF" }}
               >
-                {svgExporting ? (
+                {htmlExporting ? (
                   <Lucide.Loader2 className="w-4 h-4 mr-2 text-indigo-700 animate-spin" />
                 ) : (
                   <Lucide.ScanSearch className="w-4 h-4 mr-2 text-indigo-700" />
                 )}
                 <div className="flex-1">
                   <div className="text-sm font-medium text-indigo-900">
-                    {svgExporting ? "Экспорт…" : "Экспорт SVG (X-ray)"}
+                    {htmlExporting ? "Экспорт…" : "Экспорт HTML (X-ray)"}
                   </div>
                   <div className="text-[10px] text-indigo-700">
-                    Рабочий стол + алгоритмическая логика в одном .svg
+                    Интерактивный мини-экспорт: клик, hover, pan/zoom — как GUI
                   </div>
                 </div>
               </DropdownMenuItem>
