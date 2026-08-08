@@ -1,0 +1,83 @@
+[
+  {
+    "url": "https://arxiv.org/html/2406.10863v1",
+    "name": "Global-Local Graph Neural Networks for Node-Classification",
+    "snippet": "Jun 16, 2024 — In this paper, we propose to improve the performance of node classification GNNs by utilizing both global and local information, specifically ...",
+    "host_name": "arxiv.org",
+    "rank": 0,
+    "date": "Jun 16, 2024",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.sciencedirect.com/science/article/abs/pii/S0950705124014473",
+    "name": "Node classification based on structure migration and graph",
+    "snippet": "by R Li · 2025 · Cited by 5 — this paper proposes a node classification algorithm based on Structure Migration and Graph Attention CoNvolutional crossover network (SM_GACN).",
+    "host_name": "www.sciencedirect.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://medium.com/@joycebirkins/comprehensive-guide-to-gnn-gat-and-gcn-a-beginners-introduction-to-graph-neural-networks-after-51d09ac043b5",
+    "name": "Comprehensive Guide to GNN, GAT, and GCN",
+    "snippet": "GCN is a Convolutional Graph Neural Network , while GAT introduces an Attention mechanism into GCN, and GraphSage optimizes the aggregation  ...",
+    "host_name": "medium.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://stellargraph.readthedocs.io/en/stable/demos/node-classification/gcn-node-classification.html",
+    "name": "Node classification with Graph Convolutional Network (GCN)",
+    "snippet": "This demo explains how to do node classification using the StellarGraph library. The core of the GCN neural network model is a “ graph convolution” layer.",
+    "host_name": "stellargraph.readthedocs.io",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://theaisummer.com/gnn-architectures",
+    "name": "Best Graph Neural Network architectures: GCN, GAT,",
+    "snippet": "Sep 23, 2021 — Explore the most popular gnn architectures such as gcn, gat, mpnn, graphsage and temporal graph networks.",
+    "host_name": "theaisummer.com",
+    "rank": 4,
+    "date": "Sep 23, 2021",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.mdpi.com/2076-3417/13/12/7150",
+    "name": "A Graph Neural Network Node Classification Application",
+    "snippet": "by Y Zhang · 2023 · Cited by 15 — In this paper, we propose the graph neural network model ENode-GAT for improving the accuracy of small sample node classification using the ... Read more",
+    "host_name": "www.mdpi.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://graph-neural-networks.github.io/static/file/chapter4.pdf",
+    "name": "Chapter 4 - Graph Neural Networks for Node Classification",
+    "snippet": "by J Tang · Cited by 24 — Graph neural networks are neural network architectures specifically designed for learning representations of graph-structured data. AGGREGATE and COMBINE ... 21 pages",
+    "host_name": "graph-neural-networks.github.io",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.semanticscholar.org/paper/A-Graph-Neural-Network-Node-Classification-Model-Zhang-Xu/6ada0c98f4acb1b8dff34c148d51ec4490a12e75",
+    "name": "A Graph Neural Network Node Classification Application",
+    "snippet": "The proposed graph neural network model ENode-GAT is proposed for improving the accuracy of small sample node classification using the method of external ...",
+    "host_name": "www.semanticscholar.org",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://keras.io/examples/graph/gnn_citations",
+    "name": "Node Classification with Graph Neural Networks",
+    "snippet": "May 30, 2021 — This example demonstrate a simple implementation of a Graph Neural Network (GNN) model . The model is used for a node prediction task on the Cora ... Read more",
+    "host_name": "keras.io",
+    "rank": 8,
+    "date": "May 30, 2021",
+    "favicon": ""
+  }
+]

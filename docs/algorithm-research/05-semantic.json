@@ -1,0 +1,74 @@
+[
+  {
+    "url": "https://sbert.net/docs/sentence_transformer/usage/semantic_textual_similarity.html",
+    "name": "Semantic Textual Similarity",
+    "snippet": "For Semantic Textual Similarity (STS), we want to produce embeddings for all texts involved and calculate the similarities between them.",
+    "host_name": "sbert.net",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://sbert.net",
+    "name": "SentenceTransformers Documentation — Sentence",
+    "snippet": "Sentence Transformers (a.k.a. SBERT ) is the go-to Python module for using and training state-of-the-art embedding and reranker models. It can be used to compute ...",
+    "host_name": "sbert.net",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://medium.com/@merobi/evaluating-semantic-text-similarity-using-sbert-and-nltk-18f08e51566d",
+    "name": "Evaluating semantic text similarity using SBERT and NLTK",
+    "snippet": "It can be used to compute embeddings using Sentence Transformer models (quickstart) or to calculate similarity scores using Cross-Encoder models ...",
+    "host_name": "medium.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.sciencedirect.com/science/article/pii/S0885230826000331",
+    "name": "Sentence representations for semantic textual similarity",
+    "snippet": "by L Guder · 2026 · Cited by 5 — The “ Embedding Approach” represents the method that converts text into a distributional representation. On the other hand, the “Training Model” indicates the ...",
+    "host_name": "www.sciencedirect.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.diva-portal.org/smash/get/diva2:1536646/FULLTEXT01.pdf",
+    "name": "Evaluating semantic similarity using sentence embeddings",
+    "snippet": "by J Malmberg · 2021 · Cited by 5 — This master thesis is concerned with evaluating semantic similarity search using sentence embeddings produced by both traditional and modern ... 57 pages",
+    "host_name": "www.diva-portal.org",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://towardsdatascience.com/sbert-deb3d4aef8a4",
+    "name": "Large Language Models: SBERT - Sentence-BERT",
+    "snippet": "Sep 12, 2023 — BERT became increasingly popular for constructing word embeddings – vectors of numbers representing semantic meanings of words.",
+    "host_name": "towardsdatascience.com",
+    "rank": 5,
+    "date": "Sep 12, 2023",
+    "favicon": ""
+  },
+  {
+    "url": "https://sbert.net/examples/sentence_transformer/applications/semantic-search/README.html",
+    "name": "Semantic Search — Sentence Transformers documentation",
+    "snippet": "The idea behind semantic search is to embed all entries in your corpus , whether they be sentences, paragraphs, or documents, into a vector space.",
+    "host_name": "sbert.net",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.seo-kreativ.de/en/blog/embeddings-semantic-search",
+    "name": "Embeddings, SBERT & Cosine Similarity Explained",
+    "snippet": "Jun 23, 2026 — Key Takeaway: SBERT (Sentence-BERT) produces a standalone vector per sentence that you can compare directly via cosine. That turned similarity ...",
+    "host_name": "www.seo-kreativ.de",
+    "rank": 7,
+    "date": "Jun 23, 2026",
+    "favicon": ""
+  }
+]

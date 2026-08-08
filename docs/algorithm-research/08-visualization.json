@@ -1,0 +1,74 @@
+[
+  {
+    "url": "https://pminkov.github.io/blog/visualizing-algorithms-with-jupyter-notebooks.html",
+    "name": "Visualizing algorithms with Jupyter notebooks",
+    "snippet": "Apr 24, 2017 — Since then, I've learned how to use Jupyter, so I sat down and imported the code into a Jupyter notebook that's visualizing the algorithm . Read more",
+    "host_name": "pminkov.github.io",
+    "rank": 0,
+    "date": "Apr 24, 2017",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.facebook.com/groups/DataScienceGroup/posts/5233979449997236",
+    "name": "Which Python IDE is best for data analytics?",
+    "snippet": "Jupyter Notebook and VSCode are top recommendations for data analytics, with many praising Jupyter's interactive visualization capabilities. Read more",
+    "host_name": "www.facebook.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/mikeroyal/Jupyter-Guide",
+    "name": "mikeroyal/Jupyter-Guide",
+    "snippet": "Image Processing Toolbox™ is a tool that provides a comprehensive set of reference-standard algorithms and workflow apps for image processing, analysis, ... Read more",
+    "host_name": "github.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://dergipark.org.tr/en/download/article-file/3234628",
+    "name": "Interactive Learning with Jupyter Notebooks",
+    "snippet": "by O Topsakal · Cited by 2 — This article advocates for the use of Jupyter Notebooks as an invaluable tool to promote understanding of algorithm design approaches and time complexity ... Read more",
+    "host_name": "dergipark.org.tr",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.quora.com/Whats-the-best-Python-IDE-for-data-analysis-science",
+    "name": "What's the best Python IDE for data analysis/science?",
+    "snippet": "What's the best Python IDE for data analysis/science?",
+    "host_name": "www.quora.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.reddit.com/r/Python/comments/d002rk/python_gui_libraries_for_sorting_algorithm",
+    "name": "Python GUI Libraries for Sorting Algorithm Visualization",
+    "snippet": "Just use matplotlib . Or jupyter notebook has a widget that does all cool dashboard like things. I highly suggest NOT to use Tinker, pyQt or ... Read more",
+    "host_name": "www.reddit.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://bluechipalgos.com/blog/best-ides-for-developing-algorithmic-trading-systems",
+    "name": "Best IDEs for Developing Algorithmic Trading Systems – Blog",
+    "snippet": "Mar 26, 2026 — For python developers, PyCharm and VS Code are considered the best while IntelliJ IDEA and Eclipse are specifically built for developers who use ... Read more",
+    "host_name": "bluechipalgos.com",
+    "rank": 6,
+    "date": "Mar 26, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.researchgate.net/post/About_IDEs_to_use_with_Python_3",
+    "name": "About IDE's to use with Python 3.",
+    "snippet": "Dec 19, 2024 — Hello fellow researchers and devs. First of all, I would like to thank you for taking the time to participate in this discussion.\n\nBased on your experience ...",
+    "host_name": "www.researchgate.net",
+    "rank": 7,
+    "date": "Dec 19, 2024",
+    "favicon": ""
+  }
+]

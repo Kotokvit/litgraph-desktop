@@ -1,0 +1,83 @@
+[
+  {
+    "url": "https://www.e3s-conferences.org/articles/e3sconf/abs/2024/61/e3sconf_uesf2024_03017/e3sconf_uesf2024_03017.html",
+    "name": "Algorithms and methods for automated construction of",
+    "snippet": "by V Filippov · Cited by 2 — In this article, we present our path towards building knowledge graphs automatic ally from Russian texts. We explore various methodologies and libraries to ... Read more",
+    "host_name": "www.e3s-conferences.org",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://arxiv.org/abs/2603.25862",
+    "name": "Methods for Knowledge Graph Construction from Text",
+    "snippet": "by V Zavarella · 2026 — In this thesis, we experiment with the application of Natural Language Processing, Machine Learning and Generative AI methods, powered by ... Read more",
+    "host_name": "arxiv.org",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.sciencedirect.com/science/article/pii/S2667305324000619",
+    "name": "Knowledge graph learning algorithm based on deep",
+    "snippet": "by Y Zhou · 2024 · Cited by 3 — In this paper, a novel knowledge graph learning algorithm was proposed, which leveraged deep convolutional networks to enhance classification accuracy for ... Read more",
+    "host_name": "www.sciencedirect.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://research.ibm.com/publications/the-state-of-the-art-large-language-models-for-knowledge-graph-construction-from-text-techniques-tools-and-challenges",
+    "name": "The State of the Art Large Language Models for",
+    "snippet": "by J D'souza · 2024 · Cited by 1 — In this presentation, we will focus on the state of the art of -LLM-based methods, techniques and tools for constructing knowledge graphs from ... Read more",
+    "host_name": "research.ibm.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.mdpi.com/2076-3417/15/7/3727",
+    "name": "Knowledge Graph Construction: Extraction, Learning, and",
+    "snippet": "by S Choi · 2025 · Cited by 64 — Graph-based extraction methods organize the analysis results (entities and relations) from text into a graph structure and use Graph Neural Networks (GNN) and ... Read more",
+    "host_name": "www.mdpi.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.researchgate.net/publication/380775749_Applying_Natural_Language_Processing_to_Knowledge_Graph_Construction_Design_and_Implementation_of_a_Knowledge_Extraction_Algorithm",
+    "name": "Applying Natural Language Processing to Knowledge",
+    "snippet": "May 21, 2024 — Applying Natural Language Processing to Knowledge Graph Construction: Design and Implementation of a Knowledge Extraction Algorithm . May 2024. Read more",
+    "host_name": "www.researchgate.net",
+    "rank": 5,
+    "date": "May 21, 2024",
+    "favicon": ""
+  },
+  {
+    "url": "https://aclanthology.org/2024.kallm-1.8.pdf",
+    "name": "Ontology-guided Knowledge Graph Construction from",
+    "snippet": "by Z van Cauter · 2024 · Cited by 29 — In this work, we show how LLMs can assist with the knowledge graph construction on domain- specific texts .",
+    "host_name": "aclanthology.org",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.meegle.com/en_us/topics/knowledge-graphs/knowledge-graph-algorithms",
+    "name": "Knowledge Graph Algorithms",
+    "snippet": "Knowledge graph algorithms are computational methods designed to process, analyze, and extract meaningful insights from knowledge graphs. A knowledge graph is a ... Read more",
+    "host_name": "www.meegle.com",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.youtube.com/watch?v=fvteN4Yy0KU",
+    "name": "The State Of The Art On Knowledge Graph Construction From",
+    "snippet": "The State Of The Art On Knowledge Graph Construction From Text ... Knowledge Graph Construction & Graph RAG for LLM Applications (Revamp).",
+    "host_name": "www.youtube.com",
+    "rank": 8,
+    "date": "",
+    "favicon": ""
+  }
+]

@@ -1,0 +1,92 @@
+[
+  {
+    "url": "https://arxiv.org/html/2511.11857v1",
+    "name": "Plot-Sentiment Breakdown, Structure Learning and Concept Detection",
+    "snippet": "Nov 14, 2025 · In this paper, we propose a framework that analyzes the sentiment arcs of movie scripts and performs an extended analysis regarding the context ...",
+    "host_name": "arxiv.org",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.researchgate.net/publication/397701586_Three_Stage_Narrative_Analysis_Plot-Sentiment_Breakdown_Structure_Learning_and_Concept_Detection",
+    "name": "(PDF) Three Stage Narrative Analysis; Plot-Sentiment Breakdown",
+    "snippet": "Nov 14, 2025 · In this paper, we propose a framework that analyzes the sentiment arcs of movie scripts and performs extended analysis related to the context ...",
+    "host_name": "www.researchgate.net",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://aclanthology.org/2022.tal-1.3.pdf",
+    "name": "[PDF] Survey on Narrative Structure: from Linguistic Theories to Automatic",
+    "snippet": "Machine learning and NLP algorithms, such as clustering, correspondence analy- sis and deep learning are used for the analysis and understanding of narrative",
+    "host_name": "aclanthology.org",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.diva-portal.org/smash/get/diva2:1887928/FULLTEXT01.pdf",
+    "name": "[PDF] Study on Large Language Models in Story Generation - DiVA Portal",
+    "snippet": "Studying story generation in natural language processing (NLP) plot structure and consistent character development.",
+    "host_name": "www.diva-portal.org",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.cambridge.org/core/journals/natural-language-engineering/article/plot-extraction-and-the-visualization-of-narrative-flow/445A7A36F339A280AA1EA5A6612373A0",
+    "name": "Plot extraction and the visualization of narrative flow",
+    "snippet": "May 23, 2023 · This article discusses the development of an automated plot extraction system for narrative texts. use NLP to automate the collection of ...",
+    "host_name": "www.cambridge.org",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://scrapfishies.medium.com/finding-the-narrative-with-natural-language-processing-47177d20f743",
+    "name": "Finding the Narrative with Natural Language Processing - Medium",
+    "snippet": "Dec 27, 2020 · Instead of drawing hard lines, my guideline is this: The more salient a hashtag is in the corpus, the stronger the case for leaving it intact.",
+    "host_name": "scrapfishies.medium.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://ieeexplore.ieee.org/iel8/6287639/11323511/11321265.pdf",
+    "name": "Bridging Computational Narrative Extraction and Human",
+    "snippet": "Jan 6, 2026 · INA approaches enable the interactive exploration of narrative structures through computational methods and visual interfaces that facilitate ...",
+    "host_name": "ieeexplore.ieee.org",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://culturalanalytics.org/article/id/990",
+    "name": "Beyond Plot: How Sentiment Analysis Reshapes Our Understanding",
+    "snippet": "Sep 10, 2025 · Sentiment analysis, particularly with the advent of large language models, is reshaping our understanding of narrative.",
+    "host_name": "culturalanalytics.org",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.youtube.com/watch?v=G3j2YezvqPk&vl=en",
+    "name": "StoryScope: Identifying LLM Fiction via Plot Analysis - YouTube",
+    "snippet": "Apr 8, 2026 · designed to analyze narrative features like character agency and temporal structure ... NLP #CreativeWriting #LLMDetectors #NarrativeAnalysis ...",
+    "host_name": "www.youtube.com",
+    "rank": 8,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://maria-antoniak.github.io/resources/2022_nlp_hci_narratives.pdf",
+    "name": "[PDF] Narrative Datasets through the Lenses of NLP and HCI",
+    "snippet": "In this short paper, we compare existing value systems and approaches in NLP and HCI for collecting narrative data. Building on these.",
+    "host_name": "maria-antoniak.github.io",
+    "rank": 9,
+    "date": "",
+    "favicon": ""
+  }
+]

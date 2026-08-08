@@ -1,0 +1,74 @@
+[
+  {
+    "url": "https://ieeexplore.ieee.org/document/10467643",
+    "name": "Document Segmentation for Topic Modelling with",
+    "snippet": "by A Stöckl · 2024 · Cited by 3 — This paper presents an innovative approach to document segmentation that leverages embeddings and vector distances to discern topic transitions.",
+    "host_name": "ieeexplore.ieee.org",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.reddit.com/r/LanguageTechnology/comments/iyem6w/topic_modeling_or_text_clustering_what_approaches",
+    "name": "Topic modeling or Text clustering: What approaches are",
+    "snippet": "Hello folks!\n\nI have been working on a topic modeling / text clustering project, and I've been experimenting with the following approaches :\n ...",
+    "host_name": "www.reddit.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://dl.acm.org/doi/10.5555/3023638.3023709",
+    "name": "Integrating document clustering and topic modeling",
+    "snippet": "In this paper, we propose a multi-grain clustering topic model (MGCTM) which integrates document clustering and topic modeling into a unified framework",
+    "host_name": "dl.acm.org",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.sciencedirect.com/topics/computer-science/document-clustering",
+    "name": "Document Clustering - an overview",
+    "snippet": "Clustering algorithm categories include agglomerative clustering, partitioning, and parametric based ones such as the EM algorithm (Agarwal and Mittal, 2014).",
+    "host_name": "www.sciencedirect.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10163298",
+    "name": "An integrated clustering and BERT framework for improved",
+    "snippet": "by L George · 2023 · Cited by 220 — There are 4 major components in the proposed integrated Clustering and BERT framework which includes feature extraction, topic modeling methods , ...",
+    "host_name": "pmc.ncbi.nlm.nih.gov",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://serokell.io/blog/clustering-algorithms-in-ml",
+    "name": "Clustering algorithms explained - Serokell",
+    "snippet": "Aug 18, 2024",
+    "host_name": "serokell.io",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.emergentmind.com/topics/topic-clustering",
+    "name": "Topic Clustering Methods",
+    "snippet": "Jan 28, 2026 — Topic clustering is a method that groups documents or words into coherent clusters using geometric, density-based, and representation learning ...",
+    "host_name": "www.emergentmind.com",
+    "rank": 6,
+    "date": "Jan 28, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/Akash-9832/Document-Clustering-for-Topic-Modeling",
+    "name": "Akash-9832/Document-Clustering-for-Topic-Modeling",
+    "snippet": "Applying clustering algorithms like Latent Dirichlet Allocation (LDA) and K-means to group similar documents together for topic modeling and understanding large ...",
+    "host_name": "github.com",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  }
+]

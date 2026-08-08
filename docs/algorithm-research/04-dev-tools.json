@@ -1,0 +1,74 @@
+[
+  {
+    "url": "https://dev.to/cosmomyzrailgorynych/designing-your-own-node-based-visual-programming-language-2mpg",
+    "name": "Designing your own node-based visual programming",
+    "snippet": "Jun 19, 2025 — The holy grail of node-based languages for me is Blueprints from Unreal Engine . You can get many good ideas from it, and when I was making a new ... Read more",
+    "host_name": "dev.to",
+    "rank": 0,
+    "date": "Jun 19, 2025",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/xyflow/awesome-node-based-uis",
+    "name": "xyflow/awesome-node-based-uis",
+    "snippet": "Graph/node editor for VueJs . Interactive editor for any graph-like data. Visual editing for the. Visual Programming Software that transpiles. Compositing  ...",
+    "host_name": "github.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.reddit.com/r/compsci/comments/1tcmcya/i_built_a_modern_nocode_graph_editorvisualization",
+    "name": "I built a modern, no-code graph editor/visualization tool",
+    "snippet": "Complete Visual Control: A rich editor where you can easily customize nodes and edges , adjusting shapes, colors, sizes, and labels to fit your ... Read more",
+    "host_name": "www.reddit.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://nodes.io/story",
+    "name": "Story · Nodes – a new way to create with code",
+    "snippet": "Nodes is a JavaScript-based 2D canvas for computational thinking. create realtime 3D graphics installations, explore and visualise data, Nodes, you write  ...",
+    "host_name": "nodes.io",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://stackoverflow.com/questions/72164885/tools-for-building-a-graph-node-based-user-interface-in-a-webapp",
+    "name": "html - Tools for building a Graph/Node based user interface",
+    "snippet": "This a somewhat random question, but I wanted to figure out what would be the best tools to create a web app which uses node based connections similar ...",
+    "host_name": "stackoverflow.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://medium.com/@fadimantium/2026-the-year-of-the-node-based-editor-941f0f15d467",
+    "name": "2026: The Year of the Node-Based Editor | by Erik Fadiman",
+    "snippet": "Weavy allows you to build visual pipelines . You can connect multiple AI models (like Flux, Nano Banana, or Veo 3) with deterministic nodes for ...",
+    "host_name": "medium.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://mathematica.stackexchange.com/questions/231096/node-editor-and-visual-programming",
+    "name": "Node editor and visual programming",
+    "snippet": "Oct 1, 2020 — Node editors are all the rage especially in image processing pipelines and shader programming in game engines. For example, here's a stackoverflow ...",
+    "host_name": "mathematica.stackexchange.com",
+    "rank": 6,
+    "date": "Oct 1, 2020",
+    "favicon": ""
+  },
+  {
+    "url": "https://forums.scribus.net/index.php/topic,5771.0.html",
+    "name": "Node based automation like Blender's node editor",
+    "snippet": "Dec 28, 2024 — Similar to Blender's node editor , we can have a bunch of different node types (document, pages, objects, styles, input/output, converter) etc. ...",
+    "host_name": "forums.scribus.net",
+    "rank": 7,
+    "date": "Dec 28, 2024",
+    "favicon": ""
+  }
+]

@@ -1,0 +1,83 @@
+[
+  {
+    "url": "https://medium.com/neo4j/entity-linking-and-relationship-extraction-with-relik-in-llamaindex-ca18892c169f",
+    "name": "Entity Linking and Relationship Extraction With Relik in",
+    "snippet": "Combin e coreference resolution, entity linking, and relationship extraction to build a knowledge graph without an LLM for your RAG applications. Read more",
+    "host_name": "medium.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.emergentmind.com/topics/entity-linking-and-coreference-resolution",
+    "name": "Entity Linking & Coreference Resolution",
+    "snippet": "Feb 3, 2026 — Entity Linking and Coreference Resolution are core NLP tasks that map text mentions to knowledge base entities and cluster co-referring ... Read more",
+    "host_name": "www.emergentmind.com",
+    "rank": 1,
+    "date": "Feb 3, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://arxiv.org/html/2504.05767v1",
+    "name": "Cross-Document Contextual Coreference Resolution in",
+    "snippet": "Apr 8, 2025 — We propose a novel coreference resolution method that operates across multiple documents within knowledge graphs , effectively connecting ... Read more",
+    "host_name": "arxiv.org",
+    "rank": 2,
+    "date": "Apr 8, 2025",
+    "favicon": ""
+  },
+  {
+    "url": "https://web.stanford.edu/~jurafsky/slp3/26.pdf",
+    "name": "Coreference Resolution and Entity Linking",
+    "snippet": "We'll give two algorithms , one simple classic baseline that uses anchor dictionaries and information from the Wikipedia graph structure (Ferragina and Scaiella, ... Read more 34 pages",
+    "host_name": "web.stanford.edu",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.sciencedirect.com/science/article/pii/S1674862X23000368",
+    "name": "Entity generation algorithm based on reference expansion",
+    "snippet": "by JJ Ruan · 2023 · Cited by 2 — The entity linking algorithm usually consists of three parts: Entity recognition, candidate entity generation, and entity disambiguation. Candidate entity ... Read more",
+    "host_name": "www.sciencedirect.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://linkurious.com/blog/entity-resolution-knowledge-graph",
+    "name": "Combining entity resolution and knowledge graphs",
+    "snippet": "May 15, 2024 — Learn how to combine entity resolution with knowledge graphs to deliver clearer, faster actionable contextual insights.",
+    "host_name": "linkurious.com",
+    "rank": 5,
+    "date": "May 15, 2024",
+    "favicon": ""
+  },
+  {
+    "url": "https://aclanthology.org/C10-2121.pdf",
+    "name": "Streaming Cross Document Entity Coreference Resolution",
+    "snippet": "by D Rao · 2010 · Cited by 80 — In this work, we present a new method for cross document coreference resolution that scales to very large corpora. Our algorithm operates in a streaming setting ... Read more",
+    "host_name": "aclanthology.org",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://cs.nyu.edu/media/publications/pershina_maria.pdf",
+    "name": "GRAPH-BASED APPROACHES TO RESOLVE ENTITY",
+    "snippet": "Successful coreference resolution is insufficient for correct entity linking , as the coreference chain must still be correctly mapped to the proper KB entry.",
+    "host_name": "cs.nyu.edu",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://graphwise.ai/fundamentals/what-is-entity-linking",
+    "name": "What is Entity Linking?",
+    "snippet": "Entity linking is the process of identifying mentions of entities in text and connecting them to their unique identity in a knowledge base.",
+    "host_name": "graphwise.ai",
+    "rank": 8,
+    "date": "",
+    "favicon": ""
+  }
+]

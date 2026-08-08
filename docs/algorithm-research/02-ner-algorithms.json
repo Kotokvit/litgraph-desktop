@@ -1,0 +1,83 @@
+[
+  {
+    "url": "https://arxiv.org/html/2401.10825v3",
+    "name": "Recent Advances in Named Entity Recognition",
+    "snippet": "Dec 20, 2024 — With the rise of deep learning , NER systems have seen significant advances in both accuracy and flexibility. Deep learning methods, which ... Read more",
+    "host_name": "arxiv.org",
+    "rank": 0,
+    "date": "Dec 20, 2024",
+    "favicon": ""
+  },
+  {
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11287876",
+    "name": "Transformer models in biomedicine - PMC - NIH",
+    "snippet": "by S Madan · 2024 · Cited by 150 — Transformer -based models such as BERT are based solely on the encoder. Explainable AI (XAI), XAI refers to the field of designing algorithms that can comprehend ... Read more",
+    "host_name": "pmc.ncbi.nlm.nih.gov",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.dataversity.net/articles/from-neural-networks-to-transformers-the-evolution-of-machine-learning",
+    "name": "From Neural Networks to Transformers: The Evolution of",
+    "snippet": "Jan 29, 2024 — Transformers mark a significant advancement in handling sequential data , outperforming RNNs and LSTMs in many tasks. Transformers are the ...",
+    "host_name": "www.dataversity.net",
+    "rank": 2,
+    "date": "Jan 29, 2024",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/christianversloot/machine-learning-articles/blob/main/easy-named-entity-recognition-with-machine-learning-and-huggingface-transformers.md",
+    "name": "easy-named-entity-recognition-with-machine-learning-and-",
+    "snippet": "Feb 11, 2021 — Today, we will be using the BERT Transformer . BERT, which stands for Bidirectional Encoder Representations for Transformer, utilizes the ... Read more",
+    "host_name": "github.com",
+    "rank": 3,
+    "date": "Feb 11, 2021",
+    "favicon": ""
+  },
+  {
+    "url": "https://discuss.huggingface.co/t/seeking-advice-on-named-entity-recognition-with-ai/136564",
+    "name": "Seeking Advice on Named Entity Recognition with AI",
+    "snippet": "Jan 20, 2025 — For Named Entity Recognition (NER), a great way to speed up your work is by using pre-trained models available in the Hugging Face model hub .",
+    "host_name": "discuss.huggingface.co",
+    "rank": 4,
+    "date": "Jan 20, 2025",
+    "favicon": ""
+  },
+  {
+    "url": "https://medinform.jmir.org/2024/1/e59782",
+    "name": "Evaluating Medical Entity Recognition in Health Care",
+    "snippet": "by S Liu · 2024 · Cited by 36 — From Transformers (BERT)–based deep learning and large language models, have significantly advanced NER capabilities .",
+    "host_name": "medinform.jmir.org",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://machinelearningmastery.com/how-to-do-named-entity-recognition-ner-with-a-bert-model",
+    "name": "How to Do Named Entity Recognition (NER) with a BERT",
+    "snippet": "May 15, 2025 — In this post, you will learn how to solve the NER problem with a BERT model using just a few lines of Python code.",
+    "host_name": "machinelearningmastery.com",
+    "rank": 6,
+    "date": "May 15, 2025",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.youtube.com/watch?v=KKnEcf_ndrw",
+    "name": "Named Entity Recognition Using BERT Transformers",
+    "snippet": "NER algorithms typically involve statistical and machine learning techniques, such as rule-based systems, conditional random fields (CRFs) ...",
+    "host_name": "www.youtube.com",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://medium.com/data-science/named-entity-recognition-with-deep-learning-bert-the-essential-guide-274c6965e2d",
+    "name": "Named Entity Recognition with Deep Learning (BERT)",
+    "snippet": "In this tutorial, we will build a NER model, using HugginFace Transformers . Let's dive in! I've launched AI Horizon Forecast, a newsletter ... Read more",
+    "host_name": "medium.com",
+    "rank": 8,
+    "date": "",
+    "favicon": ""
+  }
+]

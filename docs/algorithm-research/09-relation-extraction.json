@@ -1,0 +1,65 @@
+[
+  {
+    "url": "https://arxiv.org/html/2411.18157v1",
+    "name": "A survey on cutting-edge relation extraction techniques",
+    "snippet": "Nov 27, 2024 — This comprehensive survey delves into the latest advancements in Relation Extraction ( RE ), a pivotal task in natural language processing ... Read more",
+    "host_name": "arxiv.org",
+    "rank": 0,
+    "date": "Nov 27, 2024",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.geeksforgeeks.org/nlp/relationship-extraction-in-nlp",
+    "name": "Relationship Extraction in NLP",
+    "snippet": "Jul 3, 2026 — Relationship Extraction ( RE ) is a Natural Language Processing ( NLP ) technique used to identify and extract semantic relationships between ... Read more",
+    "host_name": "www.geeksforgeeks.org",
+    "rank": 1,
+    "date": "Jul 3, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.sciencedirect.com/science/article/pii/S2667305323000698",
+    "name": "A survey on Relation Extraction",
+    "snippet": "by K Detroja · 2023 · Cited by 107 — The Entity Extraction task identifies entities from the text, and the Relation Extraction ( RE ) task can identify relationships between those entities. Many NLP ... Read more",
+    "host_name": "www.sciencedirect.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://kili-technology.com/blog/information-extraction-ie-guide",
+    "name": "What is Information Extraction? IE for Machine Learning",
+    "snippet": "Information extraction is the foundation of NLP systems and determines how linguistic models perform. Over the years, various techniques, machine algorithms, ... Read more",
+    "host_name": "kili-technology.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.ibm.com/think/topics/information-extraction",
+    "name": "What is Information Extraction? | IBM",
+    "snippet": "Information extraction algorithms can identify entities, including names, relationships, events, sentiment and more , then classify and store them in a database",
+    "host_name": "www.ibm.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://annotationbox.com/nlp-for-relation-extraction",
+    "name": "NLP for Relation Extraction | Annotation box",
+    "snippet": "NLP for Relation Extraction helps identify relationships in text using AI-driven methods for better data analysis and knowledge discovery.",
+    "host_name": "annotationbox.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.cs.cmu.edu/~nbach/papers/A-survey-on-Relation-Extraction.pdf",
+    "name": "A Review of Relation Extraction",
+    "snippet": "by N Bach · Cited by 496 — Many applications in information extraction , natural language understanding, in- formation retrieval require an understanding of the semantic relations ... Read more 15 pages",
+    "host_name": "www.cs.cmu.edu",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  }
+]

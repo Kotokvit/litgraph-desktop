@@ -1,0 +1,92 @@
+[
+  {
+    "url": "https://en.wikipedia.org/wiki/Louvain_method",
+    "name": "Louvain method - Wikipedia",
+    "snippet": "The Louvain method for community detection is a greedy optimization method intended to extract non-overlapping communities from large networks created by ...",
+    "host_name": "en.wikipedia.org",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.puppygraph.com/blog/louvain",
+    "name": "What is the Louvain Method? - PuppyGraph",
+    "snippet": "The Louvain method is a community detection algorithm introduced in 2008. Louvain helps identify tightly knit groups within massive user graphs.",
+    "host_name": "www.puppygraph.com",
+    "rank": 1,
+    "date": "Mar 8, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://developer.nvidia.com/blog/how-to-accelerate-community-detection-in-python-using-gpu-powered-leiden",
+    "name": "How to Accelerate Community Detection in Python Using GPU",
+    "snippet": "The Leiden algorithm is a community detection technique used to. Leiden was developed as a modification to the popular Louvain algorithm, and ...",
+    "host_name": "developer.nvidia.com",
+    "rank": 2,
+    "date": "Sep 23, 2025",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.nature.com/articles/s41598-019-41695-z",
+    "name": "From Louvain to Leiden: guaranteeing well-connected communities",
+    "snippet": "One of the most popular algorithms for uncovering community structure is the so-called Louvain algorithm. Louvain keeps visiting all nodes in ...",
+    "host_name": "www.nature.com",
+    "rank": 3,
+    "date": "Mar 26, 2019",
+    "favicon": ""
+  },
+  {
+    "url": "https://neo4j.com/docs/graph-data-science/current/algorithms/louvain",
+    "name": "Louvain - Neo4j Graph Data Science",
+    "snippet": "The Louvain method is an algorithm to detect communities in large networks. It maximizes a modularity score for each community, where the modularity quantifies ...",
+    "host_name": "neo4j.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://medium.com/@balci.pelin/understanding-the-leiden-algorithm-0b9fc95b277d",
+    "name": "Understanding the Leiden Algorithm | by Pelin Balci - Medium",
+    "snippet": "It identifies groups of nodes (communities) in a graph that are more densely connected internally than with the rest of the graph. This is ...",
+    "host_name": "medium.com",
+    "rank": 5,
+    "date": "May 3, 2025",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/esclear/louvain-leiden",
+    "name": "esclear/louvain-leiden: Implementation of the Louvain and  - GitHub",
+    "snippet": "This project is an implementation of the Louvain and Leiden algorithms for community detection in graphs. The implementation was conducted and tested using ...",
+    "host_name": "github.com",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://arxiv.org/html/2405.11658v1",
+    "name": "A Starting Point for Dynamic Community Detection with Leiden",
+    "snippet": "The Louvain method is a greedy, modularity optimization-based agglomerative algorithm that identifies high-quality communities within a graph",
+    "host_name": "arxiv.org",
+    "rank": 7,
+    "date": "May 19, 2024",
+    "favicon": ""
+  },
+  {
+    "url": "https://memgraph.com/docs/advanced-algorithms/available-algorithms/community_detection",
+    "name": "community_detection - Memgraph",
+    "snippet": "This module employs the Louvain method for community detection based on Blondel's paper Fast unfolding of communities in large networks using the Grappolo ...",
+    "host_name": "memgraph.com",
+    "rank": 8,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://lamethods.org/book1/chapters/ch16-community/ch16-comm.html",
+    "name": "16 Community Detection in Learning Networks Using R",
+    "snippet": "Leiden ( cluster_leiden ): The Leiden algorithm is similar to the Louvain algorithm but offers superior speed and delivers higher-quality solutions. It has the ...",
+    "host_name": "lamethods.org",
+    "rank": 9,
+    "date": "",
+    "favicon": ""
+  }
+]
