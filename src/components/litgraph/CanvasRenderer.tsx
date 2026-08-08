@@ -1,8 +1,10 @@
 "use client";
 
 import { useRef, useEffect, useState, useCallback } from "react";
-import type { LitNode, LitEdge } from "@/lib/litgraph/types";
+import * as Lucide from "lucide-react";
+import type { LitNode, LitEdge, BackgroundLayer } from "@/lib/litgraph/types";
 import { NODE_TYPES, EDGE_TYPES } from "@/lib/litgraph/types";
+import { useLitStore } from "@/lib/litgraph/store";
 
 interface Viewport {
   x: number; // pan offset
@@ -57,6 +59,42 @@ export function CanvasRenderer({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [actualSize, setActualSize] = useState({ width, height });
+
+  // ====== Фоновый слой ======
+  const backgroundLayer = useLitStore((s) => s.backgroundLayer);
+  const updateBackgroundLayer = useLitStore((s) => s.updateBackgroundLayer);
+  const setBackgroundMoving = useLitStore((s) => s.setBackgroundMoving);
+
+  // Кэш HTMLImageElement для фоновой картинки (пересоздаётся при смене src)
+  const bgImageRef = useRef<HTMLImageElement | null>(null);
+  const [bgImageReady, setBgImageReady] = useState(false);
+
+  useEffect(() => {
+    if (!backgroundLayer?.src) {
+      bgImageRef.current = null;
+      setBgImageReady(false);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      bgImageRef.current = img;
+      setBgImageReady(true);
+    };
+    img.onerror = () => {
+      console.warn("[LitGraph] background image failed to load");
+      bgImageRef.current = null;
+      setBgImageReady(false);
+    };
+    img.src = backgroundLayer.src;
+    return () => {
+      img.onload = null;
+      img.onerror = null;
+    };
+  }, [backgroundLayer?.src]);
+
+  // Состояние перетаскивания фона (отдельно от нод и pane-pan)
+  const [draggingBackground, setDraggingBackground] = useState(false);
+  const [bgDragStart, setBgDragStart] = useState({ x: 0, y: 0, bgX: 0, bgY: 0 });
 
   // Resize observer для заполнения контейнера
   useEffect(() => {
@@ -166,6 +204,39 @@ export function CanvasRenderer({
     ctx.save();
     ctx.translate(viewport.x, viewport.y);
     ctx.scale(viewport.zoom, viewport.zoom);
+
+    // ====== Фоновый слой (под графом, над сеткой) ======
+    const bg = backgroundLayer;
+    const bgImg = bgImageRef.current;
+    if (bg && bg.visible && bgImg && bgImageReady) {
+      ctx.save();
+      ctx.globalAlpha = bg.opacity;
+      const dw = bg.naturalWidth * bg.scale;
+      const dh = bg.naturalHeight * bg.scale;
+      // Поворот вокруг центра слоя
+      if (bg.rotation) {
+        const cx = bg.x + dw / 2;
+        const cy = bg.y + dh / 2;
+        ctx.translate(cx, cy);
+        ctx.rotate((bg.rotation * Math.PI) / 180);
+        ctx.translate(-cx, -cy);
+      }
+      try {
+        ctx.drawImage(bgImg, bg.x, bg.y, dw, dh);
+      } catch (e) {
+        // SVG с external refs может упасть — игнорируем
+      }
+      // Лёгкая рамка вокруг фона для визуальной границы (если не залочен)
+      if (!bg.locked && viewport.zoom > 0.3) {
+        ctx.globalAlpha = 0.3;
+        ctx.strokeStyle = "#8B5A2B";
+        ctx.lineWidth = 1 / viewport.zoom;
+        ctx.setLineDash([8 / viewport.zoom, 4 / viewport.zoom]);
+        ctx.strokeRect(bg.x, bg.y, dw, dh);
+        ctx.setLineDash([]);
+      }
+      ctx.restore();
+    }
 
     const fSet = focusSet();
 
@@ -417,7 +488,7 @@ export function CanvasRenderer({
     }
 
     ctx.restore();
-  }, [nodes, edges, viewport, actualSize, selectedNodeId, selectedEdgeId, hoveredNodeId, focusSet]);
+  }, [nodes, edges, viewport, actualSize, selectedNodeId, selectedEdgeId, hoveredNodeId, focusSet, backgroundLayer, bgImageReady]);
 
   // Hit testing — найти ноду по координатам экрана
   const findNodeAt = useCallback(
@@ -442,6 +513,26 @@ export function CanvasRenderer({
       return null;
     },
     [nodes, viewport]
+  );
+
+  // Hit testing фонового слоя (если не залочен и видим)
+  const findBackgroundAt = useCallback(
+    (screenX: number, screenY: number): BackgroundLayer | null => {
+      if (!backgroundLayer || !backgroundLayer.visible || backgroundLayer.locked) {
+        return null;
+      }
+      const worldX = (screenX - viewport.x) / viewport.zoom;
+      const worldY = (screenY - viewport.y) / viewport.zoom;
+      const dw = backgroundLayer.naturalWidth * backgroundLayer.scale;
+      const dh = backgroundLayer.naturalHeight * backgroundLayer.scale;
+      return (
+        worldX >= backgroundLayer.x &&
+        worldX <= backgroundLayer.x + dw &&
+        worldY >= backgroundLayer.y &&
+        worldY <= backgroundLayer.y + dh
+      ) ? backgroundLayer : null;
+    },
+    [backgroundLayer, viewport]
   );
 
   const handleDoubleClick = useCallback(
@@ -520,13 +611,26 @@ export function CanvasRenderer({
           nodeX: node.position.x,
           nodeY: node.position.y,
         });
-      } else {
-        onPaneClick();
-        setIsDragging(true);
-        setDragStart({ x: x - viewport.x, y: y - viewport.y });
+        return;
       }
+
+      // Если ноды нет — проверяем фон (если он не залочен и видим)
+      const bg = findBackgroundAt(x, y);
+      if (bg) {
+        // Снимаем выделение с нод/рёбер
+        onPaneClick();
+        setDraggingBackground(true);
+        setBackgroundMoving(true);
+        setBgDragStart({ x, y, bgX: bg.x, bgY: bg.y });
+        return;
+      }
+
+      // Иначе — pan canvas
+      onPaneClick();
+      setIsDragging(true);
+      setDragStart({ x: x - viewport.x, y: y - viewport.y });
     },
-    [findNodeAt, onNodeClick, onPaneClick, viewport]
+    [findNodeAt, findBackgroundAt, onNodeClick, onPaneClick, viewport, setBackgroundMoving]
   );
 
   const handleMouseMoveEnhanced = useCallback(
@@ -548,24 +652,44 @@ export function CanvasRenderer({
             position: { x: newX, y: newY },
           });
         });
+      } else if (draggingBackground && backgroundLayer) {
+        // Перетаскиваем фон
+        const dx = (x - bgDragStart.x) / viewport.zoom;
+        const dy = (y - bgDragStart.y) / viewport.zoom;
+        updateBackgroundLayer({
+          x: bgDragStart.bgX + dx,
+          y: bgDragStart.bgY + dy,
+        });
       } else if (isDragging) {
         setViewport((vp) => ({ ...vp, x: x - dragStart.x, y: y - dragStart.y }));
       } else {
         const node = findNodeAt(x, y);
-        const newHovered = node?.id || null;
-        if (newHovered !== hoveredNodeId) {
-          setHoveredNodeId(newHovered);
-          canvasRef.current!.style.cursor = node ? "pointer" : "grab";
+        if (node) {
+          if (hoveredNodeId !== node.id) setHoveredNodeId(node.id);
+          canvasRef.current!.style.cursor = "pointer";
+        } else {
+          if (hoveredNodeId !== null) setHoveredNodeId(null);
+          // Меняем курсор над фоном
+          const bg = findBackgroundAt(x, y);
+          canvasRef.current!.style.cursor = bg ? "move" : "grab";
         }
       }
     },
-    [isDragging, dragStart, findNodeAt, hoveredNodeId, draggingNode, dragNodeStart, viewport]
+    [
+      isDragging, dragStart, findNodeAt, findBackgroundAt, hoveredNodeId,
+      draggingNode, dragNodeStart, viewport,
+      draggingBackground, backgroundLayer, bgDragStart, updateBackgroundLayer,
+    ]
   );
 
   const handleMouseUpEnhanced = useCallback(() => {
     setIsDragging(false);
     setDraggingNode(null);
-  }, []);
+    if (draggingBackground) {
+      setDraggingBackground(false);
+      setBackgroundMoving(false);
+    }
+  }, [draggingBackground, setBackgroundMoving]);
 
   return (
     <div ref={containerRef} className="flex-1 relative lit-canvas-bg overflow-hidden">
@@ -628,6 +752,24 @@ export function CanvasRenderer({
           <div className="bg-stone-800/85 text-white text-xs px-3 py-1.5 rounded-full shadow-lg flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
             Focus-режим
+          </div>
+        </div>
+      )}
+
+      {/* Индикатор фонового слоя */}
+      {backgroundLayer && (
+        <div className="absolute top-3 left-3 z-10 pointer-events-none">
+          <div className={`text-xs px-2.5 py-1 rounded-full shadow-lg flex items-center gap-1.5 ${
+            backgroundLayer.visible
+              ? "bg-stone-800/85 text-amber-200"
+              : "bg-stone-200/85 text-stone-500"
+          }`}>
+            <Lucide.Image className="w-3 h-3" />
+            <span className="truncate max-w-[200px]">{backgroundLayer.name}</span>
+            <span className="text-[10px] uppercase opacity-70">
+              {backgroundLayer.format}
+              {backgroundLayer.locked ? " · 🔒" : ""}
+            </span>
           </div>
         </div>
       )}

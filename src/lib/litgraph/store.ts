@@ -7,6 +7,7 @@ import type {
   LitProject,
   EdgeKind,
   ChapterVersion,
+  BackgroundLayer,
 } from "./types";
 import { NODE_TYPES } from "./types";
 
@@ -164,6 +165,8 @@ interface LitStore {
   hideTag: string | null;             // если задано — скрывать ноды с этим тегом
   focusNodeId: string | null;         // если задано — focus-режим: затемняются все ноды, кроме этой и её соседей
   focusEnabled: boolean;              // включён ли focus-режим глобально
+  backgroundLayer: BackgroundLayer | null;  // фоновый слой (карта / схема / диаграмма)
+  backgroundMoving: boolean;          // в данный момент перетаскивается фон (для cursor)
 
   // ====== Действия ======
   addNode: (type: LitNodeType, position?: { x: number; y: number }) => string;
@@ -188,6 +191,12 @@ interface LitStore {
   setHideTag: (tag: string | null) => void;
   setFocusNode: (id: string | null) => void;
   setFocusEnabled: (enabled: boolean) => void;
+  // ====== Фоновый слой ======
+  setBackgroundLayer: (layer: BackgroundLayer | null) => void;
+  updateBackgroundLayer: (patch: Partial<BackgroundLayer>) => void;
+  clearBackgroundLayer: () => void;
+  toggleBackgroundVisibility: () => void;
+  setBackgroundMoving: (moving: boolean) => void;
   setProjectMeta: (patch: Partial<Pick<LitStore, "title" | "author" | "description">>) => void;
   newProject: () => void;
   loadProject: (p: LitProject) => void;
@@ -217,6 +226,8 @@ export const useLitStore = create<LitStore>()(
       hideTag: null,
       focusNodeId: null,
       focusEnabled: true,  // focus-режим включён по умолчанию
+      backgroundLayer: null,
+      backgroundMoving: false,
 
       addNode: (type, position) => {
         const cfg = NODE_TYPES[type];
@@ -379,6 +390,27 @@ export const useLitStore = create<LitStore>()(
       setFocusEnabled: (enabled) => set({ focusEnabled: enabled }),
       setProjectMeta: (patch) => set(patch),
 
+      // ====== Фоновый слой ======
+      setBackgroundLayer: (layer) => set({ backgroundLayer: layer }),
+
+      updateBackgroundLayer: (patch) =>
+        set((s) =>
+          s.backgroundLayer
+            ? { backgroundLayer: { ...s.backgroundLayer, ...patch } }
+            : {}
+        ),
+
+      clearBackgroundLayer: () => set({ backgroundLayer: null, backgroundMoving: false }),
+
+      toggleBackgroundVisibility: () =>
+        set((s) =>
+          s.backgroundLayer
+            ? { backgroundLayer: { ...s.backgroundLayer, visible: !s.backgroundLayer.visible } }
+            : {}
+        ),
+
+      setBackgroundMoving: (moving) => set({ backgroundMoving: moving }),
+
       newProject: () => {
         const empty = createDefaultProject();
         set({
@@ -390,6 +422,8 @@ export const useLitStore = create<LitStore>()(
           selectedNodeId: null,
           selectedEdgeId: null,
           editingNodeId: null,
+          backgroundLayer: null,
+          backgroundMoving: false,
         });
         void empty; // заглушка, чтобы TS не ругался
       },
@@ -541,6 +575,13 @@ export const useLitStore = create<LitStore>()(
         edges: s.edges,
         defaultEdgeKind: s.defaultEdgeKind,
         focusEnabled: s.focusEnabled,
+        // Фон сохраняем только если src не слишком большой (<5 MB base64),
+        // чтобы не переполнять localStorage (обычно ~5-10 MB лимит).
+        // Очень большие растры пользователь должен ре-импортировать.
+        backgroundLayer:
+          s.backgroundLayer && s.backgroundLayer.src.length < 5_000_000
+            ? s.backgroundLayer
+            : null,
       }),
       // При первом запуске загружаем демо-данные
       onRehydrateStorage: () => (state) => {

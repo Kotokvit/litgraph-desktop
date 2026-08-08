@@ -6,6 +6,7 @@ import { NODE_TYPES, EDGE_TYPES } from "@/lib/litgraph/types";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import type { LitNode, LitEdge } from "@/lib/litgraph/types";
 import { useState } from "react";
 
@@ -281,6 +282,235 @@ function EdgeInspector({ edge }: { edge: LitEdge }) {
   );
 }
 
+// ====== Инспектор фонового слоя ======
+function BackgroundInspector() {
+  const bg = useLitStore((s) => s.backgroundLayer);
+  const updateBackgroundLayer = useLitStore((s) => s.updateBackgroundLayer);
+  const clearBackgroundLayer = useLitStore((s) => s.clearBackgroundLayer);
+  const toggleBackgroundVisibility = useLitStore((s) => s.toggleBackgroundVisibility);
+
+  if (!bg) return null;
+
+  // Размеры отмасштабированного изображения в мировых координатах
+  const dw = Math.round(bg.naturalWidth * bg.scale);
+  const dh = Math.round(bg.naturalHeight * bg.scale);
+
+  return (
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center justify-center w-7 h-7 rounded-md bg-emerald-100 shrink-0">
+            <Lucide.Image className="w-4 h-4 text-emerald-700" />
+          </div>
+          <span className="text-xs font-semibold uppercase tracking-wider text-emerald-700">
+            Фоновый слой
+          </span>
+        </div>
+        <h3 className="text-sm font-semibold text-stone-800 leading-snug truncate" title={bg.name}>
+          {bg.name}
+        </h3>
+        <div className="flex items-center gap-1.5 text-[10px] text-stone-500">
+          <Badge variant="secondary" className="text-[9px] uppercase">{bg.format}</Badge>
+          <span>{bg.naturalWidth}×{bg.naturalHeight}px</span>
+          <span className="text-stone-400">·</span>
+          <span>{dw}×{dh} в холсте</span>
+        </div>
+      </div>
+
+      {/* Видимость */}
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant={bg.visible ? "default" : "outline"}
+          onClick={toggleBackgroundVisibility}
+          className="h-7 text-xs flex-1"
+          style={bg.visible ? { background: "#059669" } : undefined}
+        >
+          {bg.visible ? (
+            <>
+              <Lucide.Eye className="w-3.5 h-3.5 mr-1.5" />Видим
+            </>
+          ) : (
+            <>
+              <Lucide.EyeOff className="w-3.5 h-3.5 mr-1.5" />Скрыт
+            </>
+          )}
+        </Button>
+        <Button
+          size="sm"
+          variant={bg.locked ? "default" : "outline"}
+          onClick={() => updateBackgroundLayer({ locked: !bg.locked })}
+          className="h-7 text-xs"
+          title={bg.locked ? "Разблокировать перемещение" : "Зафиксировать позицию"}
+          style={bg.locked ? { background: "#92400E" } : undefined}
+        >
+          {bg.locked ? <Lucide.Lock className="w-3.5 h-3.5" /> : <Lucide.Unlock className="w-3.5 h-3.5" />}
+        </Button>
+      </div>
+
+      {/* Непрозрачность */}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <Label className="text-[10px] uppercase tracking-wider text-stone-400">
+            Непрозрачность
+          </Label>
+          <span className="text-xs text-stone-600 font-mono">
+            {Math.round(bg.opacity * 100)}%
+          </span>
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={bg.opacity}
+          onChange={(e) => updateBackgroundLayer({ opacity: parseFloat(e.target.value) })}
+          className="w-full accent-emerald-600"
+        />
+      </div>
+
+      {/* Масштаб */}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <Label className="text-[10px] uppercase tracking-wider text-stone-400">
+            Масштаб
+          </Label>
+          <span className="text-xs text-stone-600 font-mono">
+            {(bg.scale * 100).toFixed(0)}%
+          </span>
+        </div>
+        <input
+          type="range"
+          min={0.05}
+          max={4}
+          step={0.05}
+          value={bg.scale}
+          onChange={(e) => updateBackgroundLayer({ scale: parseFloat(e.target.value) })}
+          className="w-full accent-emerald-600"
+        />
+        <div className="flex gap-1">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => updateBackgroundLayer({ scale: 0.5 })}
+            className="h-6 text-[10px] flex-1"
+          >50%</Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => updateBackgroundLayer({ scale: 1 })}
+            className="h-6 text-[10px] flex-1"
+          >100%</Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => updateBackgroundLayer({ scale: 2 })}
+            className="h-6 text-[10px] flex-1"
+          >200%</Button>
+        </div>
+      </div>
+
+      {/* Поворот */}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <Label className="text-[10px] uppercase tracking-wider text-stone-400">
+            Поворот
+          </Label>
+          <span className="text-xs text-stone-600 font-mono">
+            {Math.round(bg.rotation)}°
+          </span>
+        </div>
+        <input
+          type="range"
+          min={-180}
+          max={180}
+          step={1}
+          value={bg.rotation}
+          onChange={(e) => updateBackgroundLayer({ rotation: parseFloat(e.target.value) })}
+          className="w-full accent-emerald-600"
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => updateBackgroundLayer({ rotation: 0 })}
+          className="h-6 text-[10px] w-full"
+        >Сбросить поворот</Button>
+      </div>
+
+      {/* Позиция */}
+      <div className="space-y-1.5">
+        <Label className="text-[10px] uppercase tracking-wider text-stone-400">
+          Позиция в холсте
+        </Label>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <div className="text-[9px] text-stone-400 mb-0.5">X</div>
+            <input
+              type="number"
+              value={Math.round(bg.x)}
+              onChange={(e) => updateBackgroundLayer({ x: parseFloat(e.target.value) || 0 })}
+              className="w-full h-7 rounded-md border border-stone-200 px-2 text-xs"
+            />
+          </div>
+          <div>
+            <div className="text-[9px] text-stone-400 mb-0.5">Y</div>
+            <input
+              type="number"
+              value={Math.round(bg.y)}
+              onChange={(e) => updateBackgroundLayer({ y: parseFloat(e.target.value) || 0 })}
+              className="w-full h-7 rounded-md border border-stone-200 px-2 text-xs"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Центрировать в viewport */}
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          // Центрируем в (0, 0) мировых координат
+          const newScale = bg.scale;
+          updateBackgroundLayer({
+            x: -(bg.naturalWidth * newScale) / 2,
+            y: -(bg.naturalHeight * newScale) / 2,
+          });
+        }}
+        className="h-7 text-xs w-full"
+      >
+        <Lucide.Crosshair className="w-3.5 h-3.5 mr-1.5" />
+        Центрировать в начале координат
+      </Button>
+
+      {/* Удалить */}
+      <div className="pt-2 border-t">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            if (confirm(`Удалить фоновый слой "${bg.name}"?`)) {
+              clearBackgroundLayer();
+            }
+          }}
+          className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
+        >
+          <Lucide.Trash2 className="w-3.5 h-3.5 mr-1.5" />
+          Удалить фоновый слой
+        </Button>
+      </div>
+
+      {/* Подсказка */}
+      <div className="rounded-md bg-emerald-50 border border-emerald-200 p-2 text-[10px] text-emerald-800 leading-relaxed">
+        <Lucide.Lightbulb className="w-3 h-3 inline mr-1" />
+        Перетаскивайте фон мышью прямо по холсту (если не залочен).
+        SVG масштабируется без потерь качества; для TIFF/PNG используйте
+        высокий scale для чтения деталей.
+      </div>
+    </div>
+  );
+}
+
 // ====== Главный инспектор: выбирает что показать ======
 export function Inspector() {
   const selectedNodeId = useLitStore((s) => s.selectedNodeId);
@@ -291,6 +521,7 @@ export function Inspector() {
   const edge = useLitStore((s) =>
     s.selectedEdgeId ? s.edges.find((e) => e.id === s.selectedEdgeId) ?? null : null
   );
+  const backgroundLayer = useLitStore((s) => s.backgroundLayer);
 
   if (selectedNodeId && node) {
     return <NodeInspector key={node.id} node={node} />;
@@ -299,9 +530,10 @@ export function Inspector() {
     return <EdgeInspector key={edge.id} edge={edge} />;
   }
 
-  // Ничего не выбрано — подсказки
+  // Ничего не выбрано — подсказки + секция фона (если есть)
   return (
     <div className="space-y-3 text-xs text-stone-500">
+      {backgroundLayer && <BackgroundInspector />}
       <div className="rounded-lg bg-stone-100 p-3">
         <div className="font-medium text-stone-700 mb-1">Подсказки</div>
         <ul className="space-y-1 list-disc list-inside leading-relaxed">
@@ -310,6 +542,7 @@ export function Inspector() {
           <li>Тяните от правого кружка к левому — создать связь.</li>
           <li>Кликните по связи — поменять тип или удалить.</li>
           <li>Del — удалить выбранное. Ctrl+D — дублировать.</li>
+          <li>Перетаскивайте фоновый слой (если есть) мышью по холсту.</li>
         </ul>
       </div>
       <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">

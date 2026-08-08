@@ -29,6 +29,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useLitStore } from "@/lib/litgraph/store";
 import { exportToText, exportToMarkdown, downloadFile, slugify } from "@/lib/litgraph/export";
+import { importBackgroundImage, pickImageFileViaDialog } from "@/lib/litgraph/background-layer";
 import { EDGE_TYPES } from "@/lib/litgraph/types";
 import type { EdgeKind } from "@/lib/litgraph/types";
 // Canvas renderer не использует ReactFlow, fitView через window event
@@ -72,9 +73,17 @@ export function Toolbar() {
   const [nerOpen, setNerOpen] = useState(false);
   const [charGraphOpen, setCharGraphOpen] = useState(false);
   const [conflictGraphOpen, setConflictGraphOpen] = useState(false);
+  const [bgImporting, setBgImporting] = useState(false);
+  const [bgError, setBgError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mdFileInputRef = useRef<HTMLInputElement>(null);
+  const bgFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Подписки на store для фона
+  const setBackgroundLayer = useLitStore((s) => s.setBackgroundLayer);
+  const clearBackgroundLayer = useLitStore((s) => s.clearBackgroundLayer);
+  const backgroundLayer = useLitStore((s) => s.backgroundLayer);
 
   // Собираем текст из всех chapter-нод для POLER-анализа
   const collectedText = useLitStore((s) => {
@@ -172,6 +181,65 @@ export function Toolbar() {
       setParseError(String(err));
     } finally {
       setParsing(false);
+    }
+  }
+
+  // ====== Импорт фонового слоя ======
+  async function handleImportBackgroundClick() {
+    setBgError(null);
+    setBgImporting(true);
+    try {
+      const file = await pickImageFileViaDialog();
+      if (!file) {
+        // Пользователь отменил — не ошибка
+        setBgImporting(false);
+        return;
+      }
+      await processBackgroundFile(file);
+    } catch (err) {
+      setBgError(String(err));
+    } finally {
+      setBgImporting(false);
+    }
+  }
+
+  // Альтернативный путь: пользователь выбрал файл через скрытый <input>
+  // (нужно для веб-режима без Tauri, а также для drag-and-drop в будущем)
+  async function handleBgFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBgError(null);
+    setBgImporting(true);
+    try {
+      await processBackgroundFile(file);
+    } catch (err) {
+      setBgError(String(err));
+    } finally {
+      setBgImporting(false);
+      e.target.value = "";
+    }
+  }
+
+  async function processBackgroundFile(file: File) {
+    // Если уже есть фон — спрашиваем подтверждение замены
+    if (backgroundLayer) {
+      const ok = confirm(
+        `Заменить текущий фон "${backgroundLayer.name}" на "${file.name}"?`
+      );
+      if (!ok) return;
+    }
+    const layer = await importBackgroundImage(file, {
+      opacity: 0.55,
+    });
+    setBackgroundLayer(layer);
+    // Не делаем fitView — фон позиционируется в (0,0) мировых координат,
+    // пользователь сам решит куда его поместить.
+  }
+
+  function handleClearBackground() {
+    if (!backgroundLayer) return;
+    if (confirm(`Удалить фоновый слой "${backgroundLayer.name}"?`)) {
+      clearBackgroundLayer();
     }
   }
 
@@ -436,6 +504,32 @@ export function Toolbar() {
                   <div className="text-[10px] text-amber-700">Разобрать любой текст на ноды</div>
                 </div>
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleImportBackgroundClick} style={{ background: "#ECFDF5" }}>
+                {bgImporting ? (
+                  <Lucide.Loader2 className="w-4 h-4 mr-2 text-emerald-700 animate-spin" />
+                ) : (
+                  <Lucide.Image className="w-4 h-4 mr-2 text-emerald-700" />
+                )}
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-emerald-900">
+                    {backgroundLayer ? "Заменить фон…" : "Импорт фона…"}
+                  </div>
+                  <div className="text-[10px] text-emerald-700">
+                    SVG · PNG · TIFF · JPEG · WebP — карта/схема как опорный слой
+                  </div>
+                </div>
+              </DropdownMenuItem>
+              {backgroundLayer && (
+                <DropdownMenuItem onClick={handleClearBackground} className="text-orange-700 focus:text-orange-800">
+                  <Lucide.X className="w-4 h-4 mr-2" />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium">Удалить фон</div>
+                    <div className="text-[10px] text-orange-600/80">
+                      Текущий: {backgroundLayer.name}
+                    </div>
+                  </div>
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={handleImportClick}>
                 <Lucide.Upload className="w-4 h-4 mr-2" />Импорт JSON…
               </DropdownMenuItem>
@@ -472,6 +566,34 @@ export function Toolbar() {
         onChange={handleFileChange}
         className="hidden"
       />
+
+      {/* Скрытый input для импорта фона (fallback если Tauri диалог недоступен) */}
+      <input
+        ref={bgFileInputRef}
+        type="file"
+        accept=".svg,.png,.tiff,.tif,.jpg,.jpeg,.webp,image/*"
+        onChange={handleBgFileChange}
+        className="hidden"
+      />
+
+      {/* Алерт об ошибке импорта фона */}
+      {bgError && (
+        <div className="fixed bottom-4 right-4 z-50 max-w-sm bg-red-50 border border-red-200 rounded-lg shadow-lg p-3 text-sm text-red-700">
+          <div className="flex items-start gap-2">
+            <Lucide.AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div className="font-medium mb-1">Не удалось импортировать фон</div>
+              <div className="text-xs text-red-600/80 break-all">{bgError}</div>
+            </div>
+            <button
+              onClick={() => setBgError(null)}
+              className="text-red-400 hover:text-red-600"
+            >
+              <Lucide.X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Диалог "О проекте" */}
       <Dialog open={metaOpen} onOpenChange={setMetaOpen}>
