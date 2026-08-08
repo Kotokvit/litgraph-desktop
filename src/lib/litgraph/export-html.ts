@@ -58,7 +58,16 @@ function buildNodeReason(node: LitNode): string {
       return parts.length ? `chapter:${parts.join(";")}` : "chapter:manual";
     }
     case "character": {
+      // v0.3.0: если парсер предоставил полный reason (с speech_verb_hits,
+      // direct_address_hits, prefix, NOT_IN_STOPLIST) — используем его.
+      // Это даёт AI/developer полную трассировку решения парсера.
+      if (meta.reason && typeof meta.reason === "string") {
+        return meta.reason;
+      }
+      // Fallback для нод, созданных вручную или старым парсером
       if (meta.mentions !== undefined) parts.push(`freq=${meta.mentions}`);
+      if (meta.speechCount !== undefined) parts.push(`speech=${meta.speechCount}`);
+      if (meta.directCount !== undefined) parts.push(`direct=${meta.directCount}`);
       if (meta.chapters) parts.push(`in=${meta.chapters}`);
       if (meta.firstChapter) parts.push(`first=${meta.firstChapter}`);
       if (node.data.body) {

@@ -44,6 +44,24 @@ pub fn build_graph(
     let characters = characters::detect(markdown);
     let locations = locations::detect(markdown);
 
+    // === v0.3.0: Перекрёстная дедупликация characters ↔ locations ===
+    // Если слово обнаружено и как персонаж, и как локация — оставить только
+    // персонажа. Имена персонажей в косвенных падежах часто матчатся
+    // локациями через «к Алексея», «от Марты» и т.д.
+    // Используем грубую лемматизацию по окончаниям (без pymorphy2).
+    let char_lemmas: std::collections::HashSet<String> = characters
+        .iter()
+        .flat_map(|c| {
+            let mut l = vec![lemmatize_simple(&c.name)];
+            l.extend(c.aliases.iter().map(|a| lemmatize_simple(a)));
+            l
+        })
+        .collect();
+    let locations: Vec<locations::ParsedLocation> = locations
+        .into_iter()
+        .filter(|l| !char_lemmas.contains(&lemmatize_simple(&l.name)))
+        .collect();
+
     let mut nodes: Vec<LitNode> = Vec::new();
     let mut edges: Vec<LitEdge> = Vec::new();
 
@@ -177,6 +195,11 @@ pub fn build_graph(
                     "mentions": c.count,
                     "chapters": format!("{} глав", chapters_with.len()),
                     "firstChapter": first_chapter,
+                    // v0.3.0: X-ray поля — показывают ПОЧЕМУ парсер решил
+                    // что это персонаж. Видны в HTML X-ray export sidebar.
+                    "speechCount": c.speech_count,
+                    "directCount": c.direct_count,
+                    "reason": c.reason,
                 })),
                 full_text: None,
                 versions: None,
@@ -394,4 +417,35 @@ fn layout_nodes(
 // Утилита для генерации ID (используется в storage тоже)
 pub fn new_uid(prefix: &str) -> String {
     uid(prefix)
+}
+
+/// Простая лемматизация русского/украинского слова через отсечение
+/// типичных окончаний. Это грубая аппроксимация — для настоящей точности
+/// нужен pymorphy2. Используется только для перекрёстной дедупликации
+/// characters ↔ locations (чтобы «Алексея»-локация не дублировала
+/// «Алексей»-персонажа).
+fn lemmatize_simple(word: &str) -> String {
+    let lower = word.to_lowercase();
+    let chars: Vec<char> = lower.chars().collect();
+    if chars.len() <= 4 {
+        return lower;
+    }
+    // Типичные русские/украинские окончания (попытка отсечь самое длинное совпадение)
+    let endings: &[&str] = &[
+        "ами", "ями", "ого", "его", "ому", "ему", "ыми", "ими",
+        "ах", "ях", "ой", "ая", "ее", "ие", "ые", "ою", "ею",
+        "ом", "ем", "ам", "ям",
+        "а", "я", "у", "ю", "ы", "и", "е", "о",
+    ];
+    for ending in endings {
+        let ending_chars: Vec<char> = ending.chars().collect();
+        if chars.len() > ending_chars.len() + 2 {
+            // оставить минимум 3 буквы корня
+            let tail_start = chars.len() - ending_chars.len();
+            if chars[tail_start..] == ending_chars[..] {
+                return chars[..tail_start].iter().collect();
+            }
+        }
+    }
+    lower
 }
