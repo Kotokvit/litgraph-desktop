@@ -113,6 +113,7 @@ pub struct Constraint {
 /// Поле `conflicting_fact` пока всегда `None` — Wave 2 `contradictions.rs`
 /// обогатит его реальной ссылкой на `FactId`, породивший конфликт.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConstraintViolation {
     /// Имя нарушенного ограничения (`Constraint::name`).
     pub constraint_name: String,

@@ -158,13 +158,18 @@ pub async fn reasoning_extract_events(
     }
 
     // 1. Разбиваем на главы (для TemporalAnchor событий).
-    let (chapters, cleaned_text) = chapters::detect(&text);
+    //    ВАЖНО: chapters::detect возвращает (Vec<ParsedChapter>, prologue_text)
+    //    где prologue — текст ДО первой главы. Если текст начинается с «Глава 1»,
+    //    prologue пустой. Парсеру нужен исходный текст, а не prologue.
+    //    ParsedChapter.pos/end — byte offsets относительно исходного text.
+    let (chapters, _prologue) = chapters::detect(&text);
 
     // 2. Строим resolver: title персонажа → node.id.
     let resolver = EntityResolver::from_nodes(&project.nodes);
 
     // 3. Regex-based SVO-парсер (БЕЗ Python, БЕЗ LLM).
-    let events = parse_text_fallback(&cleaned_text, &resolver, &chapters);
+    //    Передаём исходный text — byte offsets в chapters соответствуют text.
+    let events = parse_text_fallback(&text, &resolver, &chapters);
 
     Ok(events)
 }
@@ -308,7 +313,9 @@ pub async fn reasoning_validate_text(
     // 2. Готовим мост LLM.
     let bridge = LlmBridge::new();
     let resolver = EntityResolver::from_nodes(&project.nodes);
-    let (chapters, cleaned_text) = chapters::detect(&proposed_text);
+    // Парсеру нужен исходный proposed_text (byte offsets chapters соответствуют
+    // исходному тексту, а не prologue).
+    let (chapters, _prologue) = chapters::detect(&proposed_text);
 
     // 3. Строим ActionRequest — структура с ограничениями для LLM.
     //    В первом приближении используем «универсальный» запрос без
@@ -325,7 +332,7 @@ pub async fn reasoning_validate_text(
 
     // 4. Валидируем.
     let result = bridge.validate_response(
-        &cleaned_text,
+        &proposed_text,
         &request,
         &cycle.world,
         &cycle.facts,

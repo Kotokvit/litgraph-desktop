@@ -162,6 +162,7 @@ pub enum Provenance {
 /// который назначается при записи). Они являются «источником истины» —
 /// факты выводятся из событий через rules + inference.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Event {
     /// Назначается `FactLog::record_event`. Если 0 на входе — авто-присвоение.
     pub id: EventId,
@@ -200,6 +201,7 @@ pub enum FactValue {
     /// Дробное (height = 1.82).
     Float(f64),
     /// Ссылка на другую сущность (spouse = EntityId).
+    #[serde(rename = "Entity", alias = "EntityRef")]
     EntityRef(EntityId),
     /// Список значений (knowledge = [fact1, fact2, ...]).
     List(Vec<FactValue>),

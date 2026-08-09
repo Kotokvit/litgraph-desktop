@@ -42,6 +42,7 @@ pub type Attribute = String;
 /// значения, событие-причина и момент времени. Добавляется в `history`
 /// при каждом `set()`/`invalidate()`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StateTransition {
     pub entity: EntityId,
     pub attribute: Attribute,

@@ -33,7 +33,25 @@ interface ReasoningDialogProps {
 
 function actionLabel(a: Action): string {
   if (typeof a === "string") return a;
-  if ("Custom" in a) return `Custom(${a.Custom.lemma})`;
+  // Struct variants — externally tagged JSON: { Variant: { field: value } }
+  if ("Custom" in a) return `Custom(${a.Custom.verbLemma})`;
+  if ("Move" in a) return `Move(${a.Move.destination})`;
+  if ("Arrive" in a) return `Arrive(${a.Arrive.destination})`;
+  if ("Leave" in a) return `Leave(${a.Leave.source})`;
+  if ("Speak" in a) return "Speak";
+  if ("Ask" in a) return `Ask(${a.Ask.topic})`;
+  if ("Tell" in a) return `Tell(${a.Tell.topic})`;
+  if ("Marry" in a) return `Marry(${a.Marry.partner})`;
+  if ("Betray" in a) return `Betray(${a.Betray.victim})`;
+  if ("Ally" in a) return `Ally(${a.Ally.partner})`;
+  if ("Know" in a) return `Know(${a.Know.fact})`;
+  if ("Forget" in a) return `Forget(${a.Forget.fact})`;
+  if ("Want" in a) return `Want(${a.Want.goal})`;
+  if ("Plan" in a) return `Plan(${a.Plan.goal})`;
+  if ("FallInLove" in a) return `FallInLove(${a.FallInLove.partner})`;
+  if ("Hate" in a) return `Hate(${a.Hate.target})`;
+  if ("Discover" in a) return `Discover(${a.Discover.fact})`;
+  if ("Transform" in a) return `Transform(${a.Transform.newForm})`;
   return JSON.stringify(a);
 }
 
@@ -100,7 +118,11 @@ function EventRow({ event }: { event: Event }) {
       )}
       <div className="mt-1 text-[10px] text-stone-400 flex gap-3">
         <span>conf={event.confidence.toFixed(2)}</span>
-        <span>{event.provenance && Object.keys(event.provenance)[0]}</span>
+        <span>
+          {event.provenance
+            ? Object.keys(event.provenance)[0] ?? "—"
+            : "—"}
+        </span>
       </div>
     </div>
   );

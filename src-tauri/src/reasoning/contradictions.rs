@@ -54,6 +54,7 @@ pub use crate::reasoning::causality::CausalLoop;
 /// жизни (говорит, двигается, убивает и т.д.), либо воскресает, не будучи
 /// мёртвым. SPEC §2.10.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TemporalParadox {
     /// Человекочитаемое описание на русском.
     pub description: String,

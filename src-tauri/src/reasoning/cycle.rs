@@ -80,6 +80,7 @@ use crate::reasoning::state::{StateTransition, WorldSnapshot, WorldState};
 /// temporal_paradoxes прямо в структуру отчёта для удобства потребителя.
 ///
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CycleReport {
     /// Количество новых событий, обработанных в этом цикле (без дубликатов
     /// — повторная передача тех же событий через `run_cycle` даст 0).

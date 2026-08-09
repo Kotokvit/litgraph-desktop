@@ -121,24 +121,45 @@ export interface TemporalAnchor {
   charOffset: number;
 }
 
-export interface Provenance {
-  SvoParser?: null;
-  LlmHypothesis?: null;
-  Manual?: null;
-  Inferred?: null;
-}
+export type Provenance =
+  | { SvoParser: null }
+  | { RustParser: null }
+  | { LlmSuggested: null }
+  | { Manual: null }
+  | { Inferred: null };
 
+// Rust enum Action сериализуется как externally tagged:
+//   - unit-варианты → строка "Kill", "Die", ...
+//   - struct-варианты → { "Variant": { field: value } }
 export type Action =
   | "Kill"
+  | "Wound"
+  | "Hit"
+  | "Capture"
+  | "Imprison"
+  | "Free"
+  | "Heal"
+  | "Touch"
   | "Die"
   | "Resurrect"
-  | "Speak"
-  | "Move"
-  | "Marry"
-  | "Divorce"
-  | "Know"
-  | "Forget"
-  | { Custom: { lemma: string; polarity: string } };
+  | { Move: { destination: string } }
+  | { Arrive: { destination: string } }
+  | { Leave: { source: string } }
+  | { Speak: { topic: string | null } }
+  | { Ask: { topic: string } }
+  | { Tell: { topic: string; to: string } }
+  | { Marry: { partner: string } }
+  | { Betray: { victim: string } }
+  | { Ally: { partner: string } }
+  | { Know: { fact: string } }
+  | { Forget: { fact: string } }
+  | { Want: { goal: string } }
+  | { Plan: { goal: string } }
+  | { FallInLove: { partner: string } }
+  | { Hate: { target: string } }
+  | { Discover: { fact: string } }
+  | { Transform: { newForm: string } }
+  | { Custom: { verbLemma: string; polarity: string } };
 
 export interface Event {
   id: number;

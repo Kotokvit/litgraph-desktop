@@ -21,6 +21,7 @@ use std::cmp::Ordering;
 
 /// Точка в нарративном времени. SPEC §2.2.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "camelCase")]
 pub struct TemporalAnchor {
     /// Числовая часть главы (12 для «Глава 12», 28 для «Глава 28б»).
     pub chapter_num: u32,

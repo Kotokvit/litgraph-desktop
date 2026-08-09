@@ -17,7 +17,12 @@
 //
 // Подавляем шум на уровне модуля — реальных dead-code здесь нет, проверено
 // ручным аудитом call-graph: commands/reasoning.rs → reasoning::*.
+//
+// `unused_imports` отдельно — pub use реэкспорты предназначены для внешнего
+// использования (фронтенд через Tauri commands), но компилятор внутри
+// crate'а не видит их использования и помечает как unused.
 #![allow(dead_code)]
+#![allow(unused_imports)]
 
 // === Wave 1: data layer (ready) ===
 pub mod facts;
