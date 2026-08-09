@@ -96,14 +96,17 @@ function actionLabel(a: Action): string {
 }
 
 function factValueLabel(v: FactValue | undefined | null): string {
-  if (!v) return "—";
+  if (v == null) return "—";
+  // Unit-вариант Unknown сериализуется как bare string "Unknown".
+  if (typeof v === "string") return v.toLowerCase();
+  // Остальные варианты — объекты { Tag: value }.
+  if (typeof v !== "object") return String(v);
   if ("Bool" in v) return v.Bool ? "true" : "false";
   if ("Str" in v) return `"${v.Str}"`;
   if ("Int" in v) return String(v.Int);
   if ("Float" in v) return v.Float.toFixed(2);
   if ("Entity" in v) return `→${v.Entity}`;
   if ("List" in v) return `[${v.List.map(factValueLabel).join(", ")}]`;
-  if ("Unknown" in v) return "unknown";
   try {
     return JSON.stringify(v);
   } catch {
@@ -150,8 +153,13 @@ function EventRow({ event }: { event: Event }) {
   const confidence = typeof event.confidence === "number" ? event.confidence : 0;
   let provenanceTag = "—";
   try {
-    if (event.provenance && typeof event.provenance === "object") {
-      provenanceTag = Object.keys(event.provenance)[0] ?? "—";
+    const p = event.provenance as unknown;
+    // Все варианты Provenance — unit, поэтому на проводе bare string.
+    if (typeof p === "string") {
+      provenanceTag = p;
+    } else if (p && typeof p === "object") {
+      // Fallback: если Rust-сторона когда-либо добавит newtype/struct вариант.
+      provenanceTag = Object.keys(p as Record<string, unknown>)[0] ?? "—";
     }
   } catch {
     /* ignore */

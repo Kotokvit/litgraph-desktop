@@ -105,6 +105,12 @@ export async function aiListOllamaModels(url: string) {
 // Примитивные типы reasoning engine (зеркалируют Rust-структуры).
 // Полные типы см. в src-tauri/src/reasoning/.
 
+// Rust enum FactValue сериализуется как externally tagged:
+//   - unit-вариант Unknown → строка "Unknown"
+//   - newtype-варианты (Bool/Str/Int/Float/EntityRef) → { Tag: value }
+//   - List → { List: [...] }
+// EntityRef помечен #[serde(rename = "Entity", alias = "EntityRef")] в Rust,
+// поэтому на проводе ключ "Entity".
 export type FactValue =
   | { Bool: boolean }
   | { Str: string }
@@ -112,7 +118,7 @@ export type FactValue =
   | { Float: number }
   | { Entity: string }
   | { List: FactValue[] }
-  | { Unknown: null };
+  | "Unknown";
 
 export interface TemporalAnchor {
   chapterNum: number;
@@ -121,12 +127,14 @@ export interface TemporalAnchor {
   charOffset: number;
 }
 
+// Rust enum Provenance — все варианты unit, поэтому сериализуются как
+// bare strings: "SvoParser", "RustParser", "LlmSuggested", "Verified", "User".
 export type Provenance =
-  | { SvoParser: null }
-  | { RustParser: null }
-  | { LlmSuggested: null }
-  | { Manual: null }
-  | { Inferred: null };
+  | "SvoParser"
+  | "RustParser"
+  | "LlmSuggested"
+  | "Verified"
+  | "User";
 
 // Rust enum Action сериализуется как externally tagged:
 //   - unit-варианты → строка "Kill", "Die", ...
