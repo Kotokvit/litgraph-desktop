@@ -1097,3 +1097,591 @@ Stage Summary:
   For LLM context: `kb.retrieve_for_question(user_question, 20)` produces a
   Subgraph that can be serialized to JSON and injected into ai/prompts.rs::
   build_assistant_prompt as the "WORLD STATE (relevant subset)" section.
+
+---
+Task ID: 4-b
+Agent: full-stack-developer (planner.rs + llm_bridge.rs)
+Task: Build planner.rs and llm_bridge.rs — action planner + LLM bridge with state enforcement
+
+Work Log:
+- Read mandatory context: docs/reasoning/SPEC.md (§0 принципы, §2.3 Event/Action,
+  §2.5 Fact/FactValue, §2.6 FactLog, §2.7 WorldState, §2.9 ConstraintEngine,
+  §2.10 ContradictionReport, §3.3 LLM bridge contract, §4 module export rules,
+  §5 anti-patterns, §6 wave plan), worklog.md (Wave 1 entries for facts/state/
+  timeline/rules, Wave 2 for inference/causality/constraints/contradictions,
+  Wave 3 for semantic_parser/memory). Read src-tauri/src/reasoning/{facts,state,
+  timeline,constraints,contradictions,semantic_parser,memory}.rs (confirmed
+  FactLog::all_facts/all_events/get_current_value API; WorldState::get/set/
+  has_attribute/history/snapshot API; ConstraintEngine::default_literary/check/
+  check_all API with action_forbidden matching by discriminant; Contradiction
+  Detector::detect_all(constraint_violations: Vec, facts, events, causal_loops)
+  signature; EntityResolver::from_nodes/resolve/resolve_or_keep API; parse_text_
+  fallback(text, resolver, chapters) → Vec<Event> returning Speak/Kill/Die/
+  Resurrect/Arrive events with confidence 0.5, Provenance::RustParser; Subgraph
+  with center/nodes/edges/facts/events/max_hops and is_empty()/summary() methods).
+  Read src-tauri/src/ai/{mod,types,prompts}.rs (confirmed AiProvider/ChatMessage
+  shape and existing build_assistant_prompt's "send everything" pattern that
+  LlmBridge is the STRICTER alternative to — per task brief).
+- Wrote src-tauri/src/reasoning/planner.rs (~590 LOC including tests):
+  * Module doc (Russian) — explains decision tree, sync/async boundary, and
+    statelessness principle. Cross-references SPEC §0 (algorithm owns
+    understanding) and §6 (decision tree from brief).
+  * `Operation` enum (8 variants: Observe{raw_text}, BuildState, Reason,
+    Hypothesize, Verify{hypothesis_id}, UpdateState, Query{question},
+    Act{action_request}, Idle) — derives Debug, Clone, Serialize, Deserialize.
+    Added `#[allow(clippy::large_enum_variant)]` with justification comment
+    (Act variant holds ActionRequest with Option<Subgraph>; SPEC/brief requires
+    exact field types without Box).
+  * `ActionRequest` struct (kind: ActionKind, constraints: Vec<String>,
+    allowed: Vec<String>, forbidden: Vec<String>, task: String,
+    context_subgraph: Option<Subgraph>) — derives Debug, Clone, Serialize,
+    Deserialize. Russian field docs explain how each field maps to a user-
+    prompt section.
+  * `ActionKind` enum (WriteScene, ContinueChapter, AnalyzePlot,
+    AnswerQuestion, GenerateHypothesis) — derives Debug, Clone, Serialize,
+    Deserialize, PartialEq, Eq, Hash (PartialEq required by tests, Eq+Hash
+    come for free with unit variants).
+  * `PlannerContext` struct (pending_events: usize, unverified_hypotheses:
+    usize, last_contradiction_count: usize, user_query: Option<String>) —
+    derives Debug, Clone, Default.
+  * `Planner` unit struct — derives Debug, Clone, Default. Methods:
+    - new() — stateless constructor.
+    - next_operation(&PlannerContext) -> Operation — main decision function.
+    - plan_for_user_query(&str) -> Operation — convenience for user queries.
+    - answer_question_request(&PlannerContext) -> ActionRequest (private
+      helper, builds ActionRequest with kind=AnswerQuestion from ctx.user_query).
+  * Decision tree (next_operation) implemented exactly per brief §6:
+    1. user_query.is_some() AND pending_events == 0 → Act{AnswerQuestion}
+    2. pending_events > 0 → BuildState
+    3. last_contradiction_count > 0 AND unverified_hypotheses == 0 → Hypothesize
+    4. unverified_hypotheses > 0 → Verify{hypothesis_id: 1}
+    5. user_query.is_some() → Act{AnswerQuestion} (defensive fallback;
+       formally unreachable given branches 1-4, but per spec)
+    6. else → Idle
+    For branch 4, hypothesis_id is hardcoded to 1 (sentinel «first pending»)
+    because PlannerContext doesn't expose the actual hypothesis list — Wave 5
+    integration can extend PlannerContext with `first_pending_hypothesis_id:
+    Option<u64>` to wire up the real ID. Documented in module doc.
+  * 11 unit tests (5 required + 6 extra):
+    Required:
+    1. test_next_operation_builds_state_when_pending_events
+    2. test_next_operation_hypothesizes_when_contradictions
+    3. test_next_operation_verifies_when_pending_hypotheses
+    4. test_next_operation_idle_when_nothing_to_do
+    5. test_plan_for_user_query_returns_act_operation
+    Extra (decision tree coverage):
+    6. test_user_query_with_no_pending_events_returns_act_immediately (branch 1)
+    7. test_contradictions_with_unverified_hypotheses_prefers_verify (branch 4
+       wins over branch 3 when unverified > 0)
+    8. test_default_context_returns_idle (Default PlannerContext → Idle)
+    9. test_planner_default_equals_new (Default == new, stateless)
+    10. test_action_request_serializes_to_json (Tauri boundary smoke)
+    11. test_operation_serializes_to_json (logging smoke)
+- Wrote src-tauri/src/reasoning/llm_bridge.rs (~1100 LOC including tests):
+  * Module doc (Russian) — explains sync/async boundary (CRITICAL: module is
+    SYNC, LLM calls are async in crate::ai; bridge only builds prompts and
+    parses responses; actual async LLM call happens at Tauri command layer via
+    tokio::task::spawn_blocking). Includes a usage example showing the
+    caller-side retry loop with Accept/Reject/Retry handling.
+  * `ValidationResult` enum (Accept{events, report}, Reject{violations,
+    feedback_prompt}, Retry{reason}) — derives Debug, Clone. Variants
+    documented with their semantic meaning (Accept = commit events, Reject =
+    LLM retry with feedback, Retry = soft fail / different approach).
+  * `LlmBridge` unit struct — derives Debug, Clone, Default. Methods:
+    - new() — stateless constructor.
+    - build_prompt(&ActionRequest, &WorldState, &FactLog) -> (String, String)
+      — returns (system_prompt, user_prompt). System prompt is the verbatim
+      Russian template from brief §3 (writer role, 5 rules including
+      [REJECTED] escape hatch). User prompt has 6 sections:
+      1. СОСТОЯНИЕ МИРА (relevant subset) — iterates FactLog::all_facts(),
+         filters valid_until.is_none() (active), formats each as
+         `entity.attribute = value (since Глава N)` using
+         TemporalAnchor::display_chapter().
+      2. ОГРАНИЧЕНИЯ — request.constraints (human-readable Russian strings).
+      3. РАЗРЕШЕНО — request.allowed.
+      4. ЗАПРЕЩЕНО — request.forbidden.
+      5. КОНТЕКСТ (subgraph) — request.context_subgraph: Some → Subgraph::
+         summary() + facts/events detail; None → "(не предоставлен)".
+      6. ЗАДАЧА — request.task.
+    - validate_response(&str, &ActionRequest, &WorldState, &FactLog,
+      &EntityResolver, &[ParsedChapter]) -> ValidationResult — main validation
+      algorithm per brief §4:
+      (1) parse_text_fallback(generated_text, resolver, chapters) → events.
+      (2) events.is_empty() → Retry{reason: "Не удалось извлечь..."}.
+      (3) ConstraintEngine::default_literary().check(world, ev) for each event;
+          collect all violations.
+      (4) violations.is_empty() → Accept{events, report:
+          ContradictionDetector::detect_all(Vec::new(), facts, &events,
+          Vec::new())}. The detect_all call additionally surfaces
+          temporal_paradoxes (e.g. Resurrect-without-death) — even with empty
+          constraint violations, the report may be informative.
+      (5) else → Reject{violations, feedback_prompt: build_feedback_prompt(...)}.
+    - build_feedback_prompt(&ActionRequest, &str, &[ConstraintViolation])
+      -> String — per brief §5: numbered list of violation.reason strings +
+      rewrite instruction + === ИСХОДНАЯ ЗАДАЧА === + original task.
+    - build_user_prompt (private) — assembles the 6-section user prompt.
+  * Private helper: format_fact_value(&FactValue) -> String — covers all 7
+    FactValue variants (Bool/Str/Int/Float/EntityRef/List/Unknown). Used in
+    СОСТОЯНИЕ МИРА and КОНТЕКСТ sections.
+  * Const: SYSTEM_PROMPT_TEMPLATE — verbatim Russian system prompt from
+    brief §3 (5 rules, [REJECTED] escape hatch).
+  * 10 unit tests (5 required + 5 extra):
+    Required:
+    1. test_build_prompt_includes_state_and_constraints — asserts all 6 user-
+       prompt sections + system prompt rules.
+    2. test_validate_response_accepts_compliant_text — Ivan alive, says hi
+       in Ch.5 → Accept with empty report.
+    3. test_validate_response_rejects_dead_character_speaking — Petr dead
+       since Ch.12, says something in Ch.15 → Reject with dead_cannot_speak
+       violation + feedback_prompt containing "мёртв" + === ИСХОДНАЯ ЗАДАЧА ===.
+    4. test_validate_response_retries_when_no_events_extracted — text without
+       known verbs → Retry{reason contains "Не удалось извлечь события"}.
+    5. test_build_feedback_prompt_lists_violations — 2 violations (dead_cannot_
+       speak + dead_cannot_move) → numbered list + instruction + original task.
+    Extra (coverage):
+    6. test_default_bridge_equals_new — Default == new, stateless.
+    7. test_build_prompt_handles_empty_factlog — empty facts → "(пока нет
+       установленных фактов)" placeholder in СОСТОЯНИЕ МИРА.
+    8. test_build_prompt_with_subgraph_includes_summary — Some(subgraph) →
+       Subgraph::summary() + facts detail in КОНТЕКСТ section.
+    9. test_format_fact_value_all_variants — smoke for all 7 FactValue variants.
+    10. test_validate_response_accept_has_temporal_paradox_for_resurrect_
+        without_death — Ivan alive (alive=true), "Иван воскрес" → Accept
+        (constraint engine doesn't forbid Resurrect) BUT report contains
+        temporal_paradox (ContradictionDetector finds resurrect-without-death).
+        This verifies that even Accept path can carry informative paradoxes.
+  * Test fixtures: make_character_node (LitNode), make_chapter (ParsedChapter
+    with pos..end range), make_fact (active Fact), answer_request (minimal
+    ActionRequest), world_with_dead_petr (WorldState with Petr alive=true
+    Ch.1 then alive=false Ch.12).
+- Verification: standalone cargo project at /tmp/check_4b/ with deps serde +
+  serde_json + fancy-regex + unicode-segmentation + chrono + uuid + thiserror.
+  Copied Wave 1+2+3 modules (facts/state/timeline/rules/inference/causality/
+  constraints/contradictions/semantic_parser/memory) + planner.rs + llm_bridge.rs
+  + models (node/edge/project/version) + parser (mod/chapters/characters/
+  locations/epsilon). Minimal reasoning/mod.rs with `pub mod` for all 12 modules.
+  * `cargo check --lib --tests` — clean (no warnings on planner.rs / llm_bridge.rs).
+  * `cargo test --lib` — 109/109 passing (11 planner + 10 llm_bridge + 88
+    sibling). All 5 required planner tests + all 5 required llm_bridge tests
+    pass.
+  * `cargo clippy --lib --tests` — zero warnings/errors on planner.rs /
+    llm_bridge.rs. Pre-existing errors in Wave 1 facts.rs (approx_constant
+    for 3.14 literal) and state.rs (explicit_auto_deref) are NOT from my code
+    and NOT touched.
+- Could not run cargo check in src-tauri directly: Tauri's gdk-sys needs
+  system libs absent in sandbox, and `pub mod planner;` / `pub mod llm_bridge;`
+  are commented out in mod.rs awaiting Wave 5. Code is syntactically +
+  semantically correct against the SPEC contract, verified via standalone
+  project.
+- Wrote agent-ctx work record at agent-ctx/4-b-planner-llm-bridge.md.
+
+Stage Summary:
+- Public API exported by planner.rs:
+  Types:    Operation (Debug/Clone/Serialize/Deserialize, 8 variants),
+            ActionRequest (Debug/Clone/Serialize/Deserialize),
+            ActionKind (Debug/Clone/Serialize/Deserialize/PartialEq/Eq/Hash,
+              5 variants),
+            PlannerContext (Debug/Clone/Default),
+            Planner (Debug/Clone/Default, unit struct).
+  Methods:  Planner::{new, next_operation, plan_for_user_query} +
+            private Planner::answer_question_request.
+- Public API exported by llm_bridge.rs:
+  Types:    ValidationResult (Debug/Clone, 3 variants: Accept/Reject/Retry),
+            LlmBridge (Debug/Clone/Default, unit struct).
+  Methods:  LlmBridge::{new, build_prompt, validate_response,
+            build_feedback_prompt} + private LlmBridge::build_user_prompt +
+            private free fn format_fact_value.
+  Const:    SYSTEM_PROMPT_TEMPLATE (verbatim Russian system prompt per brief §3).
+- Planner decision tree (next_operation):
+  1. user_query.is_some() && pending_events == 0 → Act{AnswerQuestion}
+  2. pending_events > 0 → BuildState
+  3. last_contradiction_count > 0 && unverified_hypotheses == 0 → Hypothesize
+  4. unverified_hypotheses > 0 → Verify{hypothesis_id: 1}
+  5. user_query.is_some() → Act{AnswerQuestion} (defensive fallback per spec)
+  6. else → Idle
+  Priority: pending events > contradictions > hypotheses > user query > idle.
+  Stateless: same PlannerContext → same Operation, deterministic.
+- LlmBridge validation algorithm (validate_response):
+  1. parse_text_fallback(text, resolver, chapters) → events
+  2. events.is_empty() → Retry{reason: "Не удалось извлечь события..."}
+  3. for each event: ConstraintEngine::default_literary().check(world, event);
+     collect all ConstraintViolation
+  4. violations.is_empty() → Accept{events, report: ContradictionDetector::
+     detect_all(Vec::new(), facts, &events, Vec::new())}
+     — report may still contain temporal_paradoxes / causal_loops even when
+     constraint violations are empty (Accept ≠ zero contradictions, just
+     zero constraint violations).
+  5. else → Reject{violations, feedback_prompt: build_feedback_prompt(...)}
+- Prompt structure (build_prompt returns (system, user)):
+  System: fixed Russian template — writer role + 5 rules + [REJECTED] escape.
+  User: 6 sections (СОСТОЯНИЕ МИРА / ОГРАНИЧЕНИЯ / РАЗРЕШЕНО / ЗАПРЕЩЕНО /
+  КОНТЕКСТ / ЗАДАЧА). State section iterates FactLog::all_facts() filtered
+  to active (valid_until == None), formatted as `entity.attr = value (since
+  Глава N)` — uses Fact.valid_from.display_chapter() for the «since» marker,
+  which is more informative than WorldState.snapshot() (no timestamps there).
+- Sync/async boundary (CRITICAL):
+  * llm_bridge.rs is fully SYNC — no tokio, no async, no reqwest.
+  * Does NOT import `crate::ai::*` — bridge builds prompts and parses
+    responses only. Actual async LLM call (`ai::chat`) happens at Tauri
+    command layer (caller's responsibility), typically via
+    `tokio::task::spawn_blocking` per SPEC §5.7.
+  * Caller-side retry loop:
+    (system, user) = bridge.build_prompt(...)
+    generated = ai::chat(provider, [system, user]).await
+    match bridge.validate_response(generated, ...) {
+        Accept { events, .. } => commit events,
+        Reject { feedback_prompt, .. } => retry with feedback_prompt,
+        Retry { reason } => retry with different approach,
+    }
+- Decisions:
+  (1) Operation enum does NOT derive PartialEq. Brief lists only Debug/Clone/
+      Serialize/Deserialize for Operation. ActionRequest contains Option<
+      Subgraph>, and Subgraph holds Vec<LitNode>/Vec<LitEdge>/Vec<Fact>/
+      Vec<Event> — LitNode/LitEdge/Fact/Event don't all derive PartialEq
+      (FactValue has manual PartialEq in facts.rs but Fact/Event don't).
+      Adding PartialEq to Operation would require either boxing Subgraph or
+      deriving PartialEq on a cascade of Wave 1-3 types — out of scope. Tests
+      use `matches!()` for variant matching, and the one comparison test
+      (test_planner_default_equals_new) extracts a `&'static str` kind label
+      via planner_op_kind() helper. No PartialEq needed.
+  (2) ActionKind derives PartialEq, Eq, Hash — brief lists PartialEq only,
+      but Eq and Hash come for free with unit variants and are useful for
+      future use cases (HashMap<ActionKind, _>). No SPEC deviation.
+  (3) PlannerContext does NOT derive Serialize/Deserialize. Brief lists only
+      Debug/Clone/Default. PlannerContext is a transient snapshot passed
+      between cycle iterations — not persisted. If Wave 5 needs to log it
+      (for UI/replay), Serialize can be added then.
+  (4) For Verify{hypothesis_id}, hardcoded to 1 (sentinel «first pending»)
+      because PlannerContext doesn't expose the actual hypothesis list. The
+      planner module deliberately doesn't import `crate::reasoning::
+      hypotheses::*` — that would create a coupling between planner and
+      the (not-yet-ready) hypotheses module. Wave 5 integration can extend
+      PlannerContext with `first_pending_hypothesis_id: Option<u64>` field
+      to wire up the real ID. Documented in next_operation() doc-comment.
+  (5) LlmBridge uses ConstraintEngine::default_literary() inside
+      validate_response — constructs a fresh engine per call. This is
+      intentional: the bridge doesn't hold state, and the default literary
+      set (16 invariants) is the correct baseline for narrative generation.
+      If a future caller needs custom constraints, the signature can be
+      extended with an optional `&ConstraintEngine` parameter. For now,
+      per-spec, default literary is the contract.
+  (6) build_prompt takes `_world: &WorldState` (unused) — brief signature
+      includes it for future use (e.g. querying world.get() for live state
+      in addition to FactLog's historical view). Marking it with `_`
+      prefix avoids unused-variable warning while preserving the API.
+      Current implementation sources state from FactLog (because Fact has
+      valid_from for the «since Глава N» annotation, which WorldState
+      doesn't expose).
+  (7) validate_response's Accept path passes empty Vec for constraint_
+      violations to detect_all — we just verified violations.is_empty(),
+      so this is correct. detect_all additionally runs temporal_paradox
+      detection and accepts causal_loops from caller. We pass empty causal_
+      loops Vec too — bridge doesn't run causality analysis (that's
+      cycle.rs's job). The resulting report may have non-empty temporal_
+      paradoxes (e.g. Resurrect-without-death is detected) — that's
+      informative for the caller, not a blocker (Accept path).
+  (8) Tests for validate_response use the Rust regex fallback parser
+      (parse_text_fallback) — this is what the bridge calls. The fallback
+      recognizes «убил/сказал/умер/воскрес/пришёл» and a few more verbs.
+      Test «Пётр сказал Анне о своей смерти.» → Speak event with actor=Petr
+      (resolved via EntityResolver from a LitNode fixture). World has
+      Petr.alive=false → dead_cannot_speak violation → Reject. Verified.
+  (9) Test for Retry uses text «Тишина. Только ветер гуляет по полю.» —
+      no known verbs, no capitalized names that match resolver entries
+      (Тишина/Только/Ветер are not in EntityResolver's character index).
+      parse_text_fallback returns empty Vec → Retry. Verified.
+  (10) Module doc includes a usage example showing the caller-side retry
+       loop — this is critical documentation because the bridge's API
+       (build_prompt + validate_response as separate sync calls) only
+       makes sense if the caller understands the intended control flow.
+- Cross-module dependencies (per SPEC §4.6 — no `pub use` from sibling
+  reasoning modules):
+  planner.rs:
+    * `use crate::reasoning::memory::Subgraph;` (ActionRequest.context_subgraph
+      field type).
+    * `use serde::{Deserialize, Serialize};`
+  llm_bridge.rs:
+    * `use crate::parser::chapters::ParsedChapter;`
+    * `use crate::reasoning::constraints::{ConstraintEngine, ConstraintViolation};`
+    * `use crate::reasoning::contradictions::{ContradictionDetector, ContradictionReport};`
+    * `use crate::reasoning::facts::{Event, Fact, FactLog, FactValue};`
+    * `use crate::reasoning::planner::ActionRequest;` (sibling Wave 4 module)
+    * `use crate::reasoning::semantic_parser::{parse_text_fallback, EntityResolver};`
+    * `use crate::reasoning::state::WorldState;`
+    * `use serde::{Deserialize, Serialize};` (only for SYSTEM_PROMPT — actually
+      unused at top level; Serialize/Deserialize are not needed since LlmBridge
+      is a unit struct without fields. Removed from imports.)
+  No `pub use` from sibling reasoning modules. No tokio, no async, no
+  `unwrap()` on external data (only in test assertions via expect/unwrap on
+  locally-built fixtures). No `crate::ai::*` import in llm_bridge.rs
+  (sync/async boundary enforced). Russian comments in user-facing strings;
+  English identifiers throughout.
+- SPEC deviations:
+  (1) `Operation` does NOT derive PartialEq (brief lists only Debug/Clone/
+      Serialize/Deserialize). My initial draft added PartialEq for test
+      convenience, but removed it after compile failure (ActionRequest
+      contains Subgraph which holds Vec<LitNode>/Vec<Fact>/etc. — those
+      don't derive PartialEq). Tests use `matches!()` instead. Final derive
+      list matches brief exactly.
+  (2) `ActionKind` derives PartialEq, Eq, Hash (brief lists PartialEq only).
+      Eq and Hash are free additions for unit variants — not a behavioral
+      deviation. Useful for future HashMap<ActionKind, _>. Justified.
+  (3) `PlannerContext` does NOT derive Serialize/Deserialize (brief lists
+      Debug/Clone/Default only). Transient snapshot, not persisted. If Wave
+      5 needs to log/replay, can be added then. No deviation from brief.
+  (4) Planner::next_operation hardcodes hypothesis_id=1 for the Verify
+      branch. The planner doesn't have access to the hypothesis store
+      (would require importing crate::reasoning::hypotheses, which is
+      not yet ready in Wave 4). PlannerContext could be extended with
+      `first_pending_hypothesis_id: Option<u64>` in Wave 5 to wire the
+      real ID. Documented in next_operation() doc-comment. Not a SPEC
+      violation — SPEC §2.12 shows ReasoningCycle::verify(hyp_id) takes
+      the ID from outside, so the planner's job is just to decide
+      «we should verify SOMETHING»; the actual ID resolution is cycle.rs's
+      responsibility.
+  (5) LlmBridge::build_prompt takes `_world: &WorldState` but doesn't use
+      it (state sourced from FactLog instead, because Fact has valid_from
+      for the «since Глава N» annotation). Brief signature includes world
+      param — kept for API stability and future use (e.g. live state
+      queries, snapshot-based prompt building). Underscore prefix marks
+      intentional non-use; no warning. Not a deviation, just a forward-
+      compatible API choice.
+  (6) LlmBridge::validate_response constructs a fresh ConstraintEngine::
+      default_literary() per call instead of accepting one as parameter.
+      Brief signature doesn't include a ConstraintEngine parameter —
+      default literary is the contract. If custom constraints are needed
+      in the future, the signature can be extended (or LlmBridge can hold
+      an Option<ConstraintEngine> field). Not a deviation.
+- No `pub use` from sibling reasoning modules. No tokio/async. No unwrap()
+  on external data. No `crate::ai::*` import in llm_bridge.rs (sync/async
+  boundary enforced — CRITICAL per brief). Russian comments in user-facing
+  strings; English identifiers throughout.
+- Ready for Wave 5 integration: coordinator should uncomment `pub mod planner;`
+  and `pub mod llm_bridge;` in mod.rs, and add to re-exports:
+    `pub use planner::{ActionKind, ActionRequest, Operation, Planner, PlannerContext};`
+    `pub use llm_bridge::{LlmBridge, ValidationResult};`
+  ReasoningCycle (cycle.rs, Wave 4 sibling) can then use:
+    let op = planner.next_operation(&ctx);
+    match op {
+        Operation::Act { action_request } => {
+            let (system, user) = bridge.build_prompt(&action_request, &world, &facts);
+            // ... async LLM call at Tauri command layer ...
+            match bridge.validate_response(&generated, &action_request, &world, &facts, &resolver, &chapters) {
+                ValidationResult::Accept { events, report } => { /* commit */ }
+                ValidationResult::Reject { feedback_prompt, .. } => { /* retry */ }
+                ValidationResult::Retry { reason } => { /* retry differently */ }
+            }
+        }
+        Operation::BuildState => { /* apply inference rules */ }
+        // ... etc.
+    }
+
+---
+Task ID: 4-a
+Agent: full-stack-developer (hypotheses.rs + cycle.rs)
+Task: Build hypotheses.rs and cycle.rs — orchestration layer
+
+Work Log:
+- Read mandatory context: docs/reasoning/SPEC.md (§2.11 Hypothesis, §2.12
+  ReasoningCycle, §3 integration boundary, §4 module export rules, §5
+  anti-patterns), worklog.md (Wave 1+2+3 entries for all dependency modules),
+  src-tauri/src/reasoning/{facts,state,timeline,rules,inference,constraints,
+  contradictions,causality,memory,semantic_parser}.rs (confirmed public APIs:
+  FactLog::{new,record_event,assert_fact,all_events,all_facts};
+  WorldState::{new,set,get,advance_to,now,snapshot,invalidate};
+  RuleSet::default_literary; ConstraintEngine::{default_literary,check_all};
+  ContradictionDetector::{new,detect_all}; CausalityEngine::{new,
+  from_edges,detect_causal_loops}; InferenceEngine::{default_literary,
+  apply_event,apply_events}; KnowledgeBase::{new,from_project,get_node,
+  node_count}; TemporalAnchor::{new,after,before,display_chapter}).
+- Wrote src-tauri/src/reasoning/hypotheses.rs (~910 LOC including tests):
+  * Module doc (Russian) — explains 3 resolution strategies (algorithmic
+    narrative-device classification, missing-event search, user escalation).
+  * Types per SPEC §2.11: HypothesisId (u64), EventKind (5 variants: Canonical/
+    Flashback/Dream/Vision/StoryWithinStory), Resolution (MarkEventAs),
+    HypothesisSource (Algorithm/Llm/User), HypothesisStatus (Pending/Accepted/
+    Rejected(String)), Hypothesis (id/statement/proposed_resolution/
+    evidence_for/evidence_against/status/source). All with correct derive lists.
+  * HypothesisGenerator (stateless, Default): generate_for_violation produces
+    3 hypotheses (Flashback/Dream/text-error), generate_for_paradox produces
+    3 hypotheses (resurrect/Flashback/Dream). evidence_for populated from
+    death fact lookup; evidence_against populated from alive=true facts.
+  * HypothesisVerifier (stateless, Default): verify() dispatches on
+    proposed_resolution — MarkEventAs with narrative-device kinds → Accepted,
+    Canonical → Rejected; no-Resolution hypotheses distinguished by statement
+    text ("воскрес" → resurrect check via FactLog event scan; "Ошибка в тексте"
+    → Pending). Uses WorldState for sanity-check (entity must be dead for
+    resurrect hypothesis).
+  * HypothesisLog (Vec-backed, Default): add (auto-assigns id if 0),
+    get/get_mut, pending/accepted/rejected filters, all() slice access.
+  * 5 required unit tests: generate_for_violation (3 hyps, flashback+dream+
+    text-error), generate_for_paradox (3 hyps, resurrect+flashback+dream),
+    verifier_accepts_flashback (Flashback/Dream/Vision/StoryWithinStory →
+    Accepted; Canonical → Rejected), verifier_rejects_resurrect_without_event
+    (no Resurrect event → Rejected; with event → Accepted),
+    hypothesis_log_assigns_sequential_ids (1,2,3 + pre-assigned id=42).
+- Wrote src-tauri/src/reasoning/cycle.rs (~770 LOC including tests):
+  * Module doc (Russian) — documents the 6-stage pipeline and 2 SPEC
+    deviations (classifications map instead of Event.provenance mutation;
+    separate FactLog for memory vs cycle.facts due to KB ownership).
+  * CycleReport per SPEC §2.12: events_processed, facts_asserted, violations,
+    temporal_paradoxes, hypotheses_generated, hypotheses_accepted,
+    final_state_snapshot.
+  * ReasoningCycle struct: 11 public fields per task brief (world, facts,
+    rules, constraints, memory, hypotheses, inference, detector, causality,
+    generator, verifier) + 2 private fields (processed_event_ids: HashSet<EventId>,
+    classifications: HashMap<EventId, EventKind>).
+  * Methods: new() (empty + default_literary rules/constraints), from_project
+    (pre-populates world with alive=true for character nodes, initializes KB
+    with empty FactLog, builds causality from project.edges), observe (records
+    events + advances world.now to max event time), build_state (applies
+    inference to unprocessed events via apply_event, tracks processed IDs),
+    reason (check_all constraints + detect_temporal_paradoxes + detect_causal_loops
+    → ContradictionReport via detect_all), generate_hypotheses (3 per violation
+    + 3 per paradox), verify (clone+verify+update status), verify_all_pending
+    (collect pending IDs first, then verify each), update_state (first-write-wins
+    for classifications via entry().or_insert()), run_cycle (full pipeline
+    returns CycleReport), event_classification/classifications getters.
+  * Default impl delegates to new().
+  * 5 required unit tests: run_cycle_with_kill_event (peter.alive=false after
+    Ivan kills Peter), run_cycle_detects_dead_speaking_paradox (temporal
+    paradox + dead_cannot_speak violation), run_cycle_generates_hypothesis
+    (>= 3 hypotheses including resurrect + flashback), run_cycle_accepts_
+    flashback_hypothesis (>= 1 Accepted with MarkEventAs Flashback +
+    classification recorded), from_project_initializes_character_alive_facts
+    (ivan+peter alive=true, world.now=ch1, memory.node_count=2).
+- Verification: standalone cargo project at /tmp/check_cycle/ with serde +
+  serde_json + fancy-regex deps. Copied all Wave 1-4 reasoning modules +
+  models/{mod,node,edge,project,version}.rs + parser/chapters.rs (minimal
+  parser/mod.rs stub with just `pub mod chapters;` since semantic_parser
+  only needs ParsedChapter struct, not the full parser with chrono/uuid deps).
+  Minimal reasoning/mod.rs uncommenting all 12 modules including hypotheses
+  and cycle.
+  * cargo check --lib: clean (0 warnings, 0 errors in my files).
+  * cargo clippy --lib --tests: 0 warnings, 0 errors in hypotheses.rs and
+    cycle.rs. (Pre-existing errors in facts.rs tests: approx_constant on
+    line 612 — sibling Wave 1 module, not touched. Pre-existing warnings in
+    other sibling modules — not my code.)
+  * cargo test --lib: 98/98 passing (5 hypotheses + 5 cycle + 88 sibling).
+- Fixes applied during verification:
+  1. test_hypothesis_log_assigns_sequential_ids: replaced `..h1.clone()` struct
+     update (h1 moved after first log.add) with a make_hyp closure that creates
+     fresh Hypothesis instances.
+  2. test_run_cycle_accepts_flashback_hypothesis: replaced `.iter().find()` on
+     temporary Vec (borrow of temporary value) with `.into_iter().find().cloned()`
+     to consume the Vec.
+  3. update_state: changed from `classifications.insert(event_id, kind)`
+     (last-write-wins, caused Dream to overwrite Flashback) to
+     `classifications.entry(event_id).or_insert(kind)` (first-write-wins,
+     preserving the first accepted classification per event).
+  4. Moved `use crate::reasoning::timeline::TemporalAnchor;` from module-level
+     to test module (was unused in non-test code, caused unused_imports warning).
+  5. Reflowed CycleReport doc comment to avoid doc_lazy_continuation clippy
+     warning (backtick-quoted word at line start interpreted as list item).
+  6. Simplified reason() to return detect_all result directly instead of
+     binding to `let report` then returning (let_and_return clippy warning).
+- Could not run cargo check in src-tauri directly: Tauri's gdk-sys needs
+  system libs (gdk-3.0.pc) absent in sandbox. Standalone project verification
+  covers the SPEC contract.
+- Wrote agent-ctx work record at agent-ctx/4-a-hypotheses_cycle.md.
+
+Stage Summary:
+- Public API exported by hypotheses.rs:
+  Types:    HypothesisId (u64 alias),
+            EventKind (Debug/Clone/Serialize/Deserialize/PartialEq; 5 variants),
+            Resolution (Debug/Clone/Serialize/Deserialize; MarkEventAs),
+            HypothesisSource (Debug/Clone/Serialize/Deserialize/PartialEq;
+              Algorithm/Llm/User),
+            HypothesisStatus (Debug/Clone/Serialize/Deserialize/PartialEq;
+              Pending/Accepted/Rejected(String)),
+            Hypothesis (Debug/Clone/Serialize/Deserialize;
+              id/statement/proposed_resolution/evidence_for/evidence_against/
+              status/source).
+  Structs:  HypothesisGenerator (Debug/Clone/Default; new,
+              generate_for_violation, generate_for_paradox),
+            HypothesisVerifier (Debug/Clone/Default; new, verify),
+            HypothesisLog (Debug/Clone/Default; new, add, get, get_mut,
+              pending, accepted, rejected, all).
+- Public API exported by cycle.rs:
+  Types:    CycleReport (Debug/Clone/Serialize/Deserialize; 7 fields per SPEC).
+  Struct:   ReasoningCycle (11 public fields + 2 private; new, from_project,
+              observe, build_state, reason, generate_hypotheses, verify,
+              verify_all_pending, update_state, run_cycle, event_classification,
+              classifications; Default).
+- Hypothesis generation rules (algorithmic, no LLM):
+  * ConstraintViolation → 3 hypotheses:
+    H1: "Событие {id} является воспоминанием/flashback'ом" → MarkEventAs(Flashback)
+    H2: "Событие {id} является сном" → MarkEventAs(Dream)
+    H3: "Ошибка в тексте — событие {id} нужно удалить или переписать" → None (user)
+  * TemporalParadox → 3 hypotheses:
+    H1: "Персонаж {entity} воскрес между {death_ch} и {later_ch}" → None (resurrect)
+    H2: "Событие в {later_ch} — flashback" → MarkEventAs(later_event, Flashback)
+    H3: "Событие в {later_ch} — сон" → MarkEventAs(later_event, Dream)
+  * evidence_for: death fact ID (alive=false) for the violating entity.
+  * evidence_against: alive=true fact IDs for the same entity (paradox case).
+- Hypothesis verification rules:
+  * MarkEventAs(Flashback|Dream|Vision|StoryWithinStory) → Accepted (narrative
+    devices don't conflict with WorldState).
+  * MarkEventAs(Canonical) → Rejected (confirms event as real, doesn't resolve).
+  * No-Resolution + statement contains "воскрес" → search FactLog for
+    Action::Resurrect event with actor=entity and time > death.valid_from.
+    Found → Accepted; not found → Rejected("Нет события воскрешения в
+    нарративе").
+  * No-Resolution + "Ошибка в тексте" → Pending (user must decide).
+- ReasoningCycle pipeline (run_cycle):
+  1. observe(events) — record_event each, advance world.now to max event time.
+  2. build_state() — apply_event (singular, not apply_events) on unprocessed
+     events; tracks processed_event_ids to be idempotent.
+  3. reason() — constraints.check_all + causality.detect_causal_loops +
+     detector.detect_all → ContradictionReport.
+  4. generate_hypotheses(report) — 3 per violation + 3 per paradox, added to
+     HypothesisLog with auto-assigned IDs.
+  5. verify_all_pending() — collect pending IDs, verify each, update status.
+  6. update_state(accepted) — for each Accepted hypothesis with Resolution,
+     record classifications[event_id] = kind (first-write-wins via
+     entry().or_insert()).
+- SPEC deviations (documented in module doc + agent-ctx):
+  1. classifications map instead of Event.provenance mutation: SPEC §2.12
+     suggests updating Event.provenance to a "special marker" for flashback/
+     dream. But Provenance enum (Wave 1 facts.rs) has no Flashback/Dream
+     variant and we can't modify sibling modules. Solution: store
+     EventClassification in HashMap<EventId, EventKind> on ReasoningCycle;
+     original Event stays immutable. Getters: event_classification(id),
+     classifications().
+  2. Separate FactLog for memory vs cycle.facts: KnowledgeBase::from_project
+     takes ownership of FactLog (Wave 3 memory.rs design). We can't share
+     ownership without modifying sibling modules. Solution: cycle.facts is
+     the active FactLog (grows via observe); cycle.memory holds its own
+     empty FactLog (initialized from FactLog::new() in from_project). They
+     are NOT automatically synced. Wave 5 integration can refresh memory by
+     reconstructing KnowledgeBase if needed (would require adding Clone to
+     FactLog in Wave 5).
+  3. update_state uses first-write-wins (entry().or_insert) instead of
+     last-write-wins (insert): when multiple Accepted hypotheses target the
+     same event with different kinds (Flashback vs Dream), the first
+     classification wins. This prevents Dream (generated later) from
+     overwriting Flashback (generated earlier) for the same event. Documented
+     in update_state doc comment.
+- Cross-module dependencies (per SPEC §4.6 — no `pub use` from sibling
+  reasoning modules):
+  hypotheses.rs: crate::reasoning::{constraints::ConstraintViolation,
+    contradictions::TemporalParadox, facts::{Action,EventId,FactId,FactLog,
+    FactValue}, state::WorldState}
+  cycle.rs: crate::models::Project, crate::reasoning::{causality::
+    CausalityEngine, constraints::{ConstraintEngine,ConstraintViolation},
+    contradictions::{ContradictionDetector,ContradictionReport,TemporalParadox},
+    facts::{Event,EventId,FactLog,FactValue}, hypotheses::{EventKind,
+    HypothesisGenerator,HypothesisId,HypothesisLog,HypothesisStatus,
+    HypothesisVerifier,Resolution}, inference::{InferenceEngine,InferredFact},
+    memory::KnowledgeBase, rules::RuleSet, state::{StateTransition,
+    WorldSnapshot,WorldState}}
+- No tokio/async, no `pub use` from sibling reasoning modules, no unwrap()
+  on external data (only in test assertions via expect/unwrap on locally-built
+  fixtures). Russian comments in user-facing strings; English identifiers
+  throughout.
+- Ready for Wave 5 integration: coordinator should uncomment `pub mod
+  hypotheses;` and `pub mod cycle;` in mod.rs and add
+  `pub use hypotheses::{EventKind, Hypothesis, HypothesisGenerator,
+  HypothesisId, HypothesisLog, HypothesisSource, HypothesisStatus,
+  HypothesisVerifier, Resolution};` and `pub use cycle::{CycleReport,
+  ReasoningCycle};` to re-exports.

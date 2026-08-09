@@ -24,11 +24,15 @@ pub mod contradictions;
 pub mod semantic_parser;
 pub mod memory;
 
-// === Wave 4: orchestration (pending) ===
-// pub mod hypotheses;
-// pub mod planner;
-// pub mod cycle;
-// pub mod llm_bridge;
+// === Wave 4: orchestration (ready) ===
+pub mod hypotheses;
+pub mod planner;
+pub mod cycle;
+pub mod llm_bridge;
+
+// === Wave 5: integration tests ===
+#[cfg(test)]
+mod integration_tests;
 
 // Реэкспорт ключевых типов (только типы, не функции).
 pub use facts::{Action, Event, EventId, Fact, FactId, FactLog, FactValue, Provenance, VerbPolarity};
@@ -41,19 +45,37 @@ pub use constraints::{Constraint, ConstraintCondition, ConstraintEngine, Constra
 pub use contradictions::{CausalLoop, ContradictionDetector, ContradictionReport, TemporalParadox};
 pub use semantic_parser::{EntityResolver, SvoTriplet};
 pub use memory::{KnowledgeBase, Subgraph};
+pub use hypotheses::{Hypothesis, HypothesisId, HypothesisLog, HypothesisStatus, HypothesisSource, EventKind, Resolution};
+pub use planner::{ActionKind, ActionRequest, Operation, Planner, PlannerContext};
+pub use cycle::{CycleReport, ReasoningCycle};
+pub use llm_bridge::{LlmBridge, ValidationResult};
 
-// === Integration entry points (Wave 5) ===
+// === Integration entry point ===
 
 /// Точка входа для Tauri-команд.
 ///
 /// Создаётся один раз на проект, переиспользуется между вызовами.
-/// Полная реализация появится в Wave 5 после того, как cycle.rs / llm_bridge.rs
-/// будут готовы. Пока — пустая заглушка, чтобы lib.rs компилировался.
-pub struct ReasoningEngine;
+pub struct ReasoningEngine {
+    pub cycle: ReasoningCycle,
+    pub planner: Planner,
+    pub bridge: LlmBridge,
+}
 
 impl ReasoningEngine {
     pub fn new() -> Self {
-        Self
+        Self {
+            cycle: ReasoningCycle::new(),
+            planner: Planner::new(),
+            bridge: LlmBridge::new(),
+        }
+    }
+
+    pub fn from_project(project: &crate::models::Project) -> Self {
+        Self {
+            cycle: ReasoningCycle::from_project(project),
+            planner: Planner::new(),
+            bridge: LlmBridge::new(),
+        }
     }
 }
 
