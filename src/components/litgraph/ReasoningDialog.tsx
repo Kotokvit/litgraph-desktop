@@ -1,7 +1,7 @@
 "use client";
 
 import * as Lucide from "lucide-react";
-import { useState, useMemo } from "react";
+import { Component, useState, useMemo, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,6 +14,7 @@ import { useLitStore } from "@/lib/litgraph/store";
 import {
   reasoningExtractEvents,
   reasoningGetWorldState,
+  reasoningRunCycle,
   type Event,
   type WorldStateView,
   type CycleReport,
@@ -28,34 +29,73 @@ interface ReasoningDialogProps {
 }
 
 // ============================================================================
+// ErrorBoundary — ловит runtime-ошибки рендера, не роняя всё приложение.
+// Без этого любой TypeError в дочерних компонентах превращает диалог в white screen.
+// ============================================================================
+
+interface ErrorBoundaryState {
+  error: Error | null;
+}
+
+class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: { componentStack: string }) {
+    console.error("[ReasoningDialog] render crash:", error, info);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="rounded-md bg-red-50 border border-red-300 p-3 text-xs text-red-800">
+          <div className="font-medium mb-1">⚠️ Render error in ReasoningDialog</div>
+          <pre className="whitespace-pre-wrap break-words font-mono text-[10px] text-red-700">
+            {this.state.error.message}
+          </pre>
+          <pre className="whitespace-pre-wrap break-words font-mono text-[9px] text-red-500 mt-2">
+            {this.state.error.stack}
+          </pre>
+          <Button
+            size="sm"
+            variant="outline"
+            className="mt-2 h-7 text-xs"
+            onClick={() => this.setState({ error: null })}
+          >
+            Сбросить
+          </Button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ============================================================================
 // Хелперы для рендера типов
 // ============================================================================
 
 function actionLabel(a: Action): string {
   if (typeof a === "string") return a;
-  // Struct variants — externally tagged JSON: { Variant: { field: value } }
-  if ("Custom" in a) return `Custom(${a.Custom.verbLemma})`;
-  if ("Move" in a) return `Move(${a.Move.destination})`;
-  if ("Arrive" in a) return `Arrive(${a.Arrive.destination})`;
-  if ("Leave" in a) return `Leave(${a.Leave.source})`;
-  if ("Speak" in a) return "Speak";
-  if ("Ask" in a) return `Ask(${a.Ask.topic})`;
-  if ("Tell" in a) return `Tell(${a.Tell.topic})`;
-  if ("Marry" in a) return `Marry(${a.Marry.partner})`;
-  if ("Betray" in a) return `Betray(${a.Betray.victim})`;
-  if ("Ally" in a) return `Ally(${a.Ally.partner})`;
-  if ("Know" in a) return `Know(${a.Know.fact})`;
-  if ("Forget" in a) return `Forget(${a.Forget.fact})`;
-  if ("Want" in a) return `Want(${a.Want.goal})`;
-  if ("Plan" in a) return `Plan(${a.Plan.goal})`;
-  if ("FallInLove" in a) return `FallInLove(${a.FallInLove.partner})`;
-  if ("Hate" in a) return `Hate(${a.Hate.target})`;
-  if ("Discover" in a) return `Discover(${a.Discover.fact})`;
-  if ("Transform" in a) return `Transform(${a.Transform.newForm})`;
-  return JSON.stringify(a);
+  if (!a || typeof a !== "object") return String(a ?? "");
+  const keys = Object.keys(a);
+  if (keys.length === 0) return "?";
+  const tag = keys[0];
+  const inner = (a as Record<string, Record<string, unknown>>)[tag];
+  if (inner && typeof inner === "object") {
+    const innerKeys = Object.keys(inner);
+    if (innerKeys.length > 0) {
+      const firstVal = (inner as Record<string, unknown>)[innerKeys[0]];
+      return `${tag}(${String(firstVal ?? "")})`;
+    }
+  }
+  return tag;
 }
 
-function factValueLabel(v: FactValue | undefined): string {
+function factValueLabel(v: FactValue | undefined | null): string {
   if (!v) return "—";
   if ("Bool" in v) return v.Bool ? "true" : "false";
   if ("Str" in v) return `"${v.Str}"`;
@@ -64,11 +104,15 @@ function factValueLabel(v: FactValue | undefined): string {
   if ("Entity" in v) return `→${v.Entity}`;
   if ("List" in v) return `[${v.List.map(factValueLabel).join(", ")}]`;
   if ("Unknown" in v) return "unknown";
-  return JSON.stringify(v);
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return "?";
+  }
 }
 
 function chapterLabel(chapterNum: number, suffix: string | null): string {
-  return `Глава ${chapterNum}${suffix ?? ""}`;
+  return `Глава ${chapterNum ?? "?"}${suffix ?? ""}`;
 }
 
 // ============================================================================
@@ -98,7 +142,20 @@ function MetricBox({
 
 function EventRow({ event }: { event: Event }) {
   const target = event.target ? ` → ${event.target}` : "";
-  const time = chapterLabel(event.time.chapterNum, event.time.chapterSuffix);
+  const time = chapterLabel(
+    event.time?.chapterNum ?? 0,
+    event.time?.chapterSuffix ?? null,
+  );
+  const sourceText = event.sourceText ?? "";
+  const confidence = typeof event.confidence === "number" ? event.confidence : 0;
+  let provenanceTag = "—";
+  try {
+    if (event.provenance && typeof event.provenance === "object") {
+      provenanceTag = Object.keys(event.provenance)[0] ?? "—";
+    }
+  } catch {
+    /* ignore */
+  }
   return (
     <div className="rounded-md border border-stone-200 bg-stone-50 p-2 text-xs">
       <div className="flex items-center justify-between gap-2">
@@ -110,19 +167,15 @@ function EventRow({ event }: { event: Event }) {
         </span>
         <span className="text-[10px] text-stone-500 font-mono">{time}</span>
       </div>
-      {event.sourceText && (
+      {sourceText && (
         <div className="mt-1 text-stone-600 italic truncate">
-          «{event.sourceText.slice(0, 120)}
-          {event.sourceText.length > 120 ? "…" : ""}»
+          «{sourceText.slice(0, 120)}
+          {sourceText.length > 120 ? "…" : ""}»
         </div>
       )}
       <div className="mt-1 text-[10px] text-stone-400 flex gap-3">
-        <span>conf={event.confidence.toFixed(2)}</span>
-        <span>
-          {event.provenance
-            ? Object.keys(event.provenance)[0] ?? "—"
-            : "—"}
-        </span>
+        <span>conf={confidence.toFixed(2)}</span>
+        <span>{provenanceTag}</span>
       </div>
     </div>
   );
@@ -167,7 +220,7 @@ function CharacterRow({
           📍 {location}
         </div>
       )}
-      {Object.keys(attributes).length > 0 && (
+      {attributes && Object.keys(attributes).length > 0 && (
         <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px]">
           {Object.entries(attributes).map(([k, v]) => (
             <div key={k} className="flex justify-between font-mono">
@@ -182,17 +235,16 @@ function CharacterRow({
 }
 
 // ============================================================================
-// Главный компонент
+// Внутренний компонент диалога (оборачивается в ErrorBoundary)
 // ============================================================================
 
-export function ReasoningDialog({ open, text, onClose }: ReasoningDialogProps) {
+function ReasoningDialogInner({ open, text, onClose }: ReasoningDialogProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [events, setEvents] = useState<Event[] | null>(null);
   const [worldView, setWorldView] = useState<WorldStateView | null>(null);
   const [report, setReport] = useState<CycleReport | null>(null);
 
-  // Доступ к проекту из store.
   const exportProject = useLitStore((s) => s.exportProject);
 
   async function handleRunReasoning() {
@@ -207,49 +259,40 @@ export function ReasoningDialog({ open, text, onClose }: ReasoningDialogProps) {
     setReport(null);
     try {
       const project = exportProject();
-      // 1. Извлечь события из текста (без LLM).
+      console.log("[reasoning] extract events for text length:", text.length);
       const extractedEvents = await reasoningExtractEvents(text, project);
+      console.log("[reasoning] events extracted:", extractedEvents.length);
       setEvents(extractedEvents);
 
-      // 2. Запустить полный цикл рассуждения.
-      //    getWorldState внутри делает run_cycle + возвращает снимок мира.
       const view = await reasoningGetWorldState(project, extractedEvents);
+      console.log("[reasoning] world state:", view);
       setWorldView(view);
 
-      // 3. Отдельно получить CycleReport для метрик (paradox count, etc.)
-      //    view уже содержит violationCount и paradoxCount, но полный отчёт
-      //    нужен для отображения деталей парадоксов.
-      //    Чтобы не запускать второй раз, используем runCycle один раз и
-      //    сохраняем отчёт, а view получаем через getWorldState (он идемпотентен).
-      //    Альтернатива: расширить WorldStateView включением CycleReport.
-      //    Пока — второй вызов (быстро, идемпотентно):
-      const cycleReport = await (
-        await import("@/lib/tauri-commands")
-      ).reasoningRunCycle(project, extractedEvents);
+      const cycleReport = await reasoningRunCycle(project, extractedEvents);
+      console.log("[reasoning] cycle report:", cycleReport);
       setReport(cycleReport);
     } catch (err) {
+      console.error("[reasoning] pipeline error:", err);
       setError(String(err));
     } finally {
       setLoading(false);
     }
   }
 
-  // Сортировка персонажей: мёртвые — вниз, живые — вверх.
   const sortedCharacters = useMemo(() => {
-    if (!worldView) return [];
+    if (!worldView?.characters) return [];
     return [...worldView.characters].sort((a, b) => {
       const ra = a.isAlive === false ? 1 : 0;
       const rb = b.isAlive === false ? 1 : 0;
       if (ra !== rb) return ra - rb;
-      return a.title.localeCompare(b.title);
+      return (a.title ?? "").localeCompare(b.title ?? "");
     });
   }, [worldView]);
 
-  // Топ событий по confidence.
   const topEvents = useMemo(() => {
     if (!events) return [];
     return [...events]
-      .sort((a, b) => b.confidence - a.confidence)
+      .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
       .slice(0, 30);
   }, [events]);
 
@@ -341,43 +384,25 @@ export function ReasoningDialog({ open, text, onClose }: ReasoningDialogProps) {
 
           {worldView && report && (
             <div className="space-y-3">
-              {/* Метрики */}
               <div className="grid grid-cols-5 gap-2">
-                <MetricBox
-                  label="Событий"
-                  value={report.eventsProcessed}
-                  color="#7C3AED"
-                />
-                <MetricBox
-                  label="Фактов выведено"
-                  value={report.factsAsserted}
-                  color="#0EA5E9"
-                />
-                <MetricBox
-                  label="Нарушений"
-                  value={report.violations.length}
-                  color="#F59E0B"
-                />
-                <MetricBox
-                  label="Парадоксов"
-                  value={report.temporalParadoxes.length}
-                  color="#DC2626"
-                />
+                <MetricBox label="Событий" value={report.eventsProcessed ?? 0} color="#7C3AED" />
+                <MetricBox label="Фактов выведено" value={report.factsAsserted ?? 0} color="#0EA5E9" />
+                <MetricBox label="Нарушений" value={(report.violations ?? []).length} color="#F59E0B" />
+                <MetricBox label="Парадоксов" value={(report.temporalParadoxes ?? []).length} color="#DC2626" />
                 <MetricBox
                   label="Гипотез"
-                  value={`${report.hypothesesAccepted}/${report.hypothesesGenerated}`}
+                  value={`${report.hypothesesAccepted ?? 0}/${report.hypothesesGenerated ?? 0}`}
                   color="#10B981"
                 />
               </div>
 
-              {/* Парадоксы (красные) */}
-              {report.temporalParadoxes.length > 0 && (
+              {(report.temporalParadoxes ?? []).length > 0 && (
                 <div className="space-y-1.5">
                   <div className="text-xs font-medium text-red-700 flex items-center gap-1.5">
                     <Lucide.AlertTriangle className="w-3.5 h-3.5" />
-                    Временные парадоксы ({report.temporalParadoxes.length})
+                    Временные парадоксы ({(report.temporalParadoxes ?? []).length})
                   </div>
-                  {report.temporalParadoxes.map((p, i) => (
+                  {(report.temporalParadoxes ?? []).map((p, i) => (
                     <div
                       key={i}
                       className="rounded-md bg-red-50 border border-red-300 p-2 text-xs text-red-800"
@@ -385,33 +410,34 @@ export function ReasoningDialog({ open, text, onClose }: ReasoningDialogProps) {
                       <span className="font-mono text-[10px] text-red-500">
                         #{i + 1}
                       </span>{" "}
-                      {p.description}
+                      {p?.description ?? JSON.stringify(p)}
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* Нарушения (жёлтые) */}
-              {report.violations.length > 0 && (
+              {(report.violations ?? []).length > 0 && (
                 <div className="space-y-1.5">
                   <div className="text-xs font-medium text-amber-700 flex items-center gap-1.5">
                     <Lucide.AlertCircle className="w-3.5 h-3.5" />
-                    Нарушения ограничений ({report.violations.length})
+                    Нарушения ограничений ({(report.violations ?? []).length})
                   </div>
-                  {report.violations.map((v, i) => (
+                  {(report.violations ?? []).map((v, i) => (
                     <div
                       key={i}
                       className="rounded-md bg-amber-50 border border-amber-300 p-2 text-xs text-amber-800 font-mono"
                     >
                       <pre className="whitespace-pre-wrap break-words">
-                        {JSON.stringify(v, null, 2)}
+                        {(() => {
+                          try { return JSON.stringify(v, null, 2); }
+                          catch { return String(v); }
+                        })()}
                       </pre>
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* Состояние персонажей */}
               {sortedCharacters.length > 0 && (
                 <div className="space-y-1.5">
                   <div className="text-xs font-medium text-stone-700 flex items-center gap-1.5">
@@ -433,7 +459,6 @@ export function ReasoningDialog({ open, text, onClose }: ReasoningDialogProps) {
                 </div>
               )}
 
-              {/* События */}
               {topEvents.length > 0 && (
                 <div className="space-y-1.5">
                   <div className="text-xs font-medium text-purple-700 flex items-center gap-1.5">
@@ -441,15 +466,17 @@ export function ReasoningDialog({ open, text, onClose }: ReasoningDialogProps) {
                     Извлечённые события ({events?.length ?? 0}, показано топ-{topEvents.length} по confidence)
                   </div>
                   <div className="space-y-1">
-                    {topEvents.map((e) => (
-                      <EventRow key={`${e.id}-${e.actor}-${e.sourceText.slice(0, 20)}`} event={e} />
+                    {topEvents.map((e, i) => (
+                      <EventRow
+                        key={`${e.id}-${e.actor}-${i}`}
+                        event={e}
+                      />
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Нет событий */}
-              {events !== null && events.length === 0 && (
+              {events !== null && (events?.length ?? 0) === 0 && (
                 <div className="rounded-md bg-stone-50 border border-stone-200 p-3 text-xs text-stone-600">
                   SVO-парсер не нашёл событий в тексте. Это нормально для
                   описательных текстов без действий. Попробуйте добавить
@@ -457,10 +484,9 @@ export function ReasoningDialog({ open, text, onClose }: ReasoningDialogProps) {
                 </div>
               )}
 
-              {/* Чисто */}
-              {report.violations.length === 0 &&
-                report.temporalParadoxes.length === 0 &&
-                report.eventsProcessed > 0 && (
+              {(report.violations ?? []).length === 0 &&
+                (report.temporalParadoxes ?? []).length === 0 &&
+                (report.eventsProcessed ?? 0) > 0 && (
                   <div className="rounded-md bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-800">
                     ✓ Нарратив консистентен: ни нарушений, ни парадоксов.
                     Все {report.eventsProcessed} событий укладываются в
@@ -501,5 +527,20 @@ export function ReasoningDialog({ open, text, onClose }: ReasoningDialogProps) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ============================================================================
+// Публичный экспорт: ErrorBoundary оборачивает внутренний компонент,
+// чтобы рендер-ошибки в данных (например, неожиданный тип Action) не роняли
+// весь LitApp. Теперь вместо white screen пользователь увидит красную карточку
+// с текстом ошибки и кнопкой «Сбросить».
+// ============================================================================
+
+export function ReasoningDialog(props: ReasoningDialogProps) {
+  return (
+    <ErrorBoundary>
+      <ReasoningDialogInner {...props} />
+    </ErrorBoundary>
   );
 }

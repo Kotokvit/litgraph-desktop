@@ -112,7 +112,7 @@ export type FactValue =
   | { Float: number }
   | { Entity: string }
   | { List: FactValue[] }
-  | { Unknown };
+  | { Unknown: null };
 
 export interface TemporalAnchor {
   chapterNum: number;
