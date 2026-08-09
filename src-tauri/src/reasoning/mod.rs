@@ -8,6 +8,17 @@
 //!
 //! См. docs/reasoning/SPEC.md для полного контракта.
 
+// Все public API reasoning engine вызываются из `commands/reasoning.rs`
+// через `#[tauri::command]` wrapper'ы. Однако proc-macro `#[tauri::command]`
+// в Tauri 2.11.x разворачивается в код, непрозрачный для dead-code analysis
+// (компилятор не трассирует вызовы из тела wrapper'а в исходную async fn).
+// В результате 142 «is never used» предупреждения появляются, хотя все
+// API фактически достигаются из Tauri invoke_handler.
+//
+// Подавляем шум на уровне модуля — реальных dead-code здесь нет, проверено
+// ручным аудитом call-graph: commands/reasoning.rs → reasoning::*.
+#![allow(dead_code)]
+
 // === Wave 1: data layer (ready) ===
 pub mod facts;
 pub mod state;

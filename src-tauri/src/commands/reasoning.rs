@@ -19,7 +19,7 @@ use std::collections::HashMap;
 
 use crate::models::Project;
 use crate::parser::chapters;
-use crate::reasoning::contradictions::{ContradictionReport, TemporalParadox};
+use crate::reasoning::contradictions::TemporalParadox;
 use crate::reasoning::constraints::ConstraintViolation;
 use crate::reasoning::cycle::{CycleReport, ReasoningCycle};
 use crate::reasoning::facts::{Event, FactValue};
