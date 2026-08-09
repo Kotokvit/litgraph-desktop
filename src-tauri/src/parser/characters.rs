@@ -348,10 +348,21 @@ pub fn detect(text: &str) -> Vec<ParsedCharacter> {
             continue;
         }
 
-        // Группировка по 4-символьному префиксу (грубая аппроксимация падежей)
-        let key = word.chars().take(4).collect::<String>().to_lowercase();
+        // v0.3.1: Группировка по лемме (вместо 4-символьного префикса).
+        // `lemmatize_simple` отсекает типичные русские/украинские окончания
+        // (ами/я/у/ю/ы/и/е/ого/ему/...) и возвращает каноническую основу.
+        // Это правильно объединяет:
+        //   «Алексей» + «Алексея» + «Алексею» → lemma «алексе»
+        //   «Марта» + «Марту» + «Мартой» → lemma «март»
+        // И правильно НЕ объединяет разные имена с одинаковым 4-char prefix:
+        //   «Алексей» + «Александр» + «Алексеев» (раньше все → «алек», теперь
+        //   разные лемы: «алексе» / «александр» / «алексеев»).
+        //
+        // Ограничение: короткие имена (≤4 символов) возвращаются as-is.
+        //   «Рэй» и «Рэя» НЕ сольются (нужен pymorphy3 — Варіант C).
+        let key = super::lemmatize_simple(word);
         let entry = groups
-            .entry(key)
+            .entry(key.clone())
             .or_insert_with(|| (word.clone(), 0, HashSet::new(), 0, 0));
         entry.1 += count;
         entry.2.insert(word.clone());
@@ -382,13 +393,13 @@ pub fn detect(text: &str) -> Vec<ParsedCharacter> {
             //   "capitalized_word freq=8 prefix=Секв NOT in stoplist"
             // Теперь расширено до:
             //   "character:rule=linguistic_signal;freq=N;speech_verb_hits=N;
-            //    direct_address_hits=N;prefix=XXXX;NOT_IN_STOPLIST;
+            //    direct_address_hits=N;lemma=XXXX;NOT_IN_STOPLIST;
             //    forms=[a,b,c,d]"
-            let prefix: String = rep.chars().take(4).collect();
+            let lemma = super::lemmatize_simple(&rep);
             let forms_preview: Vec<String> = forms_vec.iter().take(4).cloned().collect();
             let reason = format!(
-                "character:rule=linguistic_signal;freq={};speech_verb_hits={};direct_address_hits={};prefix={};NOT_IN_STOPLIST;forms=[{}]",
-                count, speech, direct, prefix, forms_preview.join(",")
+                "character:rule=linguistic_signal;freq={};speech_verb_hits={};direct_address_hits={};lemma={};NOT_IN_STOPLIST;forms=[{}]",
+                count, speech, direct, lemma, forms_preview.join(",")
             );
 
             let description = format!(
