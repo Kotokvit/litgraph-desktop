@@ -14,11 +14,11 @@ pub mod state;
 pub mod rules;
 pub mod timeline;
 
-// === Wave 2: logic layer (pending) ===
-// pub mod inference;
-// pub mod causality;
-// pub mod constraints;
-// pub mod contradictions;
+// === Wave 2: logic layer (ready) ===
+pub mod inference;
+pub mod causality;
+pub mod constraints;
+pub mod contradictions;
 
 // === Wave 3: semantic layer (pending) ===
 // pub mod semantic_parser;
@@ -35,6 +35,10 @@ pub use facts::{Action, Event, EventId, Fact, FactId, FactLog, FactValue, Proven
 pub use state::{StateTransition, WorldSnapshot, WorldState};
 pub use timeline::{TemporalAnchor, Timeline, TimeInterval};
 pub use rules::{Precondition, Rule, RuleEffect, RuleEntity, RuleSet};
+pub use inference::{InferenceEngine, InferredFact};
+pub use causality::{CausalLink, CausalityEngine};
+pub use constraints::{Constraint, ConstraintCondition, ConstraintEngine, ConstraintViolation};
+pub use contradictions::{CausalLoop, ContradictionDetector, ContradictionReport, TemporalParadox};
 
 // === Integration entry points (Wave 5) ===
 
