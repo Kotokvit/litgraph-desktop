@@ -99,3 +99,148 @@ export async function aiTestConnection(provider: unknown) {
 export async function aiListOllamaModels(url: string) {
   return invoke("ai_list_ollama_models", { url });
 }
+
+// ====== Reasoning Engine (Wave 5) ======
+
+// Примитивные типы reasoning engine (зеркалируют Rust-структуры).
+// Полные типы см. в src-tauri/src/reasoning/.
+
+export type FactValue =
+  | { Bool: boolean }
+  | { Str: string }
+  | { Int: number }
+  | { Float: number }
+  | { Entity: string }
+  | { List: FactValue[] }
+  | { Unknown };
+
+export interface TemporalAnchor {
+  chapterNum: number;
+  chapterSuffix: string | null;
+  sceneIndex: number | null;
+  charOffset: number;
+}
+
+export interface Provenance {
+  SvoParser?: null;
+  LlmHypothesis?: null;
+  Manual?: null;
+  Inferred?: null;
+}
+
+export type Action =
+  | "Kill"
+  | "Die"
+  | "Resurrect"
+  | "Speak"
+  | "Move"
+  | "Marry"
+  | "Divorce"
+  | "Know"
+  | "Forget"
+  | { Custom: { lemma: string; polarity: string } };
+
+export interface Event {
+  id: number;
+  actor: string;
+  action: Action;
+  target: string | null;
+  instrument: string | null;
+  time: TemporalAnchor;
+  sourceText: string;
+  confidence: number;
+  provenance: Provenance;
+}
+
+export interface ConstraintViolation {
+  // Поля зависят от конкретного нарушения — оставляем как unknown.
+  // Фронтенд рендерит как JSON / Debug.
+  [key: string]: unknown;
+}
+
+export interface TemporalParadox {
+  description: string;
+  [key: string]: unknown;
+}
+
+export interface CycleReport {
+  eventsProcessed: number;
+  factsAsserted: number;
+  violations: ConstraintViolation[];
+  temporalParadoxes: TemporalParadox[];
+  hypothesesGenerated: number;
+  hypothesesAccepted: number;
+  finalStateSnapshot: {
+    current: Record<string, Record<string, FactValue>>;
+    now: TemporalAnchor;
+  };
+}
+
+export interface CharacterState {
+  id: string;
+  title: string;
+  attributes: Record<string, FactValue>;
+  isAlive: boolean | null;
+  location: string | null;
+}
+
+export interface WorldStateView {
+  now: TemporalAnchor;
+  snapshot: {
+    current: Record<string, Record<string, FactValue>>;
+    now: TemporalAnchor;
+  };
+  characters: CharacterState[];
+  events: Event[];
+  history: unknown[];
+  violationCount: number;
+  paradoxCount: number;
+}
+
+export type ValidationResultDto =
+  | {
+      kind: "accept";
+      events: Event[];
+      violations: ConstraintViolation[];
+      paradoxes: TemporalParadox[];
+    }
+  | {
+      kind: "reject";
+      violations: ConstraintViolation[];
+      feedbackPrompt: string;
+    }
+  | {
+      kind: "retry";
+      reason: string;
+    };
+
+// Команды
+
+export async function reasoningExtractEvents(
+  text: string,
+  project: unknown
+): Promise<Event[]> {
+  return invoke("reasoning_extract_events", { text, project });
+}
+
+export async function reasoningRunCycle(
+  project: unknown,
+  events: Event[]
+): Promise<CycleReport> {
+  return invoke("reasoning_run_cycle", { project, events });
+}
+
+export async function reasoningGetWorldState(
+  project: unknown,
+  events: Event[]
+): Promise<WorldStateView> {
+  return invoke("reasoning_get_world_state", { project, events });
+}
+
+export async function reasoningValidateText(
+  project: unknown,
+  events: Event[],
+  proposedText: string
+): Promise<ValidationResultDto> {
+  return invoke("reasoning_validate_text", { project, events, proposedText });
+}

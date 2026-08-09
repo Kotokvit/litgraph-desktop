@@ -18,6 +18,7 @@ import { PolerDialog } from "./PolerDialog";
 import { NerDialog } from "./NerDialog";
 import { CharacterGraphDialog } from "./CharacterGraphDialog";
 import { ConflictGraphDialog } from "./ConflictGraphDialog";
+import { ReasoningDialog } from "./ReasoningDialog";
 import {
   Dialog,
   DialogContent,
@@ -74,6 +75,7 @@ export function Toolbar() {
   const [nerOpen, setNerOpen] = useState(false);
   const [charGraphOpen, setCharGraphOpen] = useState(false);
   const [conflictGraphOpen, setConflictGraphOpen] = useState(false);
+  const [reasoningOpen, setReasoningOpen] = useState(false);
   const [bgImporting, setBgImporting] = useState(false);
   const [bgError, setBgError] = useState<string | null>(null);
 
@@ -519,6 +521,19 @@ export function Toolbar() {
           <span className="text-xs ml-1 hidden md:inline">Конфликты</span>
         </Button>
 
+        {/* Reasoning engine — движок рассуждений (без LLM) */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 px-2"
+          onClick={() => setReasoningOpen(true)}
+          title="Reasoning Engine: состояние мира, парадоксы, гипотезы (без LLM)"
+          style={{ borderColor: "#4F46E540", color: "#4F46E5" }}
+        >
+          <Lucide.Brain className="w-4 h-4" />
+          <span className="text-xs ml-1 hidden md:inline">Reasoning</span>
+        </Button>
+
         {/* Тип связи по умолчанию */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -867,6 +882,12 @@ export function Toolbar() {
         open={conflictGraphOpen}
         text={collectedText}
         onClose={() => setConflictGraphOpen(false)}
+      />
+
+      <ReasoningDialog
+        open={reasoningOpen}
+        text={collectedText}
+        onClose={() => setReasoningOpen(false)}
       />
     </>
   );

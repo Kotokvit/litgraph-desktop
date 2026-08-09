@@ -8,3 +8,4 @@ pub mod export;
 pub mod ai;
 pub mod ner;
 pub mod conflict;
+pub mod reasoning; // Wave 5: Tauri-команды для reasoning engine

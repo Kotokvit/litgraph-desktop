@@ -55,6 +55,11 @@ pub fn run() {
             commands::ner::extract_svo,
             // conflict — конфликт-граф (SVO → J-матрица → directed graph)
             commands::conflict::get_conflict_graph,
+            // reasoning — Wave 5: интеллектуальный движок рассуждения
+            commands::reasoning::reasoning_extract_events,
+            commands::reasoning::reasoning_run_cycle,
+            commands::reasoning::reasoning_get_world_state,
+            commands::reasoning::reasoning_validate_text,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
