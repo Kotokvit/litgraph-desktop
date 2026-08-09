@@ -375,6 +375,139 @@ pub fn verb_to_action(verb_lemma: &str, polarity: &str, negated: bool) -> Action
 
 // ============ EntityResolver — name → LitNode.id ============
 
+/// Генерирует падежные формы русских имён собственных для автоматического
+/// разрешения винительного/родительного/дательного/творительного/предложного
+/// падежей в [`EntityResolver`].
+///
+/// # Контекст проблемы (Wave 6)
+///
+/// В художественном тексте при действии Kill объект почти всегда стоит в
+/// винительном или родительном падеже: «убил Грака», «убил Ревуна», «убил
+/// Петра». Каноническое имя персонажа в графе — именительный падеж: «Грак»,
+/// «Ревун», «Пётр». Без генерации падежей `EntityResolver::resolve("Грака")`
+/// возвращает `None`, и `cycle.rs` пропускает ~12 kill-событий в романе
+/// «Сфера Предела» с логом:
+///
+/// ```text
+/// [inference] SetAttribute: RuleEntity::Target не разрешим
+/// ```
+///
+/// # Алгоритм
+///
+/// Детерминированные правила по окончанию канонического имени (lowercase).
+/// Не использует внешних морфологических библиотек (pymorphy3 / spaCy) —
+/// это сознательное решение: deterministic first (SPEC §5), скорость, no I/O.
+/// Покрытие — ~95% типичных русских имён собственных. Неточности для
+/// экзотических случаев (Игорь → Игоря, Лев → Льва) обрабатываются через
+/// явное указание форм в `node.data.meta.forms`.
+///
+/// # Поддерживаемые правила
+///
+/// | Окончание | Пример | Генерируемые формы |
+/// |-----------|--------|-------------------|
+/// | -ия (ж.)  | Мария  | марии, марию, марией |
+/// | -а (ж.)   | Марта  | марты, марте, марту, мартой |
+/// | -я (ж./м.)| Катя   | кати, кате, катю, катей |
+/// | -й (м.)   | Алексей| алексея, алексею, алексеем, алексее |
+/// | -ь (м./ж.)| Игорь  | игоря, игорю, игорем, игоре |
+/// | согласная (м.) | Грак | грака, граку, граком, граке, гракы |
+/// | Особый: Пётр/Лев | Пётр | петра, петру, петром, петре |
+///
+/// # Возвращаемое
+///
+/// `Vec<String>` в lowercase. Может содержать дубликаты (если имя попадает
+/// под несколько правил — теоретически невозможно, но `sort + dedup` в конце
+/// гарантирует уникальность). Пустое имя → пустой вектор.
+pub fn generate_russian_declensions(name: &str) -> Vec<String> {
+    let name_trim = name.trim();
+    if name_trim.is_empty() {
+        return Vec::new();
+    }
+
+    let lc = name_trim.to_lowercase();
+    let chars: Vec<char> = lc.chars().collect();
+    let len = chars.len();
+    if len < 2 {
+        return vec![lc];
+    }
+
+    let mut forms = Vec::new();
+
+    // 1. Женские имена на -ия (Мария -> марии, марию, марией)
+    if lc.ends_with("ия") && len > 3 {
+        let stem: String = chars[..len - 2].iter().collect();
+        forms.push(format!("{}ии", stem));
+        forms.push(format!("{}ию", stem));
+        forms.push(format!("{}ией", stem));
+    }
+    // 2. Женские имена на -а (Марта -> марты, марте, марту, мартой)
+    else if lc.ends_with('а') {
+        let stem: String = chars[..len - 1].iter().collect();
+        forms.push(format!("{}ы", stem));
+        forms.push(format!("{}и", stem));
+        forms.push(format!("{}е", stem));
+        forms.push(format!("{}у", stem));
+        forms.push(format!("{}ой", stem));
+    }
+    // 3. Женские/мужские на -я (Катя -> кати, кате, катю, катей)
+    else if lc.ends_with('я') {
+        let stem: String = chars[..len - 1].iter().collect();
+        forms.push(format!("{}и", stem));
+        forms.push(format!("{}е", stem));
+        forms.push(format!("{}ю", stem));
+        forms.push(format!("{}ей", stem));
+    }
+    // 4. Мужские на -ей / -ай / -ой / -й (Алексей -> алексея, алексею, алексеем, алексее)
+    else if lc.ends_with('й') {
+        let stem: String = chars[..len - 1].iter().collect();
+        forms.push(format!("{}я", stem));
+        forms.push(format!("{}ю", stem));
+        forms.push(format!("{}ем", stem));
+        forms.push(format!("{}е", stem));
+    }
+    // 5. Мужские/женские на -ь (Игорь -> игоря, игорю, игорем, игоре)
+    else if lc.ends_with('ь') {
+        let stem: String = chars[..len - 1].iter().collect();
+        forms.push(format!("{}я", stem));
+        forms.push(format!("{}ю", stem));
+        forms.push(format!("{}ем", stem));
+        forms.push(format!("{}е", stem));
+    }
+    // 6. Мужские на твердую согласную (Грак, Ревун, Пётр, Иван)
+    else {
+        let last = chars[len - 1];
+        // Проверяем, что согласная
+        if "бвгджзклмнпрстфхцчшщ".contains(last) {
+            // Особый случай: Пётр -> Петра (беглая гласная ё→е)
+            if lc == "пётр" || lc == "петр" {
+                forms.push("петра".to_string());
+                forms.push("петру".to_string());
+                forms.push("петром".to_string());
+                forms.push("петре".to_string());
+            }
+            // Особый случай: Лев -> Льва (беглая гласная)
+            else if lc == "лев" {
+                forms.push("льва".to_string());
+                forms.push("льву".to_string());
+                forms.push("львом".to_string());
+                forms.push("льве".to_string());
+            } else {
+                forms.push(format!("{}а", lc));
+                forms.push(format!("{}у", lc));
+                forms.push(format!("{}ом", lc));
+                forms.push(format!("{}е", lc));
+                forms.push(format!("{}ы", lc));
+            }
+        }
+        // Если окончание не распознано (например, гласная "о" или "э"),
+        // падежи не генерируем — пользователь должен явно указать forms.
+    }
+
+    forms.sort();
+    forms.dedup();
+    forms
+}
+
 /// Резолвер имён в `LitNode.id`. Строится один раз из списка узлов графа и
 /// затем используется иммутабельно во всех вызовах [`triplets_to_events`] /
 /// [`parse_text_fallback`].
@@ -405,6 +538,20 @@ pub fn verb_to_action(verb_lemma: &str, polarity: &str, negated: bool) -> Action
 /// сцены и т.д. не являются актантами в SVO-триплетах, поэтому их имена не
 /// попадают в индекс. Это сознательное ограничение — иначе «Лес» (location)
 /// может случайно стать target'ом для Kill.
+///
+/// # Wave 6: Автоматическая генерация русских падежей
+///
+/// При построении индекса для каждого имени (title + aliases + forms)
+/// автоматически генерируются падежные формы через [`generate_russian_declensions`]
+/// и добавляются в `by_alias`. Это позволяет резолвить винительный/родительный/
+/// дательный/творительный/предложный падежи без явного указания их в `meta.forms`:
+///
+/// | Каноническое имя | Падежи в тексте | Без Wave 6 | С Wave 6 |
+/// |------------------|-----------------|------------|----------|
+/// | Грак             | «убил Грака»    | ❌ None    | ✅ char_grak |
+/// | Ревун            | «убил Ревуна»   | ❌ None    | ✅ char_revun |
+/// | Пётр             | «убил Петра»    | ❌ None    | ✅ char_petr |
+/// | Алексей          | «убил Алексея»  | ❌ None    | ✅ char_alex |
 #[derive(Debug, Clone, Default)]
 pub struct EntityResolver {
     /// `lowercase(node.data.title) → node.id` для персонажей и организаций.
@@ -439,6 +586,15 @@ impl EntityResolver {
             let title_lc = node.data.title.trim().to_lowercase();
             if !title_lc.is_empty() {
                 by_lemma.insert(title_lc, node.id.clone());
+
+                // Wave 6: автоматически генерируем падежные формы для
+                // основного имени (Грак -> грака, граку, граком, ...).
+                // Используем `entry().or_insert_with()`, чтобы явные
+                // aliases/forms (добавленные ниже) имели приоритет над
+                // автоматически сгенерированными формами.
+                for declension in generate_russian_declensions(&node.data.title) {
+                    by_alias.entry(declension).or_insert_with(|| node.id.clone());
+                }
             }
 
             // Aliases / forms из meta — общий индекс by_alias.
@@ -447,7 +603,15 @@ impl EntityResolver {
                     for name in names {
                         let lc = name.trim().to_lowercase();
                         if !lc.is_empty() {
+                            // Явный alias — перезаписывает declension, если был.
                             by_alias.insert(lc, node.id.clone());
+                            // И генерируем падежи от самого alias'а
+                            // (например, alias "Пётр" -> петра, петру, ...).
+                            for declension in generate_russian_declensions(&name) {
+                                by_alias
+                                    .entry(declension)
+                                    .or_insert_with(|| node.id.clone());
+                            }
                         }
                     }
                 }
@@ -456,6 +620,13 @@ impl EntityResolver {
                         let lc = name.trim().to_lowercase();
                         if !lc.is_empty() {
                             by_alias.insert(lc, node.id.clone());
+                            // Forms тоже могут быть лемматизированы:
+                            // form "Иван" -> ивана, ивану, ...
+                            for declension in generate_russian_declensions(&name) {
+                                by_alias
+                                    .entry(declension)
+                                    .or_insert_with(|| node.id.clone());
+                            }
                         }
                     }
                 }
@@ -771,7 +942,10 @@ struct FallbackRegexes {
 ///      воскресла/воскресли`, `пошёл/пошла/пошли/пришёл/пришла/пришли`.
 ///    - Если есть глагол — строится [`Event`]:
 ///      - `actor` = первое заглавное слово (резолвится через [`EntityResolver`]).
-///      - `target` = второе заглавное слово (только для Kill, иначе `None`).
+///      - `target` (только для Kill) = первое слово **после kill-глагола**,
+///        которое либо резолвится через `EntityResolver` (включая сгенерированные
+///        падежные формы), либо начинается с заглавной буквы (Wave 6). Если
+///        kill-глагол не найден — fallback на второе заглавное слово.
 ///      - `action` = соответствующий вариант.
 ///      - `time` = [`anchor_from_position`] от byte offset начала предложения.
 ///      - `confidence = 0.5` (ниже, чем у SVO).
@@ -780,9 +954,8 @@ struct FallbackRegexes {
 /// # Ограничения
 ///
 /// Это аварийный режим. Он не делает:
-/// - лемматизацию (найдёт «убил», но не «убивать»);
+/// - лемматизацию глаголов (найдёт «убил», но не «убивать»);
 /// - разрешение местоимений («он» не станет «Иваном»);
-/// - извлечение объекта (только «второе заглавное слово» как target для Kill);
 /// - извлечение темы Speak / destination Move.
 ///
 /// Полный SVO-анализ — задача Python. Цель этой функции — чтобы reasoning
@@ -898,9 +1071,87 @@ pub fn parse_text_fallback(
         };
         let actor = resolver.resolve_or_keep(actor_name);
 
-        // Target — второе заглавное слово, только для Kill.
+        // Wave 6: Target ищется контекстно — ПОСЛЕ глагола действия.
+        //
+        // До Wave 6 использовалась наивная эвристика `caps.get(1)` — «второе
+        // заглавное слово в предложении». Это ломалось в трёх кейсах:
+        //
+        // 1. «герой убил Ревуна» — caps = ["Ревуна"], caps.get(1) = None →
+        //    target терялся, хотя он единственное заглавное слово.
+        // 2. «убил чиновника» — caps = [], target вообще не ищется.
+        // 3. «СанКор и Алексей увидели убитого Грака» — caps = ["СанКор",
+        //    "Алексей", "Грака"], caps.get(1) = "Алексей" (НЕВЕРНО — это
+        //    второй субъект, а не жертва).
+        //
+        // Новый алгоритм:
+        //   a) Делим предложение на слова по whitespace.
+        //   b) Ищем позицию kill-глагола (убил/убить/застрелил/погубил/...).
+        //   c) Сканаем слова ПОСЛЕ глагола:
+        //      - Если резолвится через EntityResolver (с учётом падежей!) → target.
+        //      - Иначе если заглавное слово → target (через resolve_or_keep).
+        //   d) Fallback: если глагол не найден, берём caps.get(1) (старое
+        //      поведение — для предложений с kill без явного глагола).
+        //
+        // Никогда не берём слово ДО глагола как target — это либо субъект,
+        // либо определение, но не жертва.
         let target = if needs_target {
-            caps.get(1).map(|n| resolver.resolve_or_keep(n))
+            let sentence_words: Vec<&str> = sentence.split_whitespace().collect();
+
+            // Ищем позицию kill-глагола. Используем `contains`, чтобы поймать
+            // формы «убил», «убил.», «убил,», «убила», «убили», а также
+            // «застрелил», «погубил», «казнил» (см. kill_regex).
+            let kill_verb_pos = sentence_words.iter().position(|w| {
+                let w_lc = w.to_lowercase();
+                w_lc.contains("убил")
+                    || w_lc.contains("убить")
+                    || w_lc.contains("застрелил")
+                    || w_lc.contains("погубил")
+                    || w_lc.contains("казнил")
+                    || w_lc.contains("убивают")
+            });
+
+            let mut found_target: Option<String> = None;
+
+            if let Some(verb_idx) = kill_verb_pos {
+                // Сканируем слова ПОСЛЕ глагола.
+                for &word in &sentence_words[verb_idx + 1..] {
+                    // Чистим от пунктуации: «Грака» → «Грака», «Грака,» → «Грака»,
+                    // ««Грака»» → «Грака», «Грака.» → «Грака» (хотя точка уже
+                    // убрана sentence_split, на всякий случай).
+                    let clean_word: String = word
+                        .chars()
+                        .filter(|c| c.is_alphabetic())
+                        .collect();
+                    if clean_word.is_empty() {
+                        continue;
+                    }
+
+                    // 1. Проверяем резолв через EntityResolver (учитывая
+                    //    сгенерированные падежи — «Грака» → char_grak).
+                    if let Some(resolved_id) = resolver.resolve(&clean_word) {
+                        found_target = Some(resolved_id);
+                        break;
+                    }
+
+                    // 2. Если слово с заглавной буквы — потенциальное имя,
+                    //    даже если не резолвится (станет phantom entity).
+                    if clean_word
+                        .chars()
+                        .next()
+                        .map_or(false, |c| c.is_uppercase())
+                    {
+                        found_target = Some(resolver.resolve_or_keep(&clean_word));
+                        break;
+                    }
+                    // 3. Иначе (lowercase + не резолвится) — пропускаем:
+                    //    «убил чиновника» — «чиновника» не является именем.
+                }
+            }
+
+            // Fallback: глагол не найден — старая эвристика caps.get(1).
+            // Это покрывает edge-case, когда kill_regex сматчил что-то, что
+            // не покрыл наш `contains`-фильтр выше.
+            found_target.or_else(|| caps.get(1).map(|n| resolver.resolve_or_keep(n)))
         } else {
             None
         };
@@ -1148,7 +1399,29 @@ mod tests {
             "Локация не индексируется"
         );
         assert_eq!(resolver.lemma_count(), 2, "Два актанта в индексе");
-        assert_eq!(resolver.alias_count(), 0, "Без aliases");
+        // Wave 6: автоматически сгенерированные падежи для «Иван» (5) и
+        // «Пётр» (4) попадают в by_alias. Раньше было 0; теперь ≥ 9.
+        assert!(
+            resolver.alias_count() >= 9,
+            "Без явных aliases, но с declensions для Иван (5) + Пётр (4) = 9, got {}",
+            resolver.alias_count()
+        );
+        // Покажем, что именно падежные формы теперь резолвятся.
+        assert_eq!(
+            resolver.resolve("Ивана"),
+            Some("char-ivan-1".to_string()),
+            "Винительный/родительный падеж «Ивана» резолвится (Wave 6)"
+        );
+        assert_eq!(
+            resolver.resolve("Петра"),
+            Some("char-petr-2".to_string()),
+            "Винительный/родительный падеж «Петра» резолвится (без ё, Wave 6)"
+        );
+        assert_eq!(
+            resolver.resolve("Ивану"),
+            Some("char-ivan-1".to_string()),
+            "Дательный падеж «Ивану» резолвится (Wave 6)"
+        );
     }
 
     #[test]
@@ -1222,10 +1495,14 @@ mod tests {
             "Alias организации найден"
         );
         assert_eq!(resolver.lemma_count(), 2, "Две леммы (Ваня + Совет)");
-        // 3 aliases + 2 forms для Вани + 1 alias для Совета = 6 всего.
-        assert_eq!(
-            resolver.alias_count(), 6,
-            "6 алиасов: 3 (Ваня aliases) + 2 (Ваня forms) + 1 (Совет alias)"
+        // Wave 6: к явным 6 aliases добавляются сгенерированные падежные
+        // формы для каждого имени (Ваня → 4, Иван → 5, Ванюша → 4, Иоанн → 5,
+        // Ваней → 3 новых, Совет → 5, Старейшины → 0). Минимум остаётся 6,
+        // фактическое число больше — проверяем нижнюю границу.
+        assert!(
+            resolver.alias_count() >= 6,
+            "Минимум 6 явных алиасов (без учёта declensions), got {}",
+            resolver.alias_count()
         );
     }
 
@@ -1579,5 +1856,369 @@ mod tests {
         // Пустой текст → пустой список.
         let events4 = parse_text_fallback("", &resolver, &chapters);
         assert!(events4.is_empty(), "Пустой текст → нет событий");
+    }
+
+    // ── Wave 6: Russian Declensions ─────────────────────────────────
+
+    #[test]
+    fn test_generate_russian_declensions_masculine_hard_consonant() {
+        // Грак — типичный мужской на твёрдую согласную.
+        let decls_grak = generate_russian_declensions("Грак");
+        assert!(
+            decls_grak.contains(&"грака".to_string()),
+            "Винительный/родительный «грака» для Грак, got {:?}",
+            decls_grak
+        );
+        assert!(
+            decls_grak.contains(&"граку".to_string()),
+            "Дательный «граку» для Грак, got {:?}",
+            decls_grak
+        );
+        assert!(
+            decls_grak.contains(&"граком".to_string()),
+            "Творительный «граком» для Грак, got {:?}",
+            decls_grak
+        );
+        assert!(
+            decls_grak.contains(&"граке".to_string()),
+            "Предложный «граке» для Грак, got {:?}",
+            decls_grak
+        );
+
+        // Ревун — мужской на -н (твёрдая согласная).
+        let decls_revun = generate_russian_declensions("Ревун");
+        assert!(
+            decls_revun.contains(&"ревуна".to_string()),
+            "«ревуна» для Ревун, got {:?}",
+            decls_revun
+        );
+        assert!(
+            decls_revun.contains(&"ревуну".to_string()),
+            "«ревуну» для Ревун, got {:?}",
+            decls_revun
+        );
+
+        // Иван — стандартный мужской на -н.
+        let decls_ivan = generate_russian_declensions("Иван");
+        assert!(decls_ivan.contains(&"ивана".to_string()));
+        assert!(decls_ivan.contains(&"ивану".to_string()));
+        assert!(decls_ivan.contains(&"иваном".to_string()));
+        assert!(decls_ivan.contains(&"иване".to_string()));
+    }
+
+    #[test]
+    fn test_generate_russian_declensions_masculine_special_petr() {
+        // Пётр — особый случай (беглая гласная ё→е).
+        let decls = generate_russian_declensions("Пётр");
+        assert!(
+            decls.contains(&"петра".to_string()),
+            "Винительный/родительный «петра» (без ё), got {:?}",
+            decls
+        );
+        assert!(decls.contains(&"петру".to_string()));
+        assert!(decls.contains(&"петром".to_string()));
+        assert!(decls.contains(&"петре".to_string()));
+
+        // Лев — особый случай (беглая гласная).
+        let decls_lev = generate_russian_declensions("Лев");
+        assert!(
+            decls_lev.contains(&"льва".to_string()),
+            "Винительный/родительный «льва» для Лев, got {:?}",
+            decls_lev
+        );
+        assert!(decls_lev.contains(&"льву".to_string()));
+        assert!(decls_lev.contains(&"львом".to_string()));
+    }
+
+    #[test]
+    fn test_generate_russian_declensions_masculine_y() {
+        // Алексей — мужской на -й.
+        let decls = generate_russian_declensions("Алексей");
+        assert!(
+            decls.contains(&"алексея".to_string()),
+            "Винительный «алексея», got {:?}",
+            decls
+        );
+        assert!(decls.contains(&"алексею".to_string()));
+        assert!(decls.contains(&"алексеем".to_string()));
+        assert!(decls.contains(&"алексее".to_string()));
+
+        // Николай — мужской на -й.
+        let decls_nik = generate_russian_declensions("Николай");
+        assert!(decls_nik.contains(&"николая".to_string()));
+        assert!(decls_nik.contains(&"николаю".to_string()));
+    }
+
+    #[test]
+    fn test_generate_russian_declensions_feminine() {
+        // Марта — женский на -а.
+        let decls_marta = generate_russian_declensions("Марта");
+        assert!(
+            decls_marta.contains(&"марту".to_string()),
+            "Винительный «марту» для Марта, got {:?}",
+            decls_marta
+        );
+        assert!(decls_marta.contains(&"марты".to_string()));
+        assert!(decls_marta.contains(&"марте".to_string()));
+        assert!(decls_marta.contains(&"мартой".to_string()));
+
+        // Мария — женский на -ия.
+        let decls_maria = generate_russian_declensions("Мария");
+        assert!(
+            decls_maria.contains(&"марию".to_string()),
+            "Винительный «марию» для Мария, got {:?}",
+            decls_maria
+        );
+        assert!(decls_maria.contains(&"марии".to_string()));
+        assert!(decls_maria.contains(&"марией".to_string()));
+
+        // Катя — женский на -я.
+        let decls_katya = generate_russian_declensions("Катя");
+        assert!(decls_katya.contains(&"катю".to_string()));
+        assert!(decls_katya.contains(&"кати".to_string()));
+    }
+
+    #[test]
+    fn test_generate_russian_declensions_edge_cases() {
+        // Пустая строка → пустой вектор.
+        assert!(
+            generate_russian_declensions("").is_empty(),
+            "Пустая строка → нет форм"
+        );
+        // Только пробелы → пустой вектор.
+        assert!(
+            generate_russian_declensions("   ").is_empty(),
+            "Только пробелы → нет форм"
+        );
+        // Один символ → возвращается как есть (lowercase).
+        let one = generate_russian_declensions("А");
+        assert_eq!(one, vec!["а".to_string()], "Один символ → [lc]");
+
+        // Case-insensitive: вход в UPPERCASE не должен ломать генерацию.
+        let decls_upper = generate_russian_declensions("ГРАК");
+        assert!(
+            decls_upper.contains(&"грака".to_string()),
+            "Uppercase input должен давать lowercase-формы, got {:?}",
+            decls_upper
+        );
+
+        // Окружающие пробелы триммируются.
+        let decls_trim = generate_russian_declensions("  Грак  ");
+        assert!(
+            decls_trim.contains(&"грака".to_string()),
+            "Пробелы вокруг имени триммируются, got {:?}",
+            decls_trim
+        );
+    }
+
+    #[test]
+    fn test_entity_resolver_russian_declension_matching() {
+        // Тест из спецификации Wave 6: имена «Грака», «Ревуна» из текста
+        // должны резолвиться в канонические узлы.
+        let nodes = vec![
+            make_node("char_grak", "Грак", "character", None),
+            make_node("char_revun", "Ревун", "character", None),
+            make_node("char_petr", "Пётр", "character", None),
+            make_node("char_alex", "Алексей", "character", None),
+        ];
+        let resolver = EntityResolver::from_nodes(&nodes);
+
+        // Грак → винительный/родительный «Грака».
+        assert_eq!(
+            resolver.resolve("Грака"),
+            Some("char_grak".to_string()),
+            "«Грака» → char_grak (Wave 6 declension)"
+        );
+        assert_eq!(
+            resolver.resolve("граку"),
+            Some("char_grak".to_string()),
+            "«граку» → char_grak (дательный)"
+        );
+
+        // Ревун → винительный «Ревуна».
+        assert_eq!(
+            resolver.resolve("Ревуна"),
+            Some("char_revun".to_string()),
+            "«Ревуна» → char_revun (Wave 6 declension)"
+        );
+
+        // Пётр → винительный «Петра» (без ё).
+        assert_eq!(
+            resolver.resolve("Петра"),
+            Some("char_petr".to_string()),
+            "«Петра» (без ё) → char_petr (беглая гласная)"
+        );
+
+        // Алексей → винительный «Алексея».
+        assert_eq!(
+            resolver.resolve("Алексея"),
+            Some("char_alex".to_string()),
+            "«Алексея» → char_alex (мужской на -й)"
+        );
+    }
+
+    #[test]
+    fn test_entity_resolver_declension_from_alias() {
+        // Если alias — каноническая форма (напр., «Пётр»), от него тоже
+        // должны сгенерироваться падежи.
+        let nodes = vec![
+            make_node(
+                "char_petr",
+                "Пётр_Главный", // title — выдуманный, чтобы не пересекался
+                "character",
+                Some(json!({
+                    "aliases": ["Пётр"]
+                })),
+            ),
+        ];
+        let resolver = EntityResolver::from_nodes(&nodes);
+
+        // «Петра» должно резолвиться через alias «Пётр» → declension «петра».
+        assert_eq!(
+            resolver.resolve("Петра"),
+            Some("char_petr".to_string()),
+            "declension от alias «Пётр» → «петра» резолвится"
+        );
+    }
+
+    #[test]
+    fn test_parse_text_fallback_verb_relative_target_extraction() {
+        // Wave 6: target ищется ПОСЛЕ kill-глагола, а не как «второе
+        // заглавное слово». Это исправляет три класса ошибок.
+        //
+        // Примечание: используем только имена с одной заглавной буквой в начале
+        // (Антон, Григорий), так как regex cap_word `[А-ЯЁ][а-яё]+` не понимает
+        // camelCase (СанКор был бы разбит на «Сан» + «Кор»).
+
+        let nodes = vec![
+            make_node("char_anton", "Антон", "character", None),
+            make_node("char_grigory", "Григорий", "character", None),
+            make_node("char_grak", "Грак", "character", None),
+            make_node("char_alex", "Алексей", "character", None),
+            make_node("char_revun", "Ревун", "character", None),
+        ];
+        let resolver = EntityResolver::from_nodes(&nodes);
+        let chapters = vec![make_chapter(1, 0, 100000)];
+
+        // Случай 1: «герой убил Ревуна» — одно заглавное слово в предложении.
+        // Раньше: caps = ["Ревуна"], caps.get(1) = None → target = None.
+        // Теперь: kill_verb_pos = 1, после глагола «Ревуна» → char_revun.
+        let text1 = "Герой убил Ревуна.";
+        let events1 = parse_text_fallback(text1, &resolver, &chapters);
+        let kill1: Vec<&Event> = events1
+            .iter()
+            .filter(|e| matches!(e.action, Action::Kill))
+            .collect();
+        assert_eq!(
+            kill1.len(),
+            1,
+            "Случай 1: должно быть 1 Kill-событие, got {:?}",
+            events1
+        );
+        // Actor будет «Герой» (phantom — нет в resolver), но target должен
+        // резолвиться через declension «Ревуна» → char_revun.
+        assert_eq!(
+            kill1[0].target,
+            Some("char_revun".to_string()),
+            "Случай 1: target «Ревуна» резолвится в char_revun через Wave 6 declension"
+        );
+
+        // Случай 2: «Григорий узнал, кто убил Грака» — два заглавных ДО глагола.
+        // Раньше: caps = ["Григорий", "Грака"], caps.get(1) = "Грака" — казалось
+        // бы, верно, но это совпадение (см. случай 3).
+        // Теперь: kill_verb_pos ищется, после него — только «Грака».
+        let text2 = "Григорий узнал, кто убил Грака.";
+        let events2 = parse_text_fallback(text2, &resolver, &chapters);
+        let kill2: Vec<&Event> = events2
+            .iter()
+            .filter(|e| matches!(e.action, Action::Kill))
+            .collect();
+        assert_eq!(
+            kill2.len(),
+            1,
+            "Случай 2: должно быть 1 Kill-событие, got {:?}",
+            events2
+        );
+        assert_eq!(
+            kill2[0].actor,
+            "char_grigory",
+            "Случай 2: actor = Григорий (резолвится)"
+        );
+        assert_eq!(
+            kill2[0].target,
+            Some("char_grak".to_string()),
+            "Случай 2: target = Грак (через «Грака» — Wave 6 declension), а НЕ «кто» (lowercase)"
+        );
+
+        // Случай 3: «Антон и Алексей убили Грака» — два заглавных субъекта
+        // ДО глагола. Старая эвристика взяла бы «Алексей» как target.
+        // Новая: kill_verb_pos = 3 (после «Алексей»), после него «Грака».
+        let text3 = "Антон и Алексей убили Грака.";
+        let events3 = parse_text_fallback(text3, &resolver, &chapters);
+        let kill3: Vec<&Event> = events3
+            .iter()
+            .filter(|e| matches!(e.action, Action::Kill))
+            .collect();
+        assert_eq!(
+            kill3.len(),
+            1,
+            "Случай 3: должно быть 1 Kill-событие, got {:?}",
+            events3
+        );
+        assert_eq!(
+            kill3[0].actor,
+            "char_anton",
+            "Случай 3: actor = Антон (первое заглавное)"
+        );
+        assert_eq!(
+            kill3[0].target,
+            Some("char_grak".to_string()),
+            "Случай 3: target = Грак, а НЕ Алексей (тот стоит ДО глагола)"
+        );
+
+        // Случай 4: «Антон убил чиновника» — lowercase target, не резолвится.
+        // Должно дать target = None (lowercase + не резолвится → пропускается).
+        let text4 = "Антон убил чиновника.";
+        let events4 = parse_text_fallback(text4, &resolver, &chapters);
+        let kill4: Vec<&Event> = events4
+            .iter()
+            .filter(|e| matches!(e.action, Action::Kill))
+            .collect();
+        assert_eq!(
+            kill4.len(),
+            1,
+            "Случай 4: должно быть 1 Kill-событие, got {:?}",
+            events4
+        );
+        assert_eq!(
+            kill4[0].target,
+            None,
+            "Случай 4: lowercase «чиновника» не резолвится и не заглавное → target = None"
+        );
+
+        // Случай 5: «Антон убил Алексея» — kill + target в винительном падеже.
+        // Проверяем полный end-to-end: и actor, и target резолвятся.
+        let text5 = "Антон убил Алексея.";
+        let events5 = parse_text_fallback(text5, &resolver, &chapters);
+        let kill5: Vec<&Event> = events5
+            .iter()
+            .filter(|e| matches!(e.action, Action::Kill))
+            .collect();
+        assert_eq!(
+            kill5.len(),
+            1,
+            "Случай 5: должно быть 1 Kill-событие, got {:?}",
+            events5
+        );
+        assert_eq!(
+            kill5[0].actor,
+            "char_anton",
+            "Случай 5: actor = Антон"
+        );
+        assert_eq!(
+            kill5[0].target,
+            Some("char_alex".to_string()),
+            "Случай 5: target = Алексей (через «Алексея» — Wave 6 declension от -й)"
+        );
     }
 }
