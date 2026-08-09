@@ -45,16 +45,24 @@ pub fn detect(text: &str) -> Vec<ParsedLocation> {
         }
     }
 
-    // Группировка по 4-символьному префиксу
+    // v0.4.0: Группировка по лемме (вместо 4-символьного префикса).
+    // Раньше «Яме» и «Яму» сливались по 4-char prefix «яме»/«яму» → НЕТ,
+    // они не сливались (префиксы разные). Теперь «Яме» → lemmatize_simple →
+    // «ям» (отрезали «е»), «Яму» → «ям» (отрезали «у») — СЛИВАЮТСЯ.
+    // А «Земле» и «Империи» имеют разные леммы → НЕ сливаются.
     let mut groups: HashMap<String, (String, usize, HashSet<String>)> = HashMap::new();
     for (word, count) in &loc_counts {
         if *count < 3 {
             continue;
         }
-        let key = word.chars().take(4).collect::<String>().to_lowercase();
+        let key = super::lemmatize_simple(word);
         let entry = groups.entry(key).or_insert_with(|| (word.clone(), 0, HashSet::new()));
         entry.1 += count;
         entry.2.insert(word.clone());
+        // v0.4.0: выбираем каноничное имя — nominative (обычно короче).
+        // Раньше выбирали shortest, что работало, но теперь при lemmatize
+        // лучше выбирать форму, которая ближе к lemma (т.е. nominative).
+        // Эвристика: shortest form — обычно это nominative (Яма vs Яму vs Яме).
         if word.len() < entry.0.len() {
             entry.0 = word.clone();
         }

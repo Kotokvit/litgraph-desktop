@@ -10,6 +10,25 @@ export async function parseMd(markdown: string, projectTitle: string, author: st
   });
 }
 
+// v0.4.0: Полный авто-пайплайн — Rust + NER merge.
+// Запускается при импорте .md, возвращает ParseResult + NER metadata.
+export interface FullParseResult {
+  parseResult: unknown;
+  nerEntities: unknown | null;
+  nerMerged: boolean;
+  pipelineVersion: string;
+}
+
+export async function parseMdFull(
+  markdown: string,
+  projectTitle: string,
+  author: string
+): Promise<FullParseResult> {
+  return invoke("parse_md_full", {
+    params: { markdown, projectTitle, author },
+  });
+}
+
 // ====== Проекты ======
 export async function listProjects() {
   return invoke("list_projects");

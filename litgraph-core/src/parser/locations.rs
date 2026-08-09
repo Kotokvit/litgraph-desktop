@@ -19,8 +19,14 @@ pub fn detect(text: &str) -> Vec<ParsedLocation> {
     let stop: HashSet<&str> = STOP_WORDS.iter().copied().collect();
 
     // Регэксп: предлог места + Capitalized слово
+    // v0.3.0: сужен список предлогов. Убраны: до, із, від, через, крізь,
+    // from, through — они часто идут с одушевлёнными («к Алексея»,
+    // «от Марты», «из дома») и создавали ложноположительные локации
+    // из имён персонажей в косвенных падежах.
+    // Оставлены только предлоги, требующие предложного/местного падежа
+    // и действительно указывающие на lokацию.
     let re = Regex::new(
-        r"(?<![a-zA-Z\x{0400}-\x{04FF}])(?:у|в|на|біля|під|над|за|до|із|від|через|крізь|около|под|возле|перед|in|at|on|near|under|over|behind|from|through)\s+([А-ЯЁA-Z][а-яёa-z\x{0400}-\x{04FF}]{2,})(?![a-zA-Z\x{0400}-\x{04FF}])",
+        r"(?<![a-zA-Z\x{0400}-\x{04FF}])(?:у|в|на|біля|під|над|за|около|под|возле|перед|in|at|on|near|under|over|behind)\s+([А-ЯЁA-Z][а-яёa-z\x{0400}-\x{04FF}]{2,})(?![a-zA-Z\x{0400}-\x{04FF}])",
     ).expect("invalid regex");
 
     let mut loc_counts: HashMap<String, usize> = HashMap::new();
@@ -39,16 +45,24 @@ pub fn detect(text: &str) -> Vec<ParsedLocation> {
         }
     }
 
-    // Группировка по 4-символьному префиксу
+    // v0.4.0: Группировка по лемме (вместо 4-символьного префикса).
+    // Раньше «Яме» и «Яму» сливались по 4-char prefix «яме»/«яму» → НЕТ,
+    // они не сливались (префиксы разные). Теперь «Яме» → lemmatize_simple →
+    // «ям» (отрезали «е»), «Яму» → «ям» (отрезали «у») — СЛИВАЮТСЯ.
+    // А «Земле» и «Империи» имеют разные леммы → НЕ сливаются.
     let mut groups: HashMap<String, (String, usize, HashSet<String>)> = HashMap::new();
     for (word, count) in &loc_counts {
         if *count < 3 {
             continue;
         }
-        let key = word.chars().take(4).collect::<String>().to_lowercase();
+        let key = super::lemmatize_simple(word);
         let entry = groups.entry(key).or_insert_with(|| (word.clone(), 0, HashSet::new()));
         entry.1 += count;
         entry.2.insert(word.clone());
+        // v0.4.0: выбираем каноничное имя — nominative (обычно короче).
+        // Раньше выбирали shortest, что работало, но теперь при lemmatize
+        // лучше выбирать форму, которая ближе к lemma (т.е. nominative).
+        // Эвристика: shortest form — обычно это nominative (Яма vs Яму vs Яме).
         if word.len() < entry.0.len() {
             entry.0 = word.clone();
         }

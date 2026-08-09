@@ -9,6 +9,7 @@ pub mod epsilon;
 
 use crate::models::{LitEdge, LitNode, LitNodeData, ParseResult, ParseStats, Position};
 use chrono::Utc;
+use std::collections::HashSet;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -41,7 +42,10 @@ pub fn build_graph(
     }
 
     let (chapters, prologue_text) = chapters::detect(markdown);
-    let characters = characters::detect(markdown);
+    let characters_raw = characters::detect(markdown);
+    // v0.4.0: применяем alias map (Веня→Вениамин, Аэлин→Аэлира, etc.)
+    // ДО перекрёстной дедупликации с локациями.
+    let characters = merge_aliases(characters_raw);
     let locations = locations::detect(markdown);
 
     // === v0.3.0: Перекрёстная дедупликация characters ↔ locations ===
@@ -167,7 +171,9 @@ pub fn build_graph(
         });
     }
 
-    // --- Персонажи ---
+    // --- Персонажи (включая концепты и организации) ---
+    // v0.4.0: теперь ParsedCharacter имеет entity_type: Character | Organization | Concept
+    // Для каждого типа создаём ноду соответствующего node_type
     let mut char_ids: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     for c in &characters {
         let id = uid("chr");
@@ -182,24 +188,30 @@ pub fn build_graph(
             .map(|ch| format!("Глава {}", ch.num))
             .unwrap_or_else(|| "—".to_string());
 
+        // v0.4.0: node_type зависит от entity_type
+        let (node_type, reason_label) = match c.entity_type {
+            characters::EntityType::Character => ("character", "character"),
+            characters::EntityType::Organization => ("organization", "organization"),
+            characters::EntityType::Concept => ("concept", "concept"),
+        };
+
         nodes.push(LitNode {
             id: id.clone(),
-            node_type: "character".to_string(),
+            node_type: node_type.to_string(),
             position: Position { x: 0.0, y: 0.0 },
             data: LitNodeData {
                 title: c.name.clone(),
                 body: c.description.clone(),
-                node_type: "character".to_string(),
+                node_type: node_type.to_string(),
                 tags: vec![],
                 meta: Some(serde_json::json!({
                     "mentions": c.count,
                     "chapters": format!("{} глав", chapters_with.len()),
                     "firstChapter": first_chapter,
-                    // v0.3.0: X-ray поля — показывают ПОЧЕМУ парсер решил
-                    // что это персонаж. Видны в HTML X-ray export sidebar.
                     "speechCount": c.speech_count,
                     "directCount": c.direct_count,
                     "reason": c.reason,
+                    "entityType": reason_label,
                 })),
                 full_text: None,
                 versions: None,
@@ -387,15 +399,28 @@ fn layout_nodes(
     let char_x = 1100.0;
     let char_y_start = 60.0;
     let char_y_step = 110.0;
+    // v0.4.0: разделяем персонажей и концепты/организации по разным Y-координатам
+    let mut char_row = 0usize;
+    let mut concept_row = 0usize;
+    let concept_y_start = 60.0 + 20.0 * char_y_step + 60.0; // ниже персонажей + отступ
     for (i, c) in characters.iter().enumerate() {
         if let Some(id) = char_ids.get(&c.name) {
             if let Some(n) = nodes.iter_mut().find(|n| n.id == *id) {
-                n.position = Position {
-                    x: char_x,
-                    y: char_y_start + (i as f64) * char_y_step,
+                let (x, y) = if c.entity_type == characters::EntityType::Character {
+                    let y = char_y_start + (char_row as f64) * char_y_step;
+                    char_row += 1;
+                    (char_x, y)
+                } else {
+                    // concept/organization — отдельная колонка правее
+                    let y = concept_y_start + (concept_row as f64) * char_y_step;
+                    concept_row += 1;
+                    (char_x + 250.0, y)
                 };
+                n.position = Position { x, y };
             }
         }
+        // i нужно чтобы избежать unused warning
+        let _ = i;
     }
 
     // Локации — ещё правее
@@ -430,29 +455,59 @@ pub fn new_uid(prefix: &str) -> String {
 /// Ограничения (без словаря нельзя исправить):
 ///   - Короткие имена (≤4 символов) возвращаются as-is: «Рэй» и «Рэя»
 ///     НЕ сольются (нужен pymorphy3 — Варіант C).
-///   - Стем-чередования (Веня ↔ Вениамин) не обрабатываются.
+///   - Стем-чередования (Веня ↔ Вениамин) не обрабатываются лемматизатором
+///     — для этого есть ALIASES в mod.rs (см. ниже).
 ///   - Возвращает как минимум 3 буквы корня (защита от over-cutting).
+///
+/// v0.4.0: Спецвипадок для женских имён на -ра/-ла/-на/-ма.
+/// Проблема: «Аэлира» обрезалась до «аэлир» (отрезалась финальная «а»),
+/// что НЕ матчится с «Аэлире» → тоже «аэлир» (совпадение случайно).
+/// Но «Аэлин» (другое имя, уменьшительное) → «аэлин» (не обрезается,
+/// 5 символов, окончание «ин» не в списке). В итоге Аэлира и Аэлин
+/// НЕ сливались, хотя это один персонаж.
+/// Фикс: для слов > 4 символов, заканчивающихся на согласную + «ра/ла/на/ма» + «а»,
+/// сохраняем финальную «а». Это даёт: Аэлира → «аэлира», Иллира → «иллира»,
+/// Марина → «марина», Алёна → «алёна». Падежи (Аэлире, Аэлиру) обрезаются
+/// до «аэлир» — для их слияния с «аэлира» нужен alias map или pymorphy3.
 pub fn lemmatize_simple(word: &str) -> String {
     let lower = word.to_lowercase();
     let chars: Vec<char> = lower.chars().collect();
     if chars.len() <= 4 {
         return lower;
     }
+
+    // v0.4.0: Женские имена на -ра/-ла/-на/-ма + «а».
+    // Проверяем: предпоследняя буква ∈ {р, л, н, м}, последняя = «а»,
+    // и перед ними стоит гласная (чтобы не слить «Марта» → «март»
+    // с «Марту» → «март» — это рабочий кейс, оставляем).
+    // Условие: word ends with [аеиоуяюэы] + [рлнм] + [а]
+    // Примеры: Аэлира, Иллира, Марина, Алёна, Валерия, Виктория
+    if chars.len() >= 5 {
+        let last = chars[chars.len() - 1];
+        let before_last = chars[chars.len() - 2];
+        let before_before_last = chars[chars.len() - 3];
+        let feminine_endings = ['р', 'л', 'н', 'м'];
+        let vowels = ['а', 'е', 'и', 'о', 'у', 'я', 'ю', 'э', 'ы', 'ё'];
+        if last == 'а'
+            && feminine_endings.contains(&before_last)
+            && vowels.contains(&before_before_last)
+        {
+            // Не обрезаем финальную «а» — возвращаем как есть.
+            // Это сохраняет женские имена на -ра/-ла/-на/-ма в nominative.
+            return lower;
+        }
+    }
+
     // v0.3.1: Спецвипадки для російських чоловічих імен на -ей / -ий.
-    // Проблема: «Алексей» ( nominative) закінчується на -й, який не в endings
+    // Проблема: «Алексей» (nominative) закінчується на -й, який не в endings
     // (бо це частина основи). Тому lemma = «алексей». Але «Алексея» (genitive)
     // віддає «алексе» (обрізане -я). Вони НЕ зливаються — хоча це один персонаж.
     // Фікс: для слів > 4 символів на -ей/-ій відкидаємо останній -й → «алексе».
-    // Це правильно зливає Алексей+Алексея+Алексею, Андрей+Андрея, Сергей+Сергея,
-    // Геннадий+Геннадия, Виталий+Виталия — без впливу на інші слова.
     let last_two: Vec<char> = chars[chars.len() - 2..].to_vec();
     if last_two == vec!['е', 'й'] || last_two == vec!['и', 'й'] {
         return chars[..chars.len() - 1].iter().collect();
     }
     // v0.3.1: Спецвипадок для -ею (instrumental of -ей names: «Алексею», «Андрею»).
-    // Без цього «Алексею» матчитися з 2-char ending "ею" → lemma "алекс"
-    // (відрізає і "ю", і "е"), що НЕ зливається з «алексе» від «Алексей».
-    // Фікс: для слів > 4 символів на -ею відкидаємо тільки "ю" → «алексе».
     if chars.len() > 4 && last_two == vec!['е', 'ю'] {
         return chars[..chars.len() - 1].iter().collect();
     }
@@ -474,4 +529,151 @@ pub fn lemmatize_simple(word: &str) -> String {
         }
     }
     lower
+}
+
+/// v0.4.0: Таблица алиасов для русских/украинских имён.
+///
+/// `lemmatize_simple` не может объединить разные основы (Веня ↔ Вениамин,
+/// Вельямин ↔ Вениамин, Аэлин ↔ Аэлира) — для этого нужен словарь.
+/// Эта таблица содержит пары (краткая форма → полная форма) для самых
+/// частых русских имён. Используется в `merge_aliases()` после группировки.
+///
+/// В контексте анализируемого романа «1-Сфера Предела»:
+///   - Веня (freq=25) + Вениамин (freq=47) + Вельямин (freq=43) = 115 упоминаний
+///     одного персонажа (Вениамин Ард'Еш, он же «Вень», «Венька»)
+///   - Аэлин (freq=23) + Аэлира (freq=47) = 70 упоминаний одного персонажа
+///   - Иллира (freq=19) — отдельный персонаж (не алиас Аэлиры)
+///
+/// Принцип: алиасы применяются ТОЛЬКО когда lemma короткой формы
+/// является prefix'ом lemma длинной формы (Веня → Вениамин: «веня» не prefix
+/// «вениамин», но мы это знаем из словаря). Без словаря это не вычислить.
+pub const ALIASES: &[(&str, &str)] = &[
+    // Веня → Вениамин (уменьшительное от полного имени)
+    ("веня", "вениамин"),
+    ("венька", "вениамин"),
+    ("венечка", "вениамин"),
+    // Вельямин → Вениамин (старославянская форма того же имени)
+    ("вельямин", "вениамин"),
+    ("вельяминка", "вениамин"),
+    // Аэлин → Аэлира (фэнтезийное имя, краткая форма)
+    ("аэлин", "аэлира"),
+    // Алексей → Алексей (каноническая форма, без алиасов)
+    // Лёша → Алексей
+    ("лёша", "алексей"),
+    ("лёшка", "алексей"),
+    ("лёшенька", "алексей"),
+    // Саша → Александр (НЕ Алексей!)
+    ("саша", "александр"),
+    ("сашка", "александр"),
+    ("сашенька", "александр"),
+    // Марта — без алиасов (каноническая форма)
+    // Маша → Мария
+    ("маша", "мария"),
+    ("машенька", "мария"),
+    ("машка", "мария"),
+    // Катя → Екатерина
+    ("катя", "екатерина"),
+    ("катюша", "екатерина"),
+    ("катенька", "екатерина"),
+    // Дима → Дмитрий
+    ("дима", "дмитрий"),
+    ("димка", "дмитрий"),
+    ("димочка", "дмитрий"),
+    // Петя → Пётр
+    ("петя", "пётр"),
+    ("петенька", "пётр"),
+    ("петюня", "пётр"),
+];
+
+/// v0.4.0: Применить таблицу алиасов к списку персонажей.
+///
+/// Если lemma персонажа найдена в ALIASES как короткая форма — сливаем
+/// его с персонажем, чья lemma = полная форма. Суммируем freq, speech,
+/// direct. Каноничным именем становится полная форма.
+///
+/// Возвращает список без дубликатов. Порядок сохраняется (полная форма
+/// остаётся на своей позиции, короткая — удаляется, её данные добавляются
+/// к полной).
+pub fn merge_aliases(
+    chars: Vec<crate::parser::characters::ParsedCharacter>,
+) -> Vec<crate::parser::characters::ParsedCharacter> {
+    use crate::parser::characters::ParsedCharacter;
+    use std::collections::HashMap;
+
+    // Строим map: lemma_короткая → lemma_полная
+    let alias_map: HashMap<String, String> = ALIASES
+        .iter()
+        .map(|(short, full)| (short.to_string(), full.to_string()))
+        .collect();
+
+    // Строим map: lemma → индекс в chars (для быстрого поиска)
+    let mut lemma_to_idx: HashMap<String, usize> = HashMap::new();
+    for (i, c) in chars.iter().enumerate() {
+        let lemma = lemmatize_simple(&c.name);
+        // Сохраняем ПЕРВОЕ вхождение каждой lemma
+        lemma_to_idx.entry(lemma).or_insert(i);
+    }
+
+    // Проходим по всем персонажам. Если lemma короткая и есть алиас на полную —
+    // переносим данные в полную форму и помечаем короткую на удаление.
+    let mut to_remove: HashSet<usize> = HashSet::new();
+    let mut updates: HashMap<usize, (usize, usize, usize, Vec<String>)> = HashMap::new();
+    // updates[target_idx] = (add_count, add_speech, add_direct, add_aliases)
+
+    for (i, c) in chars.iter().enumerate() {
+        let lemma = lemmatize_simple(&c.name);
+        if let Some(full_lemma) = alias_map.get(&lemma) {
+            if let Some(&target_idx) = lemma_to_idx.get(full_lemma) {
+                if target_idx == i {
+                    continue; // не сливаем сам с собой
+                }
+                // Переносим данные из короткой (i) в полную (target_idx)
+                let entry = updates.entry(target_idx).or_insert((0, 0, 0, Vec::new()));
+                entry.0 += c.count;
+                entry.1 += c.speech_count;
+                entry.2 += c.direct_count;
+                entry.3.extend(c.aliases.iter().cloned());
+                entry.3.push(c.name.clone());
+                to_remove.insert(i);
+            }
+        }
+    }
+
+    // Применяем обновления
+    let mut result: Vec<ParsedCharacter> = chars
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, mut c)| {
+            if to_remove.contains(&i) {
+                None
+            } else {
+                if let Some((add_count, add_speech, add_direct, add_aliases)) = updates.remove(&i) {
+                    c.count += add_count;
+                    c.speech_count += add_speech;
+                    c.direct_count += add_direct;
+                    // Добавляем новые alias'ы (без дубликатов)
+                    let existing: HashSet<String> = c.aliases.iter().cloned().collect();
+                    for a in add_aliases {
+                        if !existing.contains(&a) {
+                            c.aliases.push(a);
+                        }
+                    }
+                    // Обновляем reason
+                    let lemma = lemmatize_simple(&c.name);
+                    let forms_preview: Vec<String> =
+                        c.aliases.iter().take(4).cloned().collect();
+                    c.reason = format!(
+                        "character:rule=linguistic_signal+alias_merge;freq={};speech_verb_hits={};direct_address_hits={};lemma={};ALIAS_MERGED;forms=[{}]",
+                        c.count, c.speech_count, c.direct_count, lemma, forms_preview.join(",")
+                    );
+                }
+                Some(c)
+            }
+        })
+        .collect();
+
+    // Пересортируем по убыванию частоты
+    result.sort_by(|a, b| b.count.cmp(&a.count));
+    result.truncate(25);
+    result
 }

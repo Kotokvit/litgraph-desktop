@@ -31,6 +31,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // parse-md
             commands::parse_md::parse_md,
+            commands::parse_md_full::parse_md_full, // v0.4.0: авто-пайплайн
             // project
             commands::project::list_projects,
             commands::project::load_project,

@@ -213,12 +213,55 @@ export function Toolbar() {
     setParsing(true);
     setParseError(null);
     try {
-      const data = await callApi("parse_md", "/api/parse-md", {
-        markdown: mdText,
-        projectTitle: mdTitle || "Импортированный проект",
-        author: mdAuthor || "",
-      }, "params");
+      // v0.4.0: используем полный авто-пайплайн (Rust + NER merge).
+      // Если parse_md_full недоступен (веб-превью) — fallback на старый parse_md.
+      let data: unknown;
+      let nerMerged = false;
+      let nerNote = "";
+      try {
+        // Пробуем новый пайплайн (Tauri only)
+        const isTauriEnv = typeof window !== "undefined" &&
+          ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
+        if (isTauriEnv) {
+          // Динамический import чтобы не ломать веб-превью
+          const { parseMdFull } = await import("@/lib/tauri-commands");
+          const full = await parseMdFull(
+            mdText,
+            mdTitle || "Импортированный проект",
+            mdAuthor || ""
+          );
+          data = full.parseResult;
+          nerMerged = full.nerMerged;
+          if (!nerMerged) {
+            nerNote = " (NER недоступен — только Rust-парсер)";
+          } else if (full.nerEntities) {
+            nerNote = " (NER-обогащён: spaCy + pymorphy3)";
+          }
+        } else {
+          // Веб-превью — fallback на старый endpoint
+          data = await callApi("parse_md", "/api/parse-md", {
+            markdown: mdText,
+            projectTitle: mdTitle || "Импортированный проект",
+            author: mdAuthor || "",
+          }, "params");
+        }
+      } catch (fullErr) {
+        // Fallback: если parse_md_full упал — пробуем старый parse_md
+        console.warn("[parse_md_full] failed, falling back to parse_md:", fullErr);
+        data = await callApi("parse_md", "/api/parse-md", {
+          markdown: mdText,
+          projectTitle: mdTitle || "Импортированный проект",
+          author: mdAuthor || "",
+        }, "params");
+        nerNote = " (fallback: Rust-парсер без NER)";
+      }
+
       loadProject(data as any);
+      // Обновляем description если NER сработал
+      if (nerMerged && nerNote) {
+        const desc = useLitStore.getState().description;
+        useLitStore.getState().setProjectMeta({ description: desc + nerNote });
+      }
       setImportMdOpen(false);
       setTimeout(() => fitViewViaEvent(), 100);
     } catch (err) {
@@ -777,12 +820,12 @@ export function Toolbar() {
               {parsing ? (
                 <>
                   <Lucide.Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-                  Парсинг…
+                  Авто-пайплайн (Rust + NER)…
                 </>
               ) : (
                 <>
                   <Lucide.Sparkles className="w-4 h-4 mr-1.5" />
-                  Разобрать на граф
+                  Разобрать на граф (авто)
                 </>
               )}
             </Button>

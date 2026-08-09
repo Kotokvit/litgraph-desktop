@@ -9,7 +9,9 @@ export type LitNodeType =
   | "location"     // Локация
   | "idea"         // Идея / Заметка
   | "chapter"      // Глава / Раздел
-  | "theme";       // Тема / Мотив (сквозная идея)
+  | "theme"        // Тема / Мотив (сквозная идея)
+  | "concept"      // v0.4.0: Концепт / абстракция (Бездна, Эхо, Архив-как-здание)
+  | "organization"; // v0.4.0: Организация / коллектив (Совет, Клан, Империя)
 
 export interface LitNodeData {
   title: string;
@@ -294,6 +296,36 @@ export const NODE_TYPES: Record<LitNodeType, NodeTypeConfig> = {
       { key: "manifestation", label: "Как проявляется", type: "textarea", placeholder: "через образы, повторяющиеся слова, поступки героев, символику…" },
     ],
   },
+  concept: {
+    type: "concept",
+    label: "Концепт",
+    singular: "Концепт",
+    plural: "Концепты",
+    description: "Абстрактное существительное или понятие, не являющееся персонажем: Бездна, Эхо, Архив-как-здание, Секвестр.",
+    icon: "Cloud",
+    color: "#7C3AED",
+    accent: "#8B5CF6",
+    defaultBody:
+      "Какой концепт? Как он проявляется в тексте? Это метафора, символ, локация-идея или коллективный образ?",
+    fields: [
+      { key: "importance", label: "Важность", type: "select", options: ["low", "medium", "high"] },
+    ],
+  },
+  organization: {
+    type: "organization",
+    label: "Организация",
+    singular: "Организация",
+    plural: "Организации",
+    description: "Коллективный субъект: политическая структура, клан, совет, корпорация. Упоминается с глаголами коллективного действия (постановил, собрался, решил).",
+    icon: "Building2",
+    color: "#DC2626",
+    accent: "#EF4444",
+    defaultBody:
+      "Какая организация? Кто в неё входит? Какие решения принимает? Как влияет на сюжет?",
+    fields: [
+      { key: "importance", label: "Важность", type: "select", options: ["low", "medium", "high"] },
+    ],
+  },
 };
 
 export const NODE_TYPE_ORDER: LitNodeType[] = [
@@ -304,6 +336,8 @@ export const NODE_TYPE_ORDER: LitNodeType[] = [
   "character",
   "dialogue",
   "location",
+  "organization",
+  "concept",
   "theme",
   "idea",
 ];

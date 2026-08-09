@@ -42,6 +42,31 @@ pub struct ParsedCharacter {
     /// Человекочитаемая причина решения парсера (для X-ray export).
     /// Формат: "character:rule=linguistic_signal;freq=N;speech=N;direct=N;..."
     pub reason: String,
+    /// v0.4.0: Тип сущности — character | concept | organization.
+    /// - character: есть speech_count >= 1 ИЛИ direct_count >= 1 (имя говорит)
+    /// - organization: speech_count == 0, но контекст указывает на
+    ///   политическую/организационную структуру (глаголы «решил», «постановил»,
+    ///   «собрался», «заседание»)
+    /// - concept: speech_count == 0 и freq < ORGANIZATION_THRESHOLD,
+    ///   либо контекст не указывает на организацию
+    pub entity_type: EntityType,
+}
+
+/// v0.4.0: Тип сущности для контекстно-зависимой классификации.
+/// «Совет» в одном тексте — организация (политическая структура),
+/// в другом — концепт (совет-рекомендация), в третьем — персонаж
+/// (если «Совет» — имя собственное). Алгоритм решает по контексту.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EntityType {
+    /// Персонаж — speaks/acts (speech_count >= 1 or direct_count >= 1)
+    Character,
+    /// Организация — коллективный субъект (упоминается с глаголами
+    /// «решил», «постановил», «собрался», «объявил», «заседание»)
+    Organization,
+    /// Концепт — абстрактное существительное (Бездна, Эхо, Архив-как-здание)
+    /// или неопределённый случай
+    Concept,
 }
 
 /// Стоп-слово (местоимения, союзы, предлоги на 3 языках + универсальные
@@ -129,6 +154,26 @@ pub const STOP_WORDS: &[&str] = &[
     // Союзы и частицы, которые могут быть в начале предложения
     "Если", "Чтобы", "Хотя", "Однако", "Поэтому", "Значит",
     "Или", "Ибо",
+    // v0.4.0: Наречия и союзы, часто стоящие в начале предложения
+    // и ошибочно детектируемые как имена персонажей.
+    // Баг «Затем» (freq=15 в 1-Сфера Предела) — это союз «then/потом»,
+    // написанный с большой буквы в начале предложения: «Затем Веня...»,
+    // «Затем Алексей бросил...». Не персонаж.
+    "Затем", "Сначала", "Наконец", "Впрочем", "Особенно",
+    "Действительно", "Лишь", "Пусть", "Пускай", "Именно",
+    "Следовательно", "Значит", "Стало", "Быть", "Может",
+    "Повсюду", "Везде", "Отсюда", "Оттуда", "Никуда", "Ниоткуда",
+    "Позавчера", "Давно", "Недавно", "Скоро", "Вскоре", "Тотчас",
+    "Немедленно", "Тут", "Там", "Здесь", "Откуда", "Куда",
+    // Дополнительные местоименные формы (косвенные падежи)
+    "Его", "Её", "Их", // уже выше, но дублируем для надёжности
+    "Сам", "Сама", "Само", "Сами", "Самого", "Самой", "Самому",
+    "Весь", "Вся", "Всё", "Все", "Всего", "Всей", "Всему",
+    "Чей", "Чья", "Чьё", "Чьи",
+    // Вводные слова
+    "Кстати", "Например", "Кстати", "Впрочем", "Безусловно",
+    "Разумеется", "Конечно", "Пожалуй", "Видимо", "Оказывается",
+    "По-видимому", "Бесспорно", "Несомненно", "Вероятно",
     // Одно-двухбуквенные служебные слова (часто стоят перед глаголами речи:
     // "И сказал", "Я ответил", "Не спросил", "Ты промолчал")
     "И", "Я", "Не", "Ты", "До", "А", "Но", "Мо", "Ну",
@@ -169,6 +214,49 @@ pub const SPEECH_VERBS: &[&str] = &[
     "посміхнувся", "посміхнулася", "кивнув", "зітхнув", "зітхнула",
 ];
 
+/// v0.4.0: Глаголы и существительные, указывающие на коллективный субъект
+/// (организацию, совет, клан, политическую структуру).
+///
+/// Если слово (например «Совет») встречается в тексте рядом с этими глаголами
+/// — это организация, а не персонаж и не концепт.
+///
+/// Контекст проверки: в радиусе 200 символов от упоминания слова ищем
+/// любое из этих ключевых слов. Если найдено ≥ 1 раза — классифицируем
+/// как organization.
+///
+/// Примеры:
+///   «Совет постановил...» → organization ✓
+///   «Совет собрался...» → organization ✓
+///   «Совет решил...» → organization ✓
+///   «дал совет» → concept (совет-рекомендация, нет org-глаголов)
+pub const ORG_CONTEXT_WORDS: &[&str] = &[
+    // Глаголы коллективного действия (рус)
+    "постановил", "постановила", "постановило", "постановили",
+    "решил", "решила", "решило", "решили",
+    "собрался", "собралась", "собралось", "собрались",
+    "заседал", "заседала", "заседало", "заседали",
+    "объявил", "объявила", "объявило", "объявили",
+    "утвердил", "утвердила", "утвердило", "утвердили",
+    "принял", "приняла", "приняло", "приняли",
+    "отклонил", "отклонила", "отклонили",
+    "проголосовал", "проголосовали",
+    "делегировал", "делегировали",
+    "ратифицировал", "ратифицировали",
+    // Существительные (контекст организации)
+    "заседание", "собрание", "конклав", "конгресс", "съезд",
+    "сессия", "пленум", "президиум", "бюро", "комитет",
+    "комиссия", "палата", "палаты", "депутат", "депутаты",
+    "член", "члены", "председатель", "председателя",
+    "глашатай", "спикер",
+    // Украинские
+    "постановив", "постановила", "вирішив", "вирішила",
+    "зібрався", "зібралася", "засідав", "засідала",
+    "оголосив", "оголосила", "затвердив", "затвердила",
+    "засідання", "збори", "конклав", "конгрес", "з'їзд",
+    "сесія", "пленум", "президія", "бюро", "комітет",
+    "комісія", "палата", "депутат", "член", "голова",
+];
+
 pub fn detect(text: &str) -> Vec<ParsedCharacter> {
     let stop: HashSet<&str> = STOP_WORDS.iter().copied().collect();
 
@@ -177,6 +265,13 @@ pub fn detect(text: &str) -> Vec<ParsedCharacter> {
         r"(?<![a-zA-Z\x{0400}-\x{04FF}])([А-ЯЁA-Z][а-яёa-z\x{0400}-\x{04FF}]{2,})(?![a-zA-Z\x{0400}-\x{04FF}])",
     )
     .expect("invalid regex");
+
+    // v0.4.0: Regex для sentence-end компилируем ОДИН раз (был внутри цикла —
+    // это было ОЧЕНЬ медленно на 2MB тексте: 50k+ компиляций regex).
+    let re_sent_end = Regex::new(
+        r#"(?:[.!?…]["'»]?|\xE2\x80\x94|--|«|"|'|\n)\s*$"#,
+    )
+    .unwrap();
 
     let mut word_counts: HashMap<String, usize> = HashMap::new();
 
@@ -207,10 +302,6 @@ pub fn detect(text: &str) -> Vec<ParsedCharacter> {
             //   - \n (новая строка = начало абзаца)
             // Это исправляет баг «Это» (freq=99 в 1-Сфера Предела), которое
             // проходило фильтр из-за неполной проверки sentence-end.
-            let re_sent_end = Regex::new(
-                r#"(?:[.!?…]["'»]?|\xE2\x80\x94|--|«|"|'|\n)\s*$"#,
-            )
-            .unwrap();
             if re_sent_end.is_match(preceding).unwrap_or(false) {
                 continue;
             }
@@ -301,13 +392,19 @@ pub fn detect(text: &str) -> Vec<ParsedCharacter> {
     }
 
     // === Группировка + фильтрация ===
-    // Ключевое изменение v0.3.0: кандидат становится персонажем ТОЛЬКО
-    // при наличии лингвистического сигнала:
-    //   - speech >= 1 (имя употреблено с глаголом речи)
-    //   - OR direct >= 1 (имя в прямом обращении)
-    // Это убирает концепты даже при очень высокой частоте (Мнемар freq=80,
-    // Секвестр freq=88, Архив-как-здание freq=329) — потому что они никогда
-    // не выступают субъектами речи.
+    // v0.4.0: Теперь генерируем ТРИ категории сущностей:
+    //   - Character: speech >= 1 OR direct >= 1 (имя говорит — это персонаж)
+    //   - Organization: speech == 0 AND direct == 0 BUT слово встречается
+    //     рядом с глаголами коллективного действия (Совет постановил, Клан
+    //     собрался, Архив решил)
+    //   - Concept: speech == 0 AND direct == 0 AND count >= 10 (Бездна, Эхо,
+    //     Архив-как-здание) — абстрактные существительные, которые часто
+    //     встречаются, но никогда не «говорят»
+    //
+    // Раньше (v0.3.0) такие слова просто отфильтровывались. Теперь они
+    // сохраняются как отдельные ноды концептов/организаций — пользователь
+    // видит их в графе и понимает, что парсер нашёл эти сущности, но они
+    // не являются персонажами.
     //
     // ВАЖНО: итерируем по UNION всех трёх map'ов, а не только word_counts.
     // Иначе слово, которое всегда стоит в начале предложения (и поэтому
@@ -321,26 +418,37 @@ pub fn detect(text: &str) -> Vec<ParsedCharacter> {
         .chain(direct_bonus.keys())
         .collect();
 
+    // Группы для персонажей (speech/direct >= 1)
     let mut groups: HashMap<String, (String, usize, HashSet<String>, usize, usize)> =
         HashMap::new();
+    // Группы для концептов/организаций (speech == 0 AND direct == 0)
+    // value: (rep, count, forms, is_organization)
+    let mut concept_groups: HashMap<String, (String, usize, HashSet<String>, bool)> =
+        HashMap::new();
+
+    // v0.4.0: Текст в lowercase для быстрого поиска контекстных слов
+    let text_lower = text.to_lowercase();
+
     for word in all_words {
         let count_from_wc = word_counts.get(word).copied().unwrap_or(0);
         let speech = speech_bonus.get(word).copied().unwrap_or(0);
         let direct = direct_bonus.get(word).copied().unwrap_or(0);
 
-        // ФИЛЬТР: нужен лингвистический сигнал.
-        // Без него — это концепт/топоним/абстракция, не персонаж.
-        // Порог speech >= 1 (а не >= 2) потому, что даже одно употребление
-        // с глаголом речи — сильный сигнал (концепты не говорят вообще).
-        if speech < 1 && direct < 1 {
-            continue;
-        }
-
-        // Если слово есть в speech_bonus но не в word_counts (или count < 2),
-        // пересчитаем его частоту в полном тексте — включая начала предложений.
-        let count = if count_from_wc < 2 && (speech >= 1 || direct >= 1) {
-            count_word_occurrences(word, text)
+        // v0.4.0: Оптимизация — дорогостоящий count_word_occurrences
+        // вызываем ТОЛЬКО для кандидатов в персонажи (где это нужно для
+        // обнаружения слов, отфильтрованных sentence-start фильтром).
+        // Для концептов используем только word_counts — если слово не
+        // в word_counts (count_from_wc < 5), оно слишком редкое для концепта.
+        let count = if speech >= 1 || direct >= 1 {
+            // Кандидат в персонажи — пересчитываем частоту полностью
+            if count_from_wc < 2 {
+                count_word_occurrences(word, text)
+            } else {
+                count_from_wc
+            }
         } else {
+            // Кандидат в концепты — используем только word_counts
+            // (концепты обычно частые, нет нужды в полном пересчёте)
             count_from_wc
         };
 
@@ -348,53 +456,58 @@ pub fn detect(text: &str) -> Vec<ParsedCharacter> {
             continue;
         }
 
-        // v0.3.1: Группировка по лемме (вместо 4-символьного префикса).
-        // `lemmatize_simple` отсекает типичные русские/украинские окончания
-        // (ами/я/у/ю/ы/и/е/ого/ему/...) и возвращает каноническую основу.
-        // Это правильно объединяет:
-        //   «Алексей» + «Алексея» + «Алексею» → lemma «алексе»
-        //   «Марта» + «Марту» + «Мартой» → lemma «март»
-        // И правильно НЕ объединяет разные имена с одинаковым 4-char prefix:
-        //   «Алексей» + «Александр» + «Алексеев» (раньше все → «алек», теперь
-        //   разные лемы: «алексе» / «александр» / «алексеев»).
-        //
-        // Ограничение: короткие имена (≤4 символов) возвращаются as-is.
-        //   «Рэй» и «Рэя» НЕ сольются (нужен pymorphy3 — Варіант C).
         let key = super::lemmatize_simple(word);
-        let entry = groups
-            .entry(key.clone())
-            .or_insert_with(|| (word.clone(), 0, HashSet::new(), 0, 0));
-        entry.1 += count;
-        entry.2.insert(word.clone());
-        entry.3 += speech;
-        entry.4 += direct;
-        // Выбор каноничного имени (rep):
-        // 1. Предпочитаем форму с бОльшим speech_count (им. падеж чаще субъект речи)
-        // 2. При равенстве — более короткую форму
-        let rep_speech = speech_bonus.get(&entry.0).copied().unwrap_or(0);
-        if speech > rep_speech || (speech == rep_speech && word.len() < entry.0.len()) {
-            entry.0 = word.clone();
+
+        // v0.4.0: Классификация по типу сущности
+        if speech >= 1 || direct >= 1 {
+            // Character — есть лингвистический сигнал речи
+            let entry = groups
+                .entry(key.clone())
+                .or_insert_with(|| (word.clone(), 0, HashSet::new(), 0, 0));
+            entry.1 += count;
+            entry.2.insert(word.clone());
+            entry.3 += speech;
+            entry.4 += direct;
+            // Выбор каноничного имени (rep):
+            // 1. Предпочитаем форму с бОльшим speech_count (им. падеж чаще субъект речи)
+            // 2. При равенстве — более короткую форму
+            let rep_speech = speech_bonus.get(&entry.0).copied().unwrap_or(0);
+            if speech > rep_speech || (speech == rep_speech && word.len() < entry.0.len()) {
+                entry.0 = word.clone();
+            }
+        } else {
+            // Кандидат в концепты/организации.
+            // Порог: count >= 5 (отфильтровать редкие имена-однодневки).
+            if count < 5 {
+                continue;
+            }
+            // v0.4.0: контекст (org/concept) проверяется ПОЗЖЕ, только для
+            // топ-30 концептов по частоте — см. ниже. Здесь просто собираем
+            // кандидатов без классификации.
+            let entry = concept_groups
+                .entry(key.clone())
+                .or_insert_with(|| (word.clone(), 0, HashSet::new(), false));
+            entry.1 += count;
+            entry.2.insert(word.clone());
+            // Каноничное имя — кратчайшая форма
+            if word.len() < entry.0.len() {
+                entry.0 = word.clone();
+            }
         }
     }
 
     let mut sorted: Vec<_> = groups.into_values().collect();
     sorted.sort_by(|a, b| b.1.cmp(&a.1));
-    sorted.truncate(25);
+    // v0.4.0: truncate увеличен до 20 (было 25), чтобы оставить место для
+    // концептов/организаций в общем пуле (всё равно <= 25 после merge).
+    sorted.truncate(20);
 
-    sorted
+    let mut result: Vec<ParsedCharacter> = sorted
         .into_iter()
         .map(|(rep, count, forms, speech, direct)| {
             let forms_vec: Vec<String> = forms.into_iter().collect();
             let aliases_str = forms_vec.iter().take(6).cloned().collect::<Vec<_>>().join(", ");
 
-            // === X-ray reason string ===
-            // Полная трассировка решения парсера — для AI/developer review.
-            // Формат вдохновлён оригинальным vision пользователя:
-            //   "capitalized_word freq=8 prefix=Секв NOT in stoplist"
-            // Теперь расширено до:
-            //   "character:rule=linguistic_signal;freq=N;speech_verb_hits=N;
-            //    direct_address_hits=N;lemma=XXXX;NOT_IN_STOPLIST;
-            //    forms=[a,b,c,d]"
             let lemma = super::lemmatize_simple(&rep);
             let forms_preview: Vec<String> = forms_vec.iter().take(4).cloned().collect();
             let reason = format!(
@@ -415,9 +528,132 @@ pub fn detect(text: &str) -> Vec<ParsedCharacter> {
                 speech_count: speech,
                 direct_count: direct,
                 reason,
+                entity_type: EntityType::Character,
             }
         })
-        .collect()
+        .collect();
+
+    // v0.4.0: Добавляем концепты и организации (до 5 в сумме)
+    // ВАЖНО: проверка контекста (check_organization_context) дорогая —
+    // для каждого слова сканируем весь text_lower. Поэтому сначала сортируем
+    // по частоте и берём только топ-30 кандидатов — этого достаточно,
+    // чтобы найти все важные концепты (Бездна, Эхо, Архив, Совет, Клан, etc.)
+    // без сканирования сотен редких слов.
+    let mut concepts: Vec<(String, usize, HashSet<String>, bool)> =
+        concept_groups.into_values().collect();
+    concepts.sort_by(|a, b| b.1.cmp(&a.1));
+    // Предварительно ограничиваем топ-30 по частоте ДО проверки контекста
+    concepts.truncate(30);
+    // Теперь проверяем контекст только для топ-30
+    let concepts: Vec<(String, usize, HashSet<String>, bool)> = concepts
+        .into_iter()
+        .map(|(rep, count, forms, was_org)| {
+            // Если уже нашли org-контекст раньше (на этапе группировки) — оставляем
+            // Иначе — перепроверяем один раз (для canonical rep формы)
+            let is_org = was_org || check_organization_context(&rep, &text_lower);
+            (rep, count, forms, is_org)
+        })
+        .collect();
+    // Берём топ-5 концептов/организаций
+    let mut top_concepts = concepts;
+    top_concepts.sort_by(|a, b| {
+        // Организации приоритетнее концептов (если частоты близки)
+        match (a.3, b.3) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => b.1.cmp(&a.1),
+        }
+    });
+    top_concepts.truncate(5);
+
+    for (rep, count, forms, is_org) in top_concepts {
+        let forms_vec: Vec<String> = forms.into_iter().collect();
+        let aliases_str = forms_vec.iter().take(6).cloned().collect::<Vec<_>>().join(", ");
+        let lemma = super::lemmatize_simple(&rep);
+        let (entity_type, type_label) = if is_org {
+            (EntityType::Organization, "organization")
+        } else {
+            (EntityType::Concept, "concept")
+        };
+        let reason = format!(
+            "{}:rule=context_analysis;freq={};speech_verb_hits=0;direct_address_hits=0;lemma={};NOT_CHARACTER;forms=[{}]",
+            type_label, count, lemma, forms_vec.iter().take(4).cloned().collect::<Vec<_>>().join(",")
+        );
+        let description = if is_org {
+            format!(
+                "Организация/коллективный субъект, упомянутая {} раз. Формы: {}. Обнаружена рядом с глаголами коллективного действия (постановил, собрался, решил…).",
+                count, aliases_str
+            )
+        } else {
+            format!(
+                "Концепт/абстракция, упомянутая {} раз. Формы: {}. Не является персонажем (нет глаголов речи в качестве субъекта).",
+                count, aliases_str
+            )
+        };
+        result.push(ParsedCharacter {
+            name: rep,
+            aliases: forms_vec,
+            count,
+            description,
+            speech_count: 0,
+            direct_count: 0,
+            reason,
+            entity_type,
+        });
+    }
+
+    // Финальная сортировка: characters сначала (по freq DESC), потом concepts/orgs
+    result.sort_by(|a, b| {
+        // Characters выше concepts
+        let a_is_char = a.entity_type == EntityType::Character;
+        let b_is_char = b.entity_type == EntityType::Character;
+        match (a_is_char, b_is_char) {
+            (true, true) | (false, false) => b.count.cmp(&a.count),
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+        }
+    });
+    result.truncate(25);
+    result
+}
+
+/// v0.4.0: Проверить контекст вокруг упоминания слова на наличие
+/// глаголов коллективного действия (ORG_CONTEXT_WORDS).
+///
+/// Алгоритм: для каждого упоминания `word` в `text_lower` проверяем
+/// окно ±200 символов. Если в окне найдено любое из ORG_CONTEXT_WORDS —
+/// возвращаем true (это организация).
+///
+/// Производительность: O(n*m) где n = кол-во упоминаний, m = кол-во
+/// org-слов. Для 2MB текста и 15 упоминаний слова — ~15*50 = 750 проверок,
+/// каждая ~200 байт substring search — <1мс.
+fn check_organization_context(word: &str, text_lower: &str) -> bool {
+    let word_lower = word.to_lowercase();
+    if word_lower.is_empty() {
+        return false;
+    }
+    let mut search_from = 0;
+    let window = 200;
+    while let Some(rel_pos) = text_lower[search_from..].find(&word_lower) {
+        let pos = search_from + rel_pos;
+        // Окно ±200 символов (БЕЗОПАСНЫЕ границы — выравниваем на char boundary)
+        let mut win_start = pos.saturating_sub(window);
+        while win_start < pos && !text_lower.is_char_boundary(win_start) {
+            win_start += 1;
+        }
+        let mut win_end = (pos + word_lower.len() + window).min(text_lower.len());
+        while win_end > pos + word_lower.len() && !text_lower.is_char_boundary(win_end) {
+            win_end -= 1;
+        }
+        let context = &text_lower[win_start..win_end];
+        for org_word in ORG_CONTEXT_WORDS {
+            if context.contains(org_word) {
+                return true;
+            }
+        }
+        search_from = pos + word_lower.len();
+    }
+    false
 }
 
 /// Проверка присутствия персонажа в тексте главы
