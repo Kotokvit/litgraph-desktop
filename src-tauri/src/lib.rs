@@ -8,6 +8,7 @@ mod parser;
 mod models;
 mod storage;
 mod ai;
+mod reasoning;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
