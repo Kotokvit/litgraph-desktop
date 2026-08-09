@@ -1395,33 +1395,52 @@ pub fn parse_text_fallback(
         });
 
         if let Some(speak_idx) = speak_verb_pos {
-            for &next_word in &sentence_words[speak_idx + 1..] {
-                let clean: String = next_word
+            // Сначала ищем субъекта ДО глагола речи (например, «Пётр сказал Анне...»).
+            let mut before_actor = None;
+            for &prev_word in &sentence_words[..speak_idx] {
+                let clean: String = prev_word
                     .chars()
                     .filter(|c| c.is_alphabetic())
                     .collect();
                 if clean.is_empty() || is_russian_stop_word(&clean) {
                     continue;
                 }
-                // Wave 7: пропускаем слово, если оно совпадает с target
-                // (например, «Паша спросил Веню» — «Веню» это target,
-                // а не говорящий).
-                if let Some(ref t) = target {
-                    if resolver.resolve(&clean).as_ref() == Some(t) {
+                if let Some(id) = resolver.resolve(&clean) {
+                    before_actor = Some(id);
+                    break;
+                }
+                if clean.chars().next().map_or(false, |c| c.is_uppercase()) && clean.chars().count() > 2 {
+                    before_actor = Some(resolver.resolve_or_keep(&clean));
+                    break;
+                }
+            }
+
+            if before_actor.is_some() {
+                extracted_actor = before_actor;
+            } else {
+                // Если ДО глагола субъекта нет (например, «— Привет, — сказал Паша.»),
+                // ищем авторскую атрибуцию ПОСЛЕ глагола речи.
+                for &next_word in &sentence_words[speak_idx + 1..] {
+                    let clean: String = next_word
+                        .chars()
+                        .filter(|c| c.is_alphabetic())
+                        .collect();
+                    if clean.is_empty() || is_russian_stop_word(&clean) {
                         continue;
                     }
-                }
-                // Если имя известное в графе персонажей — берём его.
-                if let Some(id) = resolver.resolve(&clean) {
-                    extracted_actor = Some(id);
-                    break;
-                }
-                // Если имя с заглавной буквы — потенциальное имя (даже
-                // неизвестное — станет phantom entity). Длина > 2 отсекает
-                // короткие обрывки.
-                if clean.chars().next().map_or(false, |c| c.is_uppercase()) && clean.chars().count() > 2 {
-                    extracted_actor = Some(resolver.resolve_or_keep(&clean));
-                    break;
+                    if let Some(ref t) = target {
+                        if resolver.resolve(&clean).as_ref() == Some(t) {
+                            continue;
+                        }
+                    }
+                    if let Some(id) = resolver.resolve(&clean) {
+                        extracted_actor = Some(id);
+                        break;
+                    }
+                    if clean.chars().next().map_or(false, |c| c.is_uppercase()) && clean.chars().count() > 2 {
+                        extracted_actor = Some(resolver.resolve_or_keep(&clean));
+                        break;
+                    }
                 }
             }
         }
