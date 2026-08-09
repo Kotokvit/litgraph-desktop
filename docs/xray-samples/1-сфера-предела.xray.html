@@ -19,7 +19,7 @@ body {
 /* ===== Layout ===== */
 #app {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto auto 1fr auto;
   height: 100vh;
 }
 #topbar {
@@ -142,6 +142,129 @@ main {
   white-space: pre-wrap;
 }
 #tooltip.visible { display: block; }
+
+/* ===== Smart X-Ray: diagnostic badges & sidebar blocks ===== */
+#diag-bar {
+  display: flex;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #fff7ed;
+  border-bottom: 1px solid #fed7aa;
+  font-size: 11px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+#diag-bar .diag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+#diag-bar .diag-pill.ok { background: #d1fae5; color: #065f46; }
+#diag-bar .diag-pill.suspect { background: #fef3c7; color: #92400e; }
+#diag-bar .diag-pill.error { background: #fee2e2; color: #991b1b; }
+#diag-bar .diag-pill.info { background: #dbeafe; color: #1e40af; }
+#diag-bar .diag-label { color: #78716c; font-weight: 500; }
+
+.diag-section { margin-top: 4px; }
+.diag-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.diag-confidence {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  margin-left: auto;
+}
+.diag-confidence.ok { background: #d1fae5; color: #065f46; }
+.diag-confidence.suspect { background: #fef3c7; color: #92400e; }
+.diag-confidence.error { background: #fee2e2; color: #991b1b; }
+
+.diag-warning {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  border-left: 3px solid;
+}
+.diag-warning.error { background: #fef2f2; border-color: #dc2626; }
+.diag-warning.warn  { background: #fffbeb; border-color: #f59e0b; }
+.diag-warning.info  { background: #eff6ff; border-color: #3b82f6; }
+.diag-warning .diag-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  margin-top: 1px;
+}
+.diag-warning.error .diag-icon { background: #dc2626; }
+.diag-warning.warn  .diag-icon { background: #f59e0b; }
+.diag-warning.info  .diag-icon { background: #3b82f6; }
+.diag-warning .diag-content { flex: 1; }
+.diag-warning .diag-code {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  color: #78716c;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+.diag-warning .diag-message { color: #1c1917; }
+.diag-warning .diag-detail {
+  color: #57534e;
+  font-size: 11px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed #e7e5e4;
+}
+
+.diag-suggestion {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #f0fdf4;
+  border-left: 3px solid #16a34a;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.diag-suggestion .diag-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #16a34a;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 1px;
+}
+.diag-suggestion .diag-code {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  color: #166534;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
 
 /* ===== Sidebar ===== */
 #sidebar {
@@ -417,6 +540,14 @@ main {
     </div>
   </header>
 
+  <div id="diag-bar" style="display:none">
+    <span class="diag-label">Smart X-Ray:</span>
+    <span class="diag-pill ok" id="diag-ok">0 ok</span>
+    <span class="diag-pill suspect" id="diag-suspect">0 suspect</span>
+    <span class="diag-pill error" id="diag-error">0 error</span>
+    <span class="diag-pill info" id="diag-sugg">0 suggestions</span>
+  </div>
+
   <main>
     <div id="canvas-wrap">
       <canvas id="canvas"></canvas>
@@ -459,12 +590,12 @@ main {
 <script type="application/json" id="litgraph-data">
 {
   "schema": "litgraph-xray-html/v1",
-  "exportedAt": 1786233043105,
+  "exportedAt": 1786235062889,
   "project": {
     "title": "1-Сфера Предела",
     "author": "Автор",
     "description": "Автоматически разобранный текст: 36 глав, 25 персонажей, 12 локаций, 208 связей. Всего 172709 слов.",
-    "parserVersion": "0.2.2",
+    "parserVersion": "0.2.2 +heuristics-v1",
     "sourceMdHash": "",
     "createdAt": 1786233043103
   },
@@ -5473,6 +5604,691 @@ main {
       "character": 97,
       "location": 76
     }
+  },
+  "diagnostics": {
+    "ch_1786232952441_4b25afb1": {
+      "nodeId": "ch_1786232952441_4b25afb1",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952454_4a24380b": {
+      "nodeId": "ch_1786232952454_4a24380b",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952469_d7a13e3f": {
+      "nodeId": "ch_1786232952469_d7a13e3f",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952519_aead8b14": {
+      "nodeId": "ch_1786232952519_aead8b14",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952525_99affe17": {
+      "nodeId": "ch_1786232952525_99affe17",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952538_9166e663": {
+      "nodeId": "ch_1786232952538_9166e663",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952546_3c981047": {
+      "nodeId": "ch_1786232952546_3c981047",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952553_b0bf1bc6": {
+      "nodeId": "ch_1786232952553_b0bf1bc6",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952560_ff1e00dc": {
+      "nodeId": "ch_1786232952560_ff1e00dc",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952571_a6ee8321": {
+      "nodeId": "ch_1786232952571_a6ee8321",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952590_c6b01727": {
+      "nodeId": "ch_1786232952590_c6b01727",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952601_8bdb5998": {
+      "nodeId": "ch_1786232952601_8bdb5998",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952607_44547e3e": {
+      "nodeId": "ch_1786232952607_44547e3e",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952615_607d1bd5": {
+      "nodeId": "ch_1786232952615_607d1bd5",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952629_f13663bc": {
+      "nodeId": "ch_1786232952629_f13663bc",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952649_3ce4dc7a": {
+      "nodeId": "ch_1786232952649_3ce4dc7a",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952662_687ce288": {
+      "nodeId": "ch_1786232952662_687ce288",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952678_6bdc6d62": {
+      "nodeId": "ch_1786232952678_6bdc6d62",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952690_3260f22e": {
+      "nodeId": "ch_1786232952690_3260f22e",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952715_1563e631": {
+      "nodeId": "ch_1786232952715_1563e631",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952724_de92d915": {
+      "nodeId": "ch_1786232952724_de92d915",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952738_ba76136a": {
+      "nodeId": "ch_1786232952738_ba76136a",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952748_6d847d56": {
+      "nodeId": "ch_1786232952748_6d847d56",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952761_4e5d89ea": {
+      "nodeId": "ch_1786232952761_4e5d89ea",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952768_9fbb3007": {
+      "nodeId": "ch_1786232952768_9fbb3007",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952779_915d8832": {
+      "nodeId": "ch_1786232952779_915d8832",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952802_fbd52163": {
+      "nodeId": "ch_1786232952802_fbd52163",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952823_ab501909": {
+      "nodeId": "ch_1786232952823_ab501909",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232952989_f23ce3b4": {
+      "nodeId": "ch_1786232952989_f23ce3b4",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232953126_cffad603": {
+      "nodeId": "ch_1786232953126_cffad603",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232953342_7ba63f8b": {
+      "nodeId": "ch_1786232953342_7ba63f8b",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232953411_86843923": {
+      "nodeId": "ch_1786232953411_86843923",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232953674_e8b79f41": {
+      "nodeId": "ch_1786232953674_e8b79f41",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232953723_0adb53dc": {
+      "nodeId": "ch_1786232953723_0adb53dc",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232953758_e62ca8d1": {
+      "nodeId": "ch_1786232953758_e62ca8d1",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "ch_1786232953801_251f6be7": {
+      "nodeId": "ch_1786232953801_251f6be7",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Глава: структурная единица, проверке не подлежит."
+    },
+    "chr_1786232953836_929060b2": {
+      "nodeId": "chr_1786232953836_929060b2",
+      "confidence": 0.95,
+      "level": "ok",
+      "warnings": [
+        {
+          "level": "info",
+          "code": "DIRECT_ADDRESS_PATTERN_MISS",
+          "message": "Частый персонаж без прямых обращений (direct_address_hits=0). Возможно, паттерн «— Name,» слишком строгий.",
+          "detail": "Parser v0.3.0 ищет em-dash + Name + [,!?.]. В диалогах в кавычках («Name, ...») или без запятой после имени этот pattern не срабатывает. Не влияет на классификацию — просто статистика."
+        }
+      ],
+      "suggestions": [],
+      "summary": "Уверенность 95%: 1 инфо."
+    },
+    "chr_1786232953871_1f8e3f7a": {
+      "nodeId": "chr_1786232953871_1f8e3f7a",
+      "confidence": 0.95,
+      "level": "ok",
+      "warnings": [
+        {
+          "level": "info",
+          "code": "DIRECT_ADDRESS_PATTERN_MISS",
+          "message": "Частый персонаж без прямых обращений (direct_address_hits=0). Возможно, паттерн «— Name,» слишком строгий.",
+          "detail": "Parser v0.3.0 ищет em-dash + Name + [,!?.]. В диалогах в кавычках («Name, ...») или без запятой после имени этот pattern не срабатывает. Не влияет на классификацию — просто статистика."
+        }
+      ],
+      "suggestions": [],
+      "summary": "Уверенность 95%: 1 инфо."
+    },
+    "chr_1786232953906_25e0ea8d": {
+      "nodeId": "chr_1786232953906_25e0ea8d",
+      "confidence": 0.95,
+      "level": "ok",
+      "warnings": [
+        {
+          "level": "info",
+          "code": "DIRECT_ADDRESS_PATTERN_MISS",
+          "message": "Частый персонаж без прямых обращений (direct_address_hits=0). Возможно, паттерн «— Name,» слишком строгий.",
+          "detail": "Parser v0.3.0 ищет em-dash + Name + [,!?.]. В диалогах в кавычках («Name, ...») или без запятой после имени этот pattern не срабатывает. Не влияет на классификацию — просто статистика."
+        }
+      ],
+      "suggestions": [],
+      "summary": "Уверенность 95%: 1 инфо."
+    },
+    "chr_1786232953940_91d0d1de": {
+      "nodeId": "chr_1786232953940_91d0d1de",
+      "confidence": 0.95,
+      "level": "ok",
+      "warnings": [
+        {
+          "level": "info",
+          "code": "DIRECT_ADDRESS_PATTERN_MISS",
+          "message": "Частый персонаж без прямых обращений (direct_address_hits=0). Возможно, паттерн «— Name,» слишком строгий.",
+          "detail": "Parser v0.3.0 ищет em-dash + Name + [,!?.]. В диалогах в кавычках («Name, ...») или без запятой после имени этот pattern не срабатывает. Не влияет на классификацию — просто статистика."
+        }
+      ],
+      "suggestions": [],
+      "summary": "Уверенность 95%: 1 инфо."
+    },
+    "chr_1786232953986_1f0ce59c": {
+      "nodeId": "chr_1786232953986_1f0ce59c",
+      "confidence": 0.95,
+      "level": "ok",
+      "warnings": [
+        {
+          "level": "info",
+          "code": "DIRECT_ADDRESS_PATTERN_MISS",
+          "message": "Частый персонаж без прямых обращений (direct_address_hits=0). Возможно, паттерн «— Name,» слишком строгий.",
+          "detail": "Parser v0.3.0 ищет em-dash + Name + [,!?.]. В диалогах в кавычках («Name, ...») или без запятой после имени этот pattern не срабатывает. Не влияет на классификацию — просто статистика."
+        }
+      ],
+      "suggestions": [],
+      "summary": "Уверенность 95%: 1 инфо."
+    },
+    "chr_1786232954022_d0886e55": {
+      "nodeId": "chr_1786232954022_d0886e55",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "chr_1786232954055_d56c9c5f": {
+      "nodeId": "chr_1786232954055_d56c9c5f",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "chr_1786232954089_e835d099": {
+      "nodeId": "chr_1786232954089_e835d099",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "chr_1786232954124_0371229a": {
+      "nodeId": "chr_1786232954124_0371229a",
+      "confidence": 0.5,
+      "level": "suspect",
+      "warnings": [
+        {
+          "level": "warn",
+          "code": "SUSPECT_WORD",
+          "message": "«Архив» — часто нарицательное/абстрактное существительное. Проверьте, действительно ли это персонаж.",
+          "detail": "Слово встречается в SUSPECT_WORDS list (70 слов). Это не приговор — но в фэнтези такие слова часто оказываются локацией, концептом или метафорой."
+        },
+        {
+          "level": "warn",
+          "code": "MINIMAL_SPEECH",
+          "message": "Мало глаголов речи (2) при частоте 36. Возможно, это концепт или собирательное.",
+          "detail": "Персонажи обычно «говорят» пропорционально частоте упоминаний. Например, Рэй (freq=268, speech=73 → ratio 27%) — типичный персонаж."
+        }
+      ],
+      "suggestions": [],
+      "summary": "Уверенность 50%: 2 предупр.."
+    },
+    "chr_1786232954159_76ad53bb": {
+      "nodeId": "chr_1786232954159_76ad53bb",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "chr_1786232954193_cc551cc2": {
+      "nodeId": "chr_1786232954193_cc551cc2",
+      "confidence": 0.75,
+      "level": "suspect",
+      "warnings": [
+        {
+          "level": "warn",
+          "code": "MINIMAL_SPEECH",
+          "message": "Мало глаголов речи (2) при частоте 34. Возможно, это концепт или собирательное.",
+          "detail": "Персонажи обычно «говорят» пропорционально частоте упоминаний. Например, Рэй (freq=268, speech=73 → ratio 27%) — типичный персонаж."
+        }
+      ],
+      "suggestions": [],
+      "summary": "Уверенность 75%: 1 предупр.."
+    },
+    "chr_1786232954227_9c2e702f": {
+      "nodeId": "chr_1786232954227_9c2e702f",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "chr_1786232954263_34321869": {
+      "nodeId": "chr_1786232954263_34321869",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "chr_1786232954299_6d7ca4f8": {
+      "nodeId": "chr_1786232954299_6d7ca4f8",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "chr_1786232954332_e4f5142a": {
+      "nodeId": "chr_1786232954332_e4f5142a",
+      "confidence": 0.75,
+      "level": "suspect",
+      "warnings": [
+        {
+          "level": "warn",
+          "code": "SUSPECT_WORD",
+          "message": "«Совет» — часто нарицательное/абстрактное существительное. Проверьте, действительно ли это персонаж.",
+          "detail": "Слово встречается в SUSPECT_WORDS list (70 слов). Это не приговор — но в фэнтези такие слова часто оказываются локацией, концептом или метафорой."
+        }
+      ],
+      "suggestions": [],
+      "summary": "Уверенность 75%: 1 предупр.."
+    },
+    "chr_1786232954368_4db888e0": {
+      "nodeId": "chr_1786232954368_4db888e0",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "chr_1786232954402_98c9d60f": {
+      "nodeId": "chr_1786232954402_98c9d60f",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "chr_1786232954436_304c98b3": {
+      "nodeId": "chr_1786232954436_304c98b3",
+      "confidence": 0.75,
+      "level": "suspect",
+      "warnings": [
+        {
+          "level": "warn",
+          "code": "SUSPECT_WORD",
+          "message": "«Бездна» — часто нарицательное/абстрактное существительное. Проверьте, действительно ли это персонаж.",
+          "detail": "Слово встречается в SUSPECT_WORDS list (70 слов). Это не приговор — но в фэнтези такие слова часто оказываются локацией, концептом или метафорой."
+        }
+      ],
+      "suggestions": [],
+      "summary": "Уверенность 75%: 1 предупр.."
+    },
+    "chr_1786232954470_d15283a8": {
+      "nodeId": "chr_1786232954470_d15283a8",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "chr_1786232954505_b1a95ff6": {
+      "nodeId": "chr_1786232954505_b1a95ff6",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "chr_1786232954540_4308d037": {
+      "nodeId": "chr_1786232954540_4308d037",
+      "confidence": 0.75,
+      "level": "suspect",
+      "warnings": [
+        {
+          "level": "warn",
+          "code": "SUSPECT_WORD",
+          "message": "«Эхо» — часто нарицательное/абстрактное существительное. Проверьте, действительно ли это персонаж.",
+          "detail": "Слово встречается в SUSPECT_WORDS list (70 слов). Это не приговор — но в фэнтези такие слова часто оказываются локацией, концептом или метафорой."
+        }
+      ],
+      "suggestions": [],
+      "summary": "Уверенность 75%: 1 предупр.."
+    },
+    "chr_1786232954575_6a707ddc": {
+      "nodeId": "chr_1786232954575_6a707ddc",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "chr_1786232954610_18b24af0": {
+      "nodeId": "chr_1786232954610_18b24af0",
+      "confidence": 0.75,
+      "level": "suspect",
+      "warnings": [
+        {
+          "level": "warn",
+          "code": "SUSPECT_WORD",
+          "message": "«Клан» — часто нарицательное/абстрактное существительное. Проверьте, действительно ли это персонаж.",
+          "detail": "Слово встречается в SUSPECT_WORDS list (70 слов). Это не приговор — но в фэнтези такие слова часто оказываются локацией, концептом или метафорой."
+        }
+      ],
+      "suggestions": [],
+      "summary": "Уверенность 75%: 1 предупр.."
+    },
+    "chr_1786232954645_c4afcc6d": {
+      "nodeId": "chr_1786232954645_c4afcc6d",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "chr_1786232954682_22759439": {
+      "nodeId": "chr_1786232954682_22759439",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "loc_1786232954717_833765a0": {
+      "nodeId": "loc_1786232954717_833765a0",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "loc_1786232954752_9e785c29": {
+      "nodeId": "loc_1786232954752_9e785c29",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "loc_1786232954787_4063fc99": {
+      "nodeId": "loc_1786232954787_4063fc99",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "loc_1786232954820_4cb57003": {
+      "nodeId": "loc_1786232954820_4cb57003",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "loc_1786232954855_4ca363e5": {
+      "nodeId": "loc_1786232954855_4ca363e5",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "loc_1786232954890_a6ae42a4": {
+      "nodeId": "loc_1786232954890_a6ae42a4",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "loc_1786232954924_5fc2c8ff": {
+      "nodeId": "loc_1786232954924_5fc2c8ff",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "loc_1786232954964_f23de823": {
+      "nodeId": "loc_1786232954964_f23de823",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "loc_1786232955003_4d1c1185": {
+      "nodeId": "loc_1786232955003_4d1c1185",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [
+        {
+          "code": "MERGE_WITH_CHARACTER",
+          "message": "Локация «Алексея» (freq=11) похожа на персонажа «Алексей» (freq=107). Возможно, это тот же персонаж в косвенном падеже.",
+          "detail": "4-char prefix «алек» совпадает. Parser v0.3.0 группирует по prefix внутри типа, но не между типами. Если это одна сущность — удалите локацию.",
+          "action": "merge",
+          "targetNodeId": "chr_1786232953906_25e0ea8d"
+        }
+      ],
+      "summary": "Уверенность 100%: 1 предложений."
+    },
+    "loc_1786232955037_68f8d850": {
+      "nodeId": "loc_1786232955037_68f8d850",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "loc_1786232955071_ac4f102f": {
+      "nodeId": "loc_1786232955071_ac4f102f",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    },
+    "loc_1786232955109_47d0c6c7": {
+      "nodeId": "loc_1786232955109_47d0c6c7",
+      "confidence": 1,
+      "level": "ok",
+      "warnings": [],
+      "suggestions": [],
+      "summary": "Уверенность 100%: замечаний нет."
+    }
+  },
+  "diagnosticsSummary": {
+    "total": 73,
+    "ok": 67,
+    "suspect": 6,
+    "error": 0,
+    "warnings": 12,
+    "suggestions": 1
   }
 }
 </script>
@@ -5488,8 +6304,47 @@ main {
 
   const NODE_TYPES = DATA.nodeTypeConfig;
   const EDGE_TYPES = DATA.edgeTypeConfig;
+  const DIAGNOSTICS = DATA.diagnostics || {};
+  const DIAG_SUMMARY = DATA.diagnosticsSummary || null;
   const NODE_WIDTH = 260;
   const NODE_BASE_HEIGHT = 70;
+
+  // ===== Smart X-Ray: диагностическая полоска вверху =====
+  if (DIAG_SUMMARY) {
+    const bar = document.getElementById('diag-bar');
+    bar.style.display = 'flex';
+    document.getElementById('diag-ok').textContent = DIAG_SUMMARY.ok + ' ok';
+    document.getElementById('diag-suspect').textContent = DIAG_SUMMARY.suspect + ' suspect';
+    document.getElementById('diag-error').textContent = DIAG_SUMMARY.error + ' error';
+    document.getElementById('diag-sugg').textContent = DIAG_SUMMARY.suggestions + ' suggestions';
+    // Скрываем pills с нулевым количеством
+    if (DIAG_SUMMARY.suspect === 0) document.getElementById('diag-suspect').style.display = 'none';
+    if (DIAG_SUMMARY.error === 0) document.getElementById('diag-error').style.display = 'none';
+    if (DIAG_SUMMARY.suggestions === 0) document.getElementById('diag-sugg').style.display = 'none';
+  }
+
+  // Helper: получить диагностику ноды
+  function getDiagnostic(nodeId) {
+    return DIAGNOSTICS[nodeId] || null;
+  }
+
+  // Helper: цвет рамки ноды по уровню диагностики
+  function diagBorderColor(nodeId) {
+    const d = getDiagnostic(nodeId);
+    if (!d) return null;
+    if (d.level === 'error') return '#dc2626';
+    if (d.level === 'suspect') return '#f59e0b';
+    return null;
+  }
+
+  // Helper: иконка для badge
+  function diagBadgeIcon(nodeId) {
+    const d = getDiagnostic(nodeId);
+    if (!d) return null;
+    if (d.level === 'error') return '!';
+    if (d.level === 'suspect') return '?';
+    return null;
+  }
 
   function nodeHeight(n) {
     if (n.type !== 'chapter') return NODE_BASE_HEIGHT;
@@ -5789,14 +6644,40 @@ main {
 
       // Card background
       ctx.fillStyle = '#fff';
-      ctx.strokeStyle = isSelected ? cfg.color : cfg.color + '40';
-      ctx.lineWidth = isSelected ? 2 : 1;
+      const diagColor = diagBorderColor(n.id);
+      if (diagColor) {
+        // Подсвечиваем подозрительные ноды цветной рамкой
+        ctx.strokeStyle = diagColor;
+        ctx.lineWidth = isSelected ? 3 : 2;
+      } else {
+        ctx.strokeStyle = isSelected ? cfg.color : cfg.color + '40';
+        ctx.lineWidth = isSelected ? 2 : 1;
+      }
       const radius = 11 * state.viewport.zoom;
       drawRoundedRect(ctx, x, y, w, ch, radius);
       ctx.fill();
       ctx.stroke();
       ctx.shadowBlur = 0;
       ctx.shadowOffsetY = 0;
+
+      // Smart X-Ray badge (если есть диагностика)
+      const badgeIcon = diagBadgeIcon(n.id);
+      if (badgeIcon) {
+        const bx = x + w - 14 * state.viewport.zoom;
+        const by = y + 14 * state.viewport.zoom;
+        const br = 8 * state.viewport.zoom;
+        ctx.fillStyle = diagColor;
+        ctx.beginPath();
+        ctx.arc(bx, by, br, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold ' + (10 * state.viewport.zoom) + 'px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(badgeIcon, bx, by);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+      }
 
       // Left color bar
       ctx.fillStyle = cfg.color;
@@ -6098,6 +6979,17 @@ main {
     let s = cfg.singular + ': ' + (n.data.title || 'Без названия');
     if (n.data.body) s += '\n' + truncate(n.data.body.replace(/\s+/g, ' ').trim(), 80);
     if (reason) s += '\n\n[reason] ' + reason;
+    // Smart X-Ray: показываем диагностику в tooltip
+    const d = getDiagnostic(n.id);
+    if (d && (d.warnings.length > 0 || d.suggestions.length > 0)) {
+      s += '\n\n⚠ Smart X-Ray (confidence ' + Math.round(d.confidence * 100) + '%, ' + d.level + '):';
+      for (const w of d.warnings.slice(0, 2)) {
+        s += '\n  [' + w.level + '] ' + w.code + ': ' + truncate(w.message, 90);
+      }
+      for (const sug of d.suggestions.slice(0, 1)) {
+        s += '\n  [suggestion] ' + sug.code + ': ' + truncate(sug.message, 90);
+      }
+    }
     return s;
   }
 
@@ -6176,6 +7068,47 @@ main {
       html += '<div class="section">';
       html += '<h3>Теги</h3>';
       html += '<div>' + n.data.tags.map(t => '<span class="tag">' + escapeHtml(t) + '</span>').join('') + '</div>';
+      html += '</div>';
+    }
+
+    // Smart X-Ray: диагностика
+    const diag = getDiagnostic(n.id);
+    if (diag && (diag.warnings.length > 0 || diag.suggestions.length > 0)) {
+      html += '<div class="section diag-section">';
+      html += '<h3>Smart X-Ray: Диагностика';
+      html += '<span class="diag-confidence ' + diag.level + '">' + Math.round(diag.confidence * 100) + '%</span>';
+      html += '</h3>';
+      html += '<div style="font-size:11px;color:#78716c;margin-bottom:8px">' + escapeHtml(diag.summary) + '</div>';
+      // Warnings
+      for (const w of diag.warnings) {
+        const iconChar = w.level === 'error' ? '!' : w.level === 'warn' ? '?' : 'i';
+        html += '<div class="diag-warning ' + w.level + '">';
+        html += '<span class="diag-icon">' + iconChar + '</span>';
+        html += '<div class="diag-content">';
+        html += '<div class="diag-code">' + escapeHtml(w.code) + '</div>';
+        html += '<div class="diag-message">' + escapeHtml(w.message) + '</div>';
+        if (w.detail) {
+          html += '<div class="diag-detail">' + escapeHtml(w.detail) + '</div>';
+        }
+        html += '</div>';
+        html += '</div>';
+      }
+      // Suggestions
+      for (const sug of diag.suggestions) {
+        html += '<div class="diag-suggestion">';
+        html += '<span class="diag-icon">→</span>';
+        html += '<div class="diag-content">';
+        html += '<div class="diag-code">' + escapeHtml(sug.code) + '</div>';
+        html += '<div class="diag-message">' + escapeHtml(sug.message) + '</div>';
+        if (sug.detail) {
+          html += '<div class="diag-detail">' + escapeHtml(sug.detail) + '</div>';
+        }
+        if (sug.targetNodeId) {
+          html += '<div class="diag-detail" style="border-color:#bbf7d0">target: ' + escapeHtml(sug.targetNodeId) + '</div>';
+        }
+        html += '</div>';
+        html += '</div>';
+      }
       html += '</div>';
     }
 

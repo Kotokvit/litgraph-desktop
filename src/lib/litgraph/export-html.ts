@@ -33,6 +33,7 @@
 
 import type { LitNode, LitEdge, BackgroundLayer, EdgeKind } from "./types";
 import { NODE_TYPES, EDGE_TYPES } from "./types";
+import { analyzeWorkspace, type NodeDiagnostic } from "./heuristics";
 
 // ====== Константы (используются внутри HTML template как inline JS, см. ниже) ======
 // NODE_WIDTH = 260, NODE_BASE_HEIGHT = 70, NODE_MAX_HEIGHT = 140
@@ -210,6 +211,17 @@ interface EmbeddedData {
     conflict?: unknown;
     ner?: unknown;
   };
+  /** Smart X-Ray: диагностика каждой ноды (Map сериализуется как Record). */
+  diagnostics?: Record<string, NodeDiagnostic>;
+  /** Краткая сводка диагностики для topbar. */
+  diagnosticsSummary?: {
+    total: number;
+    ok: number;
+    suspect: number;
+    error: number;
+    warnings: number;
+    suggestions: number;
+  };
 }
 
 function countByType(nodes: LitNode[]): Record<string, number> {
@@ -260,7 +272,7 @@ body {
 /* ===== Layout ===== */
 #app {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto auto 1fr auto;
   height: 100vh;
 }
 #topbar {
@@ -383,6 +395,129 @@ main {
   white-space: pre-wrap;
 }
 #tooltip.visible { display: block; }
+
+/* ===== Smart X-Ray: diagnostic badges & sidebar blocks ===== */
+#diag-bar {
+  display: flex;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #fff7ed;
+  border-bottom: 1px solid #fed7aa;
+  font-size: 11px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+#diag-bar .diag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+#diag-bar .diag-pill.ok { background: #d1fae5; color: #065f46; }
+#diag-bar .diag-pill.suspect { background: #fef3c7; color: #92400e; }
+#diag-bar .diag-pill.error { background: #fee2e2; color: #991b1b; }
+#diag-bar .diag-pill.info { background: #dbeafe; color: #1e40af; }
+#diag-bar .diag-label { color: #78716c; font-weight: 500; }
+
+.diag-section { margin-top: 4px; }
+.diag-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.diag-confidence {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  margin-left: auto;
+}
+.diag-confidence.ok { background: #d1fae5; color: #065f46; }
+.diag-confidence.suspect { background: #fef3c7; color: #92400e; }
+.diag-confidence.error { background: #fee2e2; color: #991b1b; }
+
+.diag-warning {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  border-left: 3px solid;
+}
+.diag-warning.error { background: #fef2f2; border-color: #dc2626; }
+.diag-warning.warn  { background: #fffbeb; border-color: #f59e0b; }
+.diag-warning.info  { background: #eff6ff; border-color: #3b82f6; }
+.diag-warning .diag-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  margin-top: 1px;
+}
+.diag-warning.error .diag-icon { background: #dc2626; }
+.diag-warning.warn  .diag-icon { background: #f59e0b; }
+.diag-warning.info  .diag-icon { background: #3b82f6; }
+.diag-warning .diag-content { flex: 1; }
+.diag-warning .diag-code {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  color: #78716c;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+.diag-warning .diag-message { color: #1c1917; }
+.diag-warning .diag-detail {
+  color: #57534e;
+  font-size: 11px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed #e7e5e4;
+}
+
+.diag-suggestion {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #f0fdf4;
+  border-left: 3px solid #16a34a;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.diag-suggestion .diag-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #16a34a;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 1px;
+}
+.diag-suggestion .diag-code {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  color: #166534;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
 
 /* ===== Sidebar ===== */
 #sidebar {
@@ -658,6 +793,14 @@ main {
     </div>
   </header>
 
+  <div id="diag-bar" style="display:none">
+    <span class="diag-label">Smart X-Ray:</span>
+    <span class="diag-pill ok" id="diag-ok">0 ok</span>
+    <span class="diag-pill suspect" id="diag-suspect">0 suspect</span>
+    <span class="diag-pill error" id="diag-error">0 error</span>
+    <span class="diag-pill info" id="diag-sugg">0 suggestions</span>
+  </div>
+
   <main>
     <div id="canvas-wrap">
       <canvas id="canvas"></canvas>
@@ -712,8 +855,47 @@ __LITGRAPH_DATA_JSON__
 
   const NODE_TYPES = DATA.nodeTypeConfig;
   const EDGE_TYPES = DATA.edgeTypeConfig;
+  const DIAGNOSTICS = DATA.diagnostics || {};
+  const DIAG_SUMMARY = DATA.diagnosticsSummary || null;
   const NODE_WIDTH = 260;
   const NODE_BASE_HEIGHT = 70;
+
+  // ===== Smart X-Ray: диагностическая полоска вверху =====
+  if (DIAG_SUMMARY) {
+    const bar = document.getElementById('diag-bar');
+    bar.style.display = 'flex';
+    document.getElementById('diag-ok').textContent = DIAG_SUMMARY.ok + ' ok';
+    document.getElementById('diag-suspect').textContent = DIAG_SUMMARY.suspect + ' suspect';
+    document.getElementById('diag-error').textContent = DIAG_SUMMARY.error + ' error';
+    document.getElementById('diag-sugg').textContent = DIAG_SUMMARY.suggestions + ' suggestions';
+    // Скрываем pills с нулевым количеством
+    if (DIAG_SUMMARY.suspect === 0) document.getElementById('diag-suspect').style.display = 'none';
+    if (DIAG_SUMMARY.error === 0) document.getElementById('diag-error').style.display = 'none';
+    if (DIAG_SUMMARY.suggestions === 0) document.getElementById('diag-sugg').style.display = 'none';
+  }
+
+  // Helper: получить диагностику ноды
+  function getDiagnostic(nodeId) {
+    return DIAGNOSTICS[nodeId] || null;
+  }
+
+  // Helper: цвет рамки ноды по уровню диагностики
+  function diagBorderColor(nodeId) {
+    const d = getDiagnostic(nodeId);
+    if (!d) return null;
+    if (d.level === 'error') return '#dc2626';
+    if (d.level === 'suspect') return '#f59e0b';
+    return null;
+  }
+
+  // Helper: иконка для badge
+  function diagBadgeIcon(nodeId) {
+    const d = getDiagnostic(nodeId);
+    if (!d) return null;
+    if (d.level === 'error') return '!';
+    if (d.level === 'suspect') return '?';
+    return null;
+  }
 
   function nodeHeight(n) {
     if (n.type !== 'chapter') return NODE_BASE_HEIGHT;
@@ -1013,14 +1195,40 @@ __LITGRAPH_DATA_JSON__
 
       // Card background
       ctx.fillStyle = '#fff';
-      ctx.strokeStyle = isSelected ? cfg.color : cfg.color + '40';
-      ctx.lineWidth = isSelected ? 2 : 1;
+      const diagColor = diagBorderColor(n.id);
+      if (diagColor) {
+        // Подсвечиваем подозрительные ноды цветной рамкой
+        ctx.strokeStyle = diagColor;
+        ctx.lineWidth = isSelected ? 3 : 2;
+      } else {
+        ctx.strokeStyle = isSelected ? cfg.color : cfg.color + '40';
+        ctx.lineWidth = isSelected ? 2 : 1;
+      }
       const radius = 11 * state.viewport.zoom;
       drawRoundedRect(ctx, x, y, w, ch, radius);
       ctx.fill();
       ctx.stroke();
       ctx.shadowBlur = 0;
       ctx.shadowOffsetY = 0;
+
+      // Smart X-Ray badge (если есть диагностика)
+      const badgeIcon = diagBadgeIcon(n.id);
+      if (badgeIcon) {
+        const bx = x + w - 14 * state.viewport.zoom;
+        const by = y + 14 * state.viewport.zoom;
+        const br = 8 * state.viewport.zoom;
+        ctx.fillStyle = diagColor;
+        ctx.beginPath();
+        ctx.arc(bx, by, br, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold ' + (10 * state.viewport.zoom) + 'px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(badgeIcon, bx, by);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+      }
 
       // Left color bar
       ctx.fillStyle = cfg.color;
@@ -1322,6 +1530,17 @@ __LITGRAPH_DATA_JSON__
     let s = cfg.singular + ': ' + (n.data.title || 'Без названия');
     if (n.data.body) s += '\\n' + truncate(n.data.body.replace(/\\s+/g, ' ').trim(), 80);
     if (reason) s += '\\n\\n[reason] ' + reason;
+    // Smart X-Ray: показываем диагностику в tooltip
+    const d = getDiagnostic(n.id);
+    if (d && (d.warnings.length > 0 || d.suggestions.length > 0)) {
+      s += '\\n\\n⚠ Smart X-Ray (confidence ' + Math.round(d.confidence * 100) + '%, ' + d.level + '):';
+      for (const w of d.warnings.slice(0, 2)) {
+        s += '\\n  [' + w.level + '] ' + w.code + ': ' + truncate(w.message, 90);
+      }
+      for (const sug of d.suggestions.slice(0, 1)) {
+        s += '\\n  [suggestion] ' + sug.code + ': ' + truncate(sug.message, 90);
+      }
+    }
     return s;
   }
 
@@ -1400,6 +1619,47 @@ __LITGRAPH_DATA_JSON__
       html += '<div class="section">';
       html += '<h3>Теги</h3>';
       html += '<div>' + n.data.tags.map(t => '<span class="tag">' + escapeHtml(t) + '</span>').join('') + '</div>';
+      html += '</div>';
+    }
+
+    // Smart X-Ray: диагностика
+    const diag = getDiagnostic(n.id);
+    if (diag && (diag.warnings.length > 0 || diag.suggestions.length > 0)) {
+      html += '<div class="section diag-section">';
+      html += '<h3>Smart X-Ray: Диагностика';
+      html += '<span class="diag-confidence ' + diag.level + '">' + Math.round(diag.confidence * 100) + '%</span>';
+      html += '</h3>';
+      html += '<div style="font-size:11px;color:#78716c;margin-bottom:8px">' + escapeHtml(diag.summary) + '</div>';
+      // Warnings
+      for (const w of diag.warnings) {
+        const iconChar = w.level === 'error' ? '!' : w.level === 'warn' ? '?' : 'i';
+        html += '<div class="diag-warning ' + w.level + '">';
+        html += '<span class="diag-icon">' + iconChar + '</span>';
+        html += '<div class="diag-content">';
+        html += '<div class="diag-code">' + escapeHtml(w.code) + '</div>';
+        html += '<div class="diag-message">' + escapeHtml(w.message) + '</div>';
+        if (w.detail) {
+          html += '<div class="diag-detail">' + escapeHtml(w.detail) + '</div>';
+        }
+        html += '</div>';
+        html += '</div>';
+      }
+      // Suggestions
+      for (const sug of diag.suggestions) {
+        html += '<div class="diag-suggestion">';
+        html += '<span class="diag-icon">→</span>';
+        html += '<div class="diag-content">';
+        html += '<div class="diag-code">' + escapeHtml(sug.code) + '</div>';
+        html += '<div class="diag-message">' + escapeHtml(sug.message) + '</div>';
+        if (sug.detail) {
+          html += '<div class="diag-detail">' + escapeHtml(sug.detail) + '</div>';
+        }
+        if (sug.targetNodeId) {
+          html += '<div class="diag-detail" style="border-color:#bbf7d0">target: ' + escapeHtml(sug.targetNodeId) + '</div>';
+        }
+        html += '</div>';
+        html += '</div>';
+      }
       html += '</div>';
     }
 
@@ -1661,6 +1921,28 @@ export function exportWorkspaceToHtml(
     edgeReasons[e.id] = buildEdgeReason(e, s, t);
   }
 
+  // Smart X-Ray: прогон всех нод через эвристики.
+  // Это пост-процессинг — НЕ меняем сами ноды, только добавляем диагностику.
+  const diagMap = analyzeWorkspace(nodes, edges);
+  const diagnostics: Record<string, NodeDiagnostic> = {};
+  let okCount = 0, suspectCount = 0, errorCount = 0, totalWarn = 0, totalSug = 0;
+  for (const [nid, d] of diagMap) {
+    diagnostics[nid] = d;
+    if (d.level === "ok") okCount++;
+    else if (d.level === "suspect") suspectCount++;
+    else errorCount++;
+    totalWarn += d.warnings.length;
+    totalSug += d.suggestions.length;
+  }
+  const diagnosticsSummary = {
+    total: nodes.length,
+    ok: okCount,
+    suspect: suspectCount,
+    error: errorCount,
+    warnings: totalWarn,
+    suggestions: totalSug,
+  };
+
   const data: EmbeddedData = {
     schema: "litgraph-xray-html/v1",
     exportedAt: Date.now(),
@@ -1688,6 +1970,8 @@ export function exportWorkspaceToHtml(
       byEdgeKind: countByEdgeKind(edges),
     },
     analysis: opts.analysisSnapshot,
+    diagnostics,
+    diagnosticsSummary,
   };
 
   // Stringify with safety: avoid </script> in data breaking out
