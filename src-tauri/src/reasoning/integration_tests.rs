@@ -291,3 +291,66 @@ fn test_cycle_idempotent_on_same_events() {
         "Количество фактов не должно увеличиться при повторном запуске"
     );
 }
+
+#[test]
+fn test_eval_sfera_predela_full() {
+    use std::fs;
+    let path = "/home/vitalij/Музика/Нова тека (2)/Нова тека/1-Сфера Предела.md";
+    if !std::path::Path::new(path).exists() {
+        println!("File 1-Сфера Предела.md not found at {}, skipping eval", path);
+        return;
+    }
+    let text = fs::read_to_string(path).expect("failed to read file");
+    let parse_res = crate::parser::build_graph(&text, "Сфера Предела", "Виталий Коток").unwrap();
+
+    let now = chrono::Utc::now().timestamp_millis() as u64;
+    let project = Project {
+        title: "Сфера Предела".to_string(),
+        author: "Виталий Коток".to_string(),
+        description: "Eval".to_string(),
+        nodes: parse_res.nodes,
+        edges: parse_res.edges,
+        created_at: now,
+        updated_at: now,
+    };
+
+    let (chapters, _) = crate::parser::chapters::detect(&text);
+    let resolver = crate::reasoning::semantic_parser::EntityResolver::from_nodes(&project.nodes);
+    let events = crate::reasoning::semantic_parser::parse_text_fallback(&text, &resolver, &chapters);
+
+    let mut cycle = ReasoningCycle::from_project(&project);
+    let report = cycle.run_cycle(events.clone());
+
+    println!("\n=======================================================");
+    println!("   E2E EVALUATION REPORT: Сфера Предела (Wave 7)");
+    println!("=======================================================");
+    println!("Events Extracted:        {}", events.len());
+    println!("Facts Derived:           {}", cycle.facts.all_facts().len());
+    println!("Constraint Violations:   {}", report.violations.len());
+    println!("Temporal Paradoxes:      {}", report.temporal_paradoxes.len());
+    println!("Hypotheses Generated:    {}", report.hypotheses_generated);
+    println!("Hypotheses Accepted:     {}", report.hypotheses_accepted);
+    println!("-------------------------------------------------------");
+
+    println!("\nTOP 25 EXTRACTED EVENTS:");
+    for (idx, ev) in events.iter().take(25).enumerate() {
+        println!("#{:2}: [{:?}] actor='{}', target={:?}, time={:?}\n     source: \"{}\"",
+            idx + 1, ev.action, ev.actor, ev.target, ev.time, ev.source_text);
+    }
+
+    if !report.violations.is_empty() {
+        println!("\nCONSTRAINT VIOLATIONS ({}):", report.violations.len());
+        for (idx, v) in report.violations.iter().take(15).enumerate() {
+            println!("#{:2}: [{}] actor='{}', action={:?}, reason='{}'",
+                idx + 1, v.constraint_name, v.actor, v.attempted_action, v.reason);
+        }
+    }
+
+    if !report.temporal_paradoxes.is_empty() {
+        println!("\nTEMPORAL PARADOXES ({}):", report.temporal_paradoxes.len());
+        for (idx, p) in report.temporal_paradoxes.iter().take(15).enumerate() {
+            println!("#{:2}: desc='{}'", idx + 1, p.description);
+        }
+    }
+    println!("=======================================================\n");
+}
