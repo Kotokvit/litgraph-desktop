@@ -767,3 +767,333 @@ Stage Summary:
   4. Forget no-op when fact not in list (no transition recorded, semantically correct).
 - Ready for Wave 5 integration: coordinator should uncomment `pub mod inference;` in mod.rs
   and add `pub use inference::{InferenceEngine, InferredFact};` to re-exports.
+
+---
+Task ID: 3-a
+Agent: full-stack-developer (semantic_parser.rs)
+Task: Build semantic_parser.rs — text → events via SVO triplets + Rust fallback
+
+Work Log:
+- Read mandatory context: docs/reasoning/SPEC.md (§2.3 Event, §2.4 Action, §2.1 IDs, §4 export rules,
+  §5 anti-patterns), worklog.md (Wave 0 + Wave 1 + Wave 2 complete: facts/state/timeline/rules/
+  inference/causality/constraints/contradictions all landed).
+- Read Wave 1 dependencies: src-tauri/src/reasoning/facts.rs (confirmed Action enum 28 variants
+  + Custom{verb_lemma, polarity}, Event struct 9 fields with id:0 sentinel, EventId=FactId=u64=0
+  default, Provenance::{SvoParser, RustParser, LlmSuggested, Verified, User}, VerbPolarity::
+  {Positive, Negative, Neutral} Copy+Eq+Hash), src-tauri/src/reasoning/timeline.rs (confirmed
+  TemporalAnchor public fields chapter_num/chapter_suffix/scene_index/char_offset, Ord by
+  chapter_num → suffix → scene → offset).
+- Read Python SVO contract: src-tauri/python/svo_extract.py lines 25-60 (JSON shape with
+  camelCase fields subjectLemma/verbLemma/objectLemma/subjectGender/objectGender/sentence/
+  position/tense/polarity/negated/pronounResolved), lines 90-150 (POSITIVE_VERBS 47 lemmas,
+  NEGATIVE_VERBS 60 lemmas, NEUTRAL_VERBS 58 lemmas — mirrored as Rust const &[&str] slices).
+- Read parser/chapters.rs: ParsedChapter struct {num: u32, title, body, full_text, pos: usize,
+  end: usize}. pos/end are byte offsets in source text. Used for byte offset → chapter_num lookup.
+- Read models/node.rs: LitNode {id, node_type: String, position, data: LitNodeData}, LitNodeData
+  {title, body, node_type, tags, meta: Option<serde_json::Value>, full_text, versions}. Meta is
+  free-form JSON — for EntityResolver I extract "aliases" and "forms" arrays via as_array/as_str.
+- Wrote src-tauri/src/reasoning/semantic_parser.rs (~1180 LOC including tests):
+  * Module doc (Russian) — explains two modes (Python SVO primary, Rust regex fallback),
+    verb lexicon origin, EntityResolver semantics, phantom entity concept, determinism.
+  * `pub struct SvoTriplet` — mirrors Python JSON shape. All optional fields marked
+    `#[serde(default)]` so old/incomplete Python output still parses. subject_lemma and
+    verb_lemma are the primary keys for downstream logic.
+  * Three const verb sets: `POSITIVE_VERBS`, `NEGATIVE_VERBS`, `NEUTRAL_VERBS` (slices of
+    &'static str — total 165 lemmas across 3 sets). Mirror of Python sets in svo_extract.py
+    lines 99-138.
+  * `pub fn verb_to_action(verb_lemma, polarity, negated) -> Action` — 4-level fallback:
+    (1) explicit match table (54 unique lemmas → 24 distinct Action variants), (2) verb in
+    one of the polarity sets → Custom with that polarity, (3) verb unknown → use `polarity`
+    field from triplet, (4) polarity empty/unknown → Neutral. For unknown verbs with
+    negated=true: flip Positive↔Negative (Neutral stays). For known lemmas: negated is
+    accepted but not applied — semantic negation handled by Wave 4 inference (documented).
+  * `pub struct EntityResolver` — by_lemma + by_alias HashMaps. from_nodes iterates nodes
+    of type "character"|"organization", adds title.to_lowercase() to by_lemma and aliases/
+    forms from node.data.meta JSON to by_alias. resolve() does exact lowercase match
+    (no fuzzy per SPEC §5). resolve_or_keep() returns name as-is when unresolved (phantom
+    entity — Wave 4 cycle.rs can later resolve or reject). Also exposes lemma_count() and
+    alias_count() for diagnostics.
+  * Private `extract_string_array(meta, key)` — safely extracts Vec<String> from JSON
+    `meta.aliases` or `meta.forms`, returns None on missing/non-array/empty.
+  * `pub fn triplets_to_events(triplets, resolver, chapters) -> Vec<Event>` — for each
+    triplet: builds TemporalAnchor via anchor_from_position, Action via verb_to_action +
+    populate_action_payload, actor via resolve_or_keep(subject_lemma), target via
+    target_for_action, Event{id:0, instrument:None, confidence:0.9, provenance:SvoParser}.
+  * Private `anchor_from_position(position, chapters)` — linear scan for chapter where
+    pos <= position < end. chapter_suffix=None per task brief (suffix lives in chapter.title
+    but is not extracted here — could be a Wave 5 enhancement). Returns chapter 0 (prologue)
+    if position is before first chapter or chapters is empty.
+  * Private `populate_action_payload(action, triplet, resolver)` — for Move/Arrive/Leave:
+    destination/source = triplet.object_lemma. For Know/Forget: fact = triplet.sentence
+    (full sentence as approximation per task brief). For FallInLove/Hate/Marry/Betray:
+    partner/target/victim = resolver.resolve_or_keep(triplet.object_lemma). Other actions
+    pass through unchanged.
+  * Private `target_for_action(action, object_lemma, resolver)` — returns Some(target)
+    only for Kill/Wound/Hit/Capture/Imprison/Free/Heal/Touch. Marry/Betray/Ally/FallInLove/
+    Hate carry EntityId inside the action variant (no duplication in Event.target).
+    Move/Arrive/Leave/Speak/Know/Forget/Die/Resurrect/Custom → None.
+  * `pub fn parse_text_fallback(text, resolver, chapters) -> Vec<Event>` — regex-based
+    Rust-only fallback. Compiles 7 fancy-regex patterns once via fallback_regexes():
+    kill (убил|убила|убило|убили), speak (сказал|сказала|сказали), die (умер|умерла|
+    умерли), resurrect (воскрес|воскресла|воскресли), arrive (пошёл|пошла|пошли|пришёл|
+    пришла|пришли), sentence_split ([.!?…]+), cap_word ([А-ЯЁ][а-яё]+). Splits text into
+    sentences by sentence_split, for each sentence checks verbs in priority order
+    (Kill > Speak > Die > Resurrect > Arrive), actor = first cap_word, target = second
+    cap_word (only for Kill), confidence=0.5, provenance=RustParser. Empty text → empty
+    Vec. Sentences without cap_words → skipped.
+  * 9 unit tests (all required by brief):
+    1. test_verb_to_action_kill — «убить»/«убивать»/«казнить» → Kill; case-insensitive;
+       whitespace-trimmed.
+    2. test_verb_to_action_speak — «сказать»/«ответить»/«спросить»/«молвить» →
+       Speak{topic:None}.
+    3. test_verb_to_action_unknown_verb_uses_polarity — made-up verb «покружиться»
+       (not in any set) → Custom{polarity: matches `polarity` param}. Tests positive/
+       negative/neutral/empty/negated-flip branches.
+    4. test_entity_resolver_finds_by_title — title match for character; case-insensitive
+       (lowercase, uppercase); location node not indexed; lemma_count=2.
+    5. test_entity_resolver_finds_by_alias — aliases + forms from meta JSON; organization
+       also resolved; case-insensitive aliases; lemma_count=2, alias_count=6 (3 aliases +
+       2 forms + 1 org alias).
+    6. test_entity_resolver_returns_none_for_unknown — unknown name → None; empty string →
+       None; whitespace-only → None; resolve_or_keep returns name as-is for phantoms;
+       resolve_or_keep returns id for known.
+    7. test_triplets_to_events_assigns_temporal_anchor — position in middle of chapter 12 →
+       chapter_num=12, char_offset=position, suffix=None, scene=None; boundary position
+       (exact start of chapter 15) → chapter 15; position=0 with first chapter at pos=0 →
+       first chapter; position before first chapter (chapters start at 100) → chapter 0
+       (prologue); empty chapters → chapter 0.
+    8. test_triplets_to_events_resolves_actor_and_target — «Раскольников убил Алёну»:
+       actor=char-raskol-1, target=char-alyona-2 (resolved through form «Алёна»),
+       action=Kill, provenance=SvoParser, confidence=0.9, id=0, instrument=None,
+       source_text=sentence. Marry: partner resolved, target=None (no duplication).
+       Speak: target=None, topic=None. Die: target=None. Phantom: unknown name «Призрак»
+       kept as-is in actor field.
+    9. test_parse_text_fallback_extracts_kill_event — «Раскольников убил Алёну. Потом
+       пошёл дождь.»: exactly 1 Kill event, actor=char-raskol-1, target=char-alyona-2
+       (via form), action=Kill, provenance=RustParser, confidence=0.5, chapter=5,
+       source_text contains actor+verb. Die fallback: «Иван умер внезапно.» → 1 Die
+       event, target=None. Lowercase sentence (no cap_word) → skipped. Empty text →
+       empty Vec.
+- Verification: standalone cargo project at /home/z/check_semantic_parser with serde/
+  serde_json/fancy-regex deps + reasoning/{mod,facts,timeline,semantic_parser}.rs +
+  parser/{mod,chapters}.rs + models/{mod,node,version}.rs. cargo check --lib --tests
+  clean (0 errors). cargo test --lib: 26/26 passing (9 semantic_parser + 7 facts + 10
+  timeline). cargo clippy --lib --tests: 0 warnings/errors in semantic_parser.rs (5
+  pre-existing warnings in chapters.rs map_identity + 2 pre-existing errors in facts.rs
+  approx_constant — both in sibling Wave-1 modules, out of scope for this task).
+- Could not run cargo check inside src-tauri directly: Tauri's gdk-sys needs system libs
+  absent in sandbox, and `pub mod semantic_parser;` is still commented out in mod.rs
+  (per Wave 3 plan — coordinator will flip the comment in Wave 5). Standalone project
+  verification covers the SPEC contract.
+- Wrote agent-ctx work record at /home/z/my-project/litgraph-desktop/agent-ctx/3-a-semantic_parser.md.
+
+Stage Summary:
+- Public API exported by semantic_parser.rs:
+  Types:    SvoTriplet (Debug/Clone/Serialize/Deserialize/PartialEq),
+            EntityResolver (Debug/Clone/Default).
+  Functions: verb_to_action(&str, &str, bool) -> Action,
+             triplets_to_events(&[SvoTriplet], &EntityResolver, &[ParsedChapter]) -> Vec<Event>,
+             parse_text_fallback(&str, &EntityResolver, &[ParsedChapter]) -> Vec<Event>.
+  EntityResolver methods: from_nodes(&[LitNode]) -> Self, resolve(&str) -> Option<String>,
+                          resolve_or_keep(&str) -> String, lemma_count() -> usize,
+                          alias_count() -> usize.
+  Private helpers: is_positive_verb, is_negative_verb, is_neutral_verb,
+                   extract_string_array, anchor_from_position, populate_action_payload,
+                   target_for_action, fallback_regexes (returns FallbackRegexes struct).
+- Verb lemma mapping: 54 unique Russian lemmas in the explicit match table (across 24
+  distinct Action variants). The task brief listed "выйти" twice in the Leave row (a
+  typo) — deduped to a single entry. Plus 165 lemmas across the 3 polarity sets (47
+  POSITIVE + 60 NEGATIVE + 58 NEUTRAL) used for the second-level fallback. Total verb
+  coverage: 54 + ~111 (set members not in explicit table) = ~165 lemmas.
+- Fallback strategy (4 levels):
+  (1) Explicit match table → known Action variant.
+  (2) Lemma in POSITIVE/NEGATIVE/NEUTRAL_VERBS set → Custom{polarity: from set}.
+  (3) Lemma unknown, `polarity` field from triplet → Custom{polarity: from field}; if
+      `negated=true`, flip Positive↔Negative.
+  (4) Lemma unknown + polarity empty/garbage → Custom{polarity: Neutral} (safe default).
+- Key decisions:
+  (1) EntityResolver uses two HashMaps (by_lemma, by_alias) instead of one combined
+      map. Lemma takes precedence over alias in resolve() — if "Ваня" is both a title
+      and an alias for "Иван", the title wins. This is the right default: canonical
+      names should override nicknames when ambiguous.
+  (2) Only `node_type ∈ {"character", "organization"}` are indexed. Locations, themes,
+      scenes, ideas, chapters, plotpoints, conflicts, dialogues, concepts are NOT
+      resolvable as event actors/targets — they are not actants in SVO triplets. This
+      prevents accidental target assignment like "Лес" (location) becoming Kill's target.
+  (3) `target_for_action` returns Some only for the 8 physical target-actions (Kill,
+      Wound, Hit, Capture, Imprison, Free, Heal, Touch). Marry/Betray/Ally/FallInLove/
+      Hate carry EntityId inside the action variant — populating Event.target too would
+      duplicate data. Tell/Ask/Speak/Move/Arrive/Leave have non-entity payloads. This
+      matches the task brief's "Kill/Wound/Hit/Capture/etc." phrasing.
+  (4) Know/Forget use `triplet.sentence` as the `fact` payload (full sentence as
+      approximation — per task brief). Better than object_lemma which is just a noun.
+      Wave 4 cycle.rs could refine this with propositional extraction.
+  (5) `anchor_from_position` returns chapter_suffix=None per task brief. The ParsedChapter
+      struct stores the sub-chapter suffix (like "б" for "Глава 28б") only in `title`,
+      not as a separate field. Extracting it would require parsing the title string —
+      deferred to Wave 5 if needed. chapter_num is the u32 parsed from the chapter header
+      digit, which is correct.
+  (6) `parse_text_fallback` uses `\b` (Unicode word boundary, default in fancy-regex).
+      This correctly matches «убил» as a whole word and rejects «убилство». Verified in
+      tests. cap_word regex `[А-ЯЁ][а-яё]+` finds capitalized Cyrillic words — both real
+      names («Иван») and sentence-initial common nouns («Потом»). The latter is a known
+      limitation of regex-based name detection — Python's spaCy + pymorphy3 is needed
+      for proper PROPN/Name tag filtering. The fallback accepts these false positives as
+      phantom entities (resolve_or_keep returns the original text).
+  (7) For unknown verbs in `verb_to_action`, `negated=true` flips Positive↔Negative only
+      in branch (3) — when the verb is truly unknown and we're using the `polarity`
+      field. For verbs in the explicit table or in the polarity sets, `negated` is
+      accepted but ignored — semantic negation («не убил» → not Kill) is delegated to
+      Wave 4 inference engine (rules.rs + cycle.rs). This avoids baking negation logic
+      into the semantic layer where it doesn't belong (per SPEC §0.4 "Determinism first"
+      and §5 anti-patterns: rules apply effects, parsers don't).
+  (8) Regex compilation in `fallback_regexes` uses `.expect(...)` instead of `?`. All
+      patterns are static literals (no user input), so compilation failure indicates a
+      bug in fancy-regex itself. This matches the precedent set by parser/chapters.rs
+      (which also uses `Regex::new(...).unwrap()` for static patterns). Not a SPEC §5.4
+      violation — that rule is about `unwrap()` on external data (Python SVO output),
+      not on internal static regexes.
+- Cross-module dependencies (per SPEC §4.6 — no `pub use` from sibling reasoning modules):
+  * `use crate::reasoning::facts::{Action, Event, EventId, Provenance, VerbPolarity};`
+  * `use crate::reasoning::timeline::TemporalAnchor;`
+  * `use crate::models::LitNode;`
+  * `use crate::parser::chapters::ParsedChapter;`
+  * `use std::collections::HashMap;`
+  * `use fancy_regex::Regex;`
+  * `use serde::{Deserialize, Serialize};`
+- No `pub use` from other reasoning modules. No tokio, no async, no `unwrap()` on
+  external data (Python SVO output uses `?` semantics via filter_map/unwrap_or).
+  Russian comments in user-facing strings; English identifiers throughout.
+- SPEC deviations (documented in module doc + agent-ctx):
+  1. `negated` parameter is accepted in `verb_to_action` but only applied to flip
+     polarity on truly-unknown verbs (branch 3). For known verbs in the explicit table
+     or in polarity sets, negation semantics are deferred to Wave 4 inference — this
+     is the correct layering per SPEC §0.4 (rules apply effects, parsers don't).
+  2. `chapter_suffix` is always `None` in `anchor_from_position` — ParsedChapter stores
+     the suffix only in its `title` field, not as a separate struct field. Extracting
+     it would require string parsing of the title. Deferred to Wave 5 if sub-chapter
+     temporal reasoning becomes important.
+  3. `parse_text_fallback` accepts sentence-initial common nouns («Потом») as phantom
+     actors. Python's spaCy is needed for proper PROPN/Name filtering. The fallback
+     is documented as "intentionally limited" in the task brief — full SVO is Python's
+     job. resolve_or_keep returns the original text as a phantom entity, which Wave 4
+     cycle.rs can later resolve or reject.
+- Ready for Wave 5 integration: coordinator should uncomment `pub mod semantic_parser;`
+  in mod.rs and add `pub use semantic_parser::{EntityResolver, SvoTriplet,
+  parse_text_fallback, triplets_to_events, verb_to_action};` to re-exports.
+
+---
+Task ID: 3-b
+Agent: full-stack-developer (memory.rs)
+Task: Build memory.rs — KnowledgeBase with subgraph retrieval
+
+Work Log:
+- Read mandatory context: docs/reasoning/SPEC.md (§2.6 FactLog, §3.2 integration boundary,
+  §4 module export rules, §5 anti-patterns), worklog.md (Wave 1 entries for facts/state/
+  timeline/rules, Wave 2 entries for inference/causality/constraints/contradictions),
+  src-tauri/src/reasoning/{facts,state,timeline,causality}.rs (confirmed FactLog API:
+  new/assert_fact/record_event/get_facts_for/get_events_in_chapter/all_facts/all_events;
+  TemporalAnchor ordering; CausalityEngine BFS pattern for inspiration), src-tauri/src/
+  models/{node,edge,project,version}.rs (confirmed LitNode/LitEdge/Project field shapes;
+  edge fields are snake_case in Rust — source_handle/target_handle, serde rename_all
+  camelCase only for JSON).
+- Wrote src-tauri/src/reasoning/memory.rs (~770 LOC including tests):
+  * Module doc (Russian) — explains subgraph retrieval reduces LLM context size vs
+    current "send everything" approach in ai/prompts.rs::build_assistant_prompt.
+  * `Subgraph` struct (center/nodes/edges/facts/events/max_hops) — derives Debug, Clone,
+    Serialize, Deserialize. Methods: is_empty (checks all 4 collections), summary
+    (Russian, pluralized via pluralize_ru).
+  * `KnowledgeBase` struct (nodes HashMap, edges Vec, facts FactLog, adjacency HashMap)
+    — manual Debug impl (FactLog has no Debug derive), Default impl.
+  * Constructor: new() empty, from_project(&Project, FactLog) — copies nodes/edges,
+    owns FactLog, builds undirected adjacency with dedup.
+  * Methods (14): get_node, neighbors, neighbors_filtered, facts_for, events_involving,
+    events_in_chapter, related_entities, subgraph, search_by_name, node_count,
+    edge_count, fact_count, event_count, retrieve_relevant, retrieve_for_question.
+  * Private helpers: bfs_frontier (BFS up to max_hops, cycle-safe via HashSet).
+  * Private free functions: build_adjacency (undirected, dedup neighbors),
+    trim_subgraph (degree-desc sort + filter), merge_subgraphs (union by ID),
+    pluralize_ru (Russian last-two-digits rule with 11-14 exception).
+  * 8 required unit tests + 3 extra smoke tests:
+    1. test_knowledge_base_from_project_initializes_adjacency
+    2. test_neighbors_returns_directly_connected_nodes
+    3. test_neighbors_filtered_by_edge_kind
+    4. test_events_involving_finds_actor_and_target
+    5. test_related_entities_bfs_within_max_hops
+    6. test_subgraph_collects_nodes_edges_facts_events
+    7. test_retrieve_relevant_finds_matching_node (incl. trim-by-degree sub-case)
+    8. test_retrieve_for_question_handles_multi_word_query (incl. union + trim)
+    Extra: test_subgraph_for_nonexistent_center_is_empty_or_self_only,
+           test_pluralize_ru_forms (1/21→one, 2-4/22-24→few, 0/5-19/11-14/20+→many),
+           test_subgraph_serializes_to_json (roundtrip via serde_json).
+  * Test fixture: 4 LitNodes (ivan/anna/castle/ch1), 4 LitEdges (location×2, character,
+    reference), 4 facts (alive×2 + location×2), 3 events (Speak, Arrive, Kill).
+- Verification: standalone cargo project at /tmp/check_memory/ with serde + serde_json
+  deps. Copied Wave 1 modules (facts/state/rules/timeline) + memory.rs + models
+  (node/edge/project/version). Minimal reasoning/mod.rs with `pub mod memory;` and
+  `pub use memory::{KnowledgeBase, Subgraph};`.
+  * `cargo check --lib --tests` — clean.
+  * `cargo clippy --lib --tests` — zero warnings on memory.rs (Wave 1 siblings have
+    2 pre-existing `approx_constant` errors in facts.rs tests + 1 `explicit_auto_deref`
+    warning in state.rs — not my code, not touched).
+  * `cargo test --lib` — 44/44 passing (11 memory + 7 facts + 6 state + 11 rules +
+    9 timeline). All 8 required memory tests pass.
+- Could not run cargo check in src-tauri directly: Tauri's gdk-sys needs system libs
+  absent in sandbox, and `pub mod memory;` is commented out in mod.rs awaiting Wave 5.
+  Code is syntactically + semantically correct against the SPEC contract, verified via
+  standalone project.
+- Wrote agent-ctx work record at agent-ctx/3-b-memory.md.
+
+Stage Summary:
+- Public API exported by memory.rs:
+  Types:    Subgraph (Debug/Clone/Serialize/Deserialize),
+            KnowledgeBase (Default + manual Debug).
+  Methods:  Subgraph::{is_empty, summary};
+            KnowledgeBase::{new, from_project, get_node, neighbors, neighbors_filtered,
+              facts_for, events_involving, events_in_chapter, related_entities,
+              subgraph, search_by_name, node_count, edge_count, fact_count,
+              event_count, retrieve_relevant, retrieve_for_question}.
+  Private:  KnowledgeBase::bfs_frontier;
+            free fns build_adjacency, trim_subgraph, merge_subgraphs, pluralize_ru.
+- BFS subgraph algorithm:
+  1. bfs_frontier(center, max_hops) — VecDeque<(id, hops)>, cycle-safe via HashSet,
+     center always included even if not in nodes HashMap.
+  2. subgraph() — filter nodes/edges/facts/events by frontier membership, sort by id.
+- Retrieval strategy:
+  * retrieve_relevant(query, max_nodes) — single-match: subgraph(first_match, 2) +
+    trim. No-match: empty Subgraph with center=query.
+  * retrieve_for_question(question, max_nodes) — tokenize by whitespace, dedupe
+    matches, single→subgraph(match, 2)+trim, multiple→merge_subgraphs(all)+trim.
+  * trim_subgraph — sort by (degree desc, id asc), truncate to max_nodes, filter
+    edges/facts/events to kept set.
+  * merge_subgraphs — union by ID (HashMap<String,_> for nodes/edges, HashMap<u64,_>
+    for facts/events), max_hops = max across inputs.
+- Decisions:
+  (1) Undirected adjacency — edges treated as bidirectional in neighbors/related/
+      subgraph BFS. Matches literary-graph semantics (ivan→anna character means
+      both are related).
+  (2) All Vec-returning methods sort by ID for deterministic output (HashMap iter
+      order is randomized in Rust; sorting prevents flaky tests + non-reproducible
+      LLM prompts).
+  (3) BFS includes center even if not in `nodes` — allows retrieving facts/events
+      for entities mentioned in events but without a graph node.
+  (4) Subgraph::is_empty checks all 4 collections (nodes/edges/facts/events) —
+      mirrors ContradictionReport::is_empty pattern from Wave 2.
+  (5) pluralize_ru returns &'a str (zero-alloc, borrows from caller's args).
+  (6) Manual Debug impl for KnowledgeBase — FactLog has no Debug derive (Wave 1
+      design), so derive(Debug) would fail. Manual impl reports counts only.
+  (7) #[allow(unused_imports)] on FactValue + TemporalAnchor — brief mandates
+      importing these, but they're only used in test fixtures. Same pattern as
+      inference.rs (Wave 2).
+  (8) sort_by_key for Copy id types (FactId/EventId = u64), sort_by for String
+      id types (LitNode.id/LitEdge.id) — clippy clean.
+- No SPEC deviations. All type signatures, field names, derive lists match
+  task brief exactly.
+- No tokio/async, no `pub use` from sibling reasoning modules, no unwrap() on
+  external data (only in test assertions via expect/unwrap on locally-built
+  fixtures). Russian comments in user-facing strings; English identifiers throughout.
+- Ready for Wave 5 integration: coordinator should uncomment `pub mod memory;`
+  in mod.rs and add `pub use memory::{KnowledgeBase, Subgraph};` to re-exports.
+  For LLM context: `kb.retrieve_for_question(user_question, 20)` produces a
+  Subgraph that can be serialized to JSON and injected into ai/prompts.rs::
+  build_assistant_prompt as the "WORLD STATE (relevant subset)" section.

@@ -20,9 +20,9 @@ pub mod causality;
 pub mod constraints;
 pub mod contradictions;
 
-// === Wave 3: semantic layer (pending) ===
-// pub mod semantic_parser;
-// pub mod memory;
+// === Wave 3: semantic layer (ready) ===
+pub mod semantic_parser;
+pub mod memory;
 
 // === Wave 4: orchestration (pending) ===
 // pub mod hypotheses;
@@ -39,6 +39,8 @@ pub use inference::{InferenceEngine, InferredFact};
 pub use causality::{CausalLink, CausalityEngine};
 pub use constraints::{Constraint, ConstraintCondition, ConstraintEngine, ConstraintViolation};
 pub use contradictions::{CausalLoop, ContradictionDetector, ContradictionReport, TemporalParadox};
+pub use semantic_parser::{EntityResolver, SvoTriplet};
+pub use memory::{KnowledgeBase, Subgraph};
 
 // === Integration entry points (Wave 5) ===
 
