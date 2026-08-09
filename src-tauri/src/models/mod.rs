@@ -6,7 +6,7 @@ pub mod edge;
 pub mod project;
 pub mod version;
 
-pub use node::{LitNode, LitNodeData, LitNodeType, Position};
-pub use edge::{LitEdge, EdgeData, EdgeKind};
-pub use project::{Project, ProjectMeta, GraphData, ParseParams, ParseResult, ParseStats};
+pub use node::{LitNode, LitNodeData, Position};
+pub use edge::{LitEdge, EdgeData};
+pub use project::{Project, ProjectMeta, ParseParams, ParseResult, ParseStats};
 pub use version::ChapterVersion;

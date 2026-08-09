@@ -96,11 +96,10 @@ pub fn compute_epsilon(
         .sum();
     let len_norm = (unique.len() as f64).sqrt().max(1.0);
 
-    let mut kw_count = 0;
     let mut kw_intensity = 1.0;
     if let Some(kw) = keyword {
         let kw_lower = kw.to_lowercase();
-        kw_count = cleaned_lower.matches(&kw_lower).count();
+        let kw_count = cleaned_lower.matches(&kw_lower).count();
         kw_intensity = 1.0 + (1.0 + kw_count as f64).ln();
     }
 

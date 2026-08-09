@@ -281,7 +281,7 @@ pub fn build_graph(
     if let Some(pid) = &prologue_id {
         ordered.push(pid.clone());
     }
-    for (idx, ch) in chapters.iter().enumerate() {
+    for ch in chapters.iter() {
         if let Some(id) = chapter_ids.get(&ch.num) {
             ordered.push(id.clone());
         }
@@ -302,7 +302,7 @@ pub fn build_graph(
     // --- Связи: персонажи → главы ---
     for c in &characters {
         if let Some(cid) = char_ids.get(&c.name) {
-            for (idx, ch) in chapters.iter().enumerate() {
+            for ch in chapters.iter() {
                 let count = characters::count_in_text(&c.aliases, &ch.full_text);
                 if count >= 3 {
                     if let Some(ch_id) = chapter_ids.get(&ch.num) {
@@ -325,7 +325,7 @@ pub fn build_graph(
     // --- Связи: локации → главы ---
     for l in &locations {
         if let Some(lid) = loc_ids.get(&l.name) {
-            for (idx, ch) in chapters.iter().enumerate() {
+            for ch in chapters.iter() {
                 let count = locations::count_in_text(&l.aliases, &ch.full_text);
                 if count >= 2 {
                     if let Some(ch_id) = chapter_ids.get(&ch.num) {

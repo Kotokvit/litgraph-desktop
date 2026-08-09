@@ -12,7 +12,7 @@
 //! добавляет недостающие имена, исправляет леммы, но не трогает chapters
 //! и locations (Rust-парсер для них достаточно точен).
 
-use crate::commands::ner::{run_python_with_text_file, NerResult, Entity};
+use crate::commands::ner::{run_python_with_text_file, NerResult};
 use crate::models::{ParseParams, ParseResult};
 use crate::parser;
 use serde::{Deserialize, Serialize};
@@ -121,7 +121,7 @@ fn run_ner_safe(text: &str) -> Option<NerResult> {
 ///   3. lemma содержит одновременно кириллицу И латиницу ("Root-Оператор")
 ///   4. lemma содержит цифры или спецсимволы (кроме дефиса и апострофа)
 ///   5. count < MIN_NER_COUNT (3 для PER, 5 для ORG)
-fn is_valid_ner_entity(lemma: &str, label: &str, count: u32) -> bool {
+fn is_valid_ner_entity(lemma: &str, label: &str, count: usize) -> bool {
     if lemma.is_empty() {
         return false;
     }

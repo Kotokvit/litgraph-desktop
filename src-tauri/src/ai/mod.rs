@@ -8,7 +8,7 @@ pub mod types;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-pub use types::{ChatMessage, AiResponse};
+pub use types::ChatMessage;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
