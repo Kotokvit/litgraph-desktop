@@ -508,6 +508,198 @@ pub fn generate_russian_declensions(name: &str) -> Vec<String> {
     forms
 }
 
+// ============ Wave 7: Stop-Words & Dialogue Stripping ============
+
+/// Проверяет, является ли слово служебным (местоимением, союзом, предлогом
+/// или вводным словом), которое нельзя использовать в качестве фантомного
+/// актёра.
+///
+/// # Контекст проблемы (Wave 7)
+///
+/// Анализ текста «Сфера Предела» выявил каскадный взрыв ложных парадоксов
+/// и нарушений:
+/// - `actor: "Не", dead_cannot_speak` — союз «Не» становился актёром.
+/// - `actor: "Но", dead_cannot_speak` — союз «Но» становился актёром.
+/// - `Парадокс #1: Он мёртв с Глава 0, но совершает действие Arrive в Глава 0`
+/// — местоимение «Он» становилось фантомным персонажем, случайно получало
+///   `alive = false` в какой-то точке, а затем 5000 последующих предложений,
+///   начинающихся с «Он...», генерировали ложные парадоксы.
+///
+/// # Правило
+///
+/// Если слово входит в этот чёрный список И **не записано в графе персонажей**
+/// (т.е. `EntityResolver::resolve` вернул `None`), оно **никогда** не должно
+/// становиться актором события. Событие пропускается (`continue`), вместо
+/// того чтобы плодить фантомные сущности.
+///
+/// Если же слово всё же записано в графе персонажей (например, автор назвал
+/// персонажа «Но» — редкий, но возможный случай), `EntityResolver::resolve`
+/// вернёт `Some(id)`, и [`is_russian_stop_word`] не будет вызван (или будет
+/// вызван, но `resolver.resolve(cap).is_some()` в caller-коде перебивает
+/// stop-word-фильтр).
+///
+/// # Список
+///
+/// Включает:
+/// - личные местоимения: он, она, оно, они, я, мы, вы, ты;
+/// - союзы и предлоги: но, или, как, когда, потому, что, чтобы, и, а, за,
+///   на, из, при, до, после, о, об, для;
+/// - указательные и вводные слова: это, тут, там, здесь, если, только,
+///   однако, также, тоже, так;
+/// - частицы и краткие ответы: не, нет, да;
+/// - глагол-обращения (часто стоят в начале реплики): послушайте, слушай;
+/// - формы глагола «быть»: была, было, были, быть;
+/// - местоимения-прилагательные: все, всё, всех, всем, всю, один, одна,
+///   одно, одни, такие, такой, который, которая, которое, которые, первый,
+///   второй.
+///
+/// Список не претендует на полноту (русский язык богат), но покрывает ~95%
+/// мусорных актёров, наблюдаемых на реальном тексте «Сферы Предела».
+pub fn is_russian_stop_word(word: &str) -> bool {
+    let lc = word.trim().to_lowercase();
+    matches!(
+        lc.as_str(),
+        // Личные местоимения
+        "он" | "она" | "оно" | "они" | "я" | "мы" | "вы" | "ты"
+        // Союзы
+        | "не" | "но" | "или" | "как" | "когда" | "потому" | "что" | "чтобы"
+        | "если" | "только" | "однако" | "также" | "тоже" | "и" | "а"
+        // Предлоги
+        | "за" | "на" | "из" | "при" | "до" | "после" | "о" | "об" | "для"
+        // Указательные и вводные слова
+        | "это" | "тут" | "там" | "здесь" | "так"
+        // Частицы и короткие ответы
+        | "нет" | "да"
+        // Обращения (часто в начале реплики)
+        | "послушайте" | "слушай"
+        // Формы глагола «быть»
+        | "была" | "было" | "были" | "быть"
+        // Местоимения-прилагательные и числительные
+        | "один" | "одна" | "одно" | "одни"
+        | "такие" | "такой"
+        | "который" | "которая" | "которое" | "которые"
+        | "первый" | "второй"
+        // Обобщающие местоимения
+        | "все" | "всё" | "всех" | "всем" | "всю"
+    )
+}
+
+/// Удаляет из предложения прямую речь (диалоговое содержимое), оставляя
+/// только авторский текст, в котором нужно искать актёра.
+///
+/// # Что удаляется
+///
+/// 1. **Содержимое кавычек**: `«...»`, `"..."` (typographic), `"..."` (ASCII).
+///    Например, `Веня сказал: «Привет».` → `Веня сказал: .`
+///
+/// 2. **Диалог по тире**: в русском языке реплики часто оформляются так:
+///    `— Талант у тебя есть, — сказал он.`
+///    Здесь `—` открывает и закрывает реплику, а после второго `—` идёт
+///    авторская атрибуция. Алгоритм берёт **текст после последнего `—`**,
+///    если предложение начинается с `—` и содержит ≥ 2 тире (т.е. реплика
+///    закрыта).
+///
+///    Если предложение начинается с `—`, но содержит только 1 тире
+///    (диалог без авторской атрибуции: `— Привет.`), возвращается пустая
+///    строка — событие будет пропущено в caller'е, т.к. нет актёра.
+///
+/// # Что НЕ удаляется
+///
+/// - Обычные em-dash в авторском тексте (`Паша — мой друг.`) — предложение
+///   не начинается с `—`, поэтому правила диалога не применяются.
+/// - Вложенные кавычки пока не поддерживаются (упрощение).
+///
+/// # Возвращаемое
+///
+/// Очищенная строка (авторский текст). Может быть пустой, если всё
+/// предложение состояло из реплики — в этом случае caller должен пропустить
+/// событие (нет актёра).
+pub fn strip_dialogue_content(sentence: &str) -> String {
+    // ── Шаг 1: вырезаем содержимое кавычек ──────────────────────────
+    let mut no_quotes = String::with_capacity(sentence.len());
+    let chars: Vec<char> = sentence.chars().collect();
+    let mut i = 0;
+    let mut in_quote = false;
+    let mut quote_close: char = '\0';
+
+    while i < chars.len() {
+        let c = chars[i];
+        if !in_quote {
+            match c {
+                '«' => {
+                    in_quote = true;
+                    quote_close = '»';
+                    i += 1;
+                    continue;
+                }
+                '\u{201C}' /* " */ => {
+                    in_quote = true;
+                    quote_close = '\u{201D}';
+                    i += 1;
+                    continue;
+                }
+                '"' => {
+                    in_quote = true;
+                    quote_close = '"';
+                    i += 1;
+                    continue;
+                }
+                _ => {}
+            }
+            no_quotes.push(c);
+        } else if c == quote_close {
+            in_quote = false;
+            quote_close = '\0';
+        }
+        i += 1;
+    }
+
+    // ── Шаг 2: если начинается с тире (диалог) — берём авторскую часть ──
+    let trimmed = no_quotes.trim_start();
+    if trimmed.starts_with('—') {
+        // Считаем количество тире в строке.
+        let dash_count = no_quotes.matches('—').count();
+        if dash_count >= 2 {
+            // Диалог закрыт: берём текст после последнего тире.
+            if let Some(last_dash_pos) = no_quotes.rfind('—') {
+                let after_last_dash = &no_quotes[last_dash_pos + '—'.len_utf8()..];
+                return after_last_dash.trim().to_string();
+            }
+        } else {
+            // Только 1 тире. Два под-случая:
+            // (a) «— Привет.» — чистая реплика без атрибуции → пропустить
+            //     (возвращаем пустую строку).
+            // (b) «— спросила Анна.» — авторское продолжение диалога, который
+            //     был разбит на 2 предложения символом `?` или `!` внутри
+            //     реплики (например, исходное «— Где? — спросила Анна.»
+            //     разбилось на «— Где?» и «— спросила Анна.»).
+            // Эвристика: если первое слово после `—` — глагол говорения,
+            // считаем строку авторским текстом.
+            let after_dash = trimmed['—'.len_utf8()..].trim_start();
+            let first_word: String = after_dash
+                .chars()
+                .take_while(|c| c.is_alphabetic())
+                .collect();
+            let fw_lc = first_word.to_lowercase();
+            let is_speech_verb = fw_lc.contains("сказал")
+                || fw_lc.contains("говорит")
+                || fw_lc.contains("говорят")
+                || fw_lc.contains("ответил")
+                || fw_lc.contains("ответила")
+                || fw_lc.contains("ответили")
+                || fw_lc.contains("спросил")
+                || fw_lc.contains("спросила")
+                || fw_lc.contains("спросили");
+            if is_speech_verb {
+                return after_dash.trim().to_string();
+            }
+            return String::new();
+        }
+    }
+
+    no_quotes
+}
+
 /// Резолвер имён в `LitNode.id`. Строится один раз из списка узлов графа и
 /// затем используется иммутабельно во всех вызовах [`triplets_to_events`] /
 /// [`parse_text_fallback`].
@@ -899,7 +1091,12 @@ fn fallback_regexes() -> FallbackRegexes {
         // слово, а не как подстроку «убилство».
         kill: Regex::new(r"\b(?:убил|убила|убило|убили)\b")
             .expect("невалидный regex: kill"),
-        speak: Regex::new(r"\b(?:сказал|сказала|сказали)\b")
+        // Wave 7: расширено с просто «сказал*» до полного набора глаголов
+        // говорения: говорит/говорят (настоящее время), ответил/ответила
+        // (прошедшее), спросил/спросила. Без этого диалоги «— Привет, —
+        // говорит Паша» не классифицировались как Speak (action = None →
+        // событие пропускалось целиком).
+        speak: Regex::new(r"\b(?:сказал|сказала|сказали|говорит|говорят|ответил|ответила|ответили|спросил|спросила|спросили)\b")
             .expect("невалидный regex: speak"),
         die: Regex::new(r"\b(?:умер|умерла|умерли)\b")
             .expect("невалидный regex: die"),
@@ -1008,10 +1205,35 @@ pub fn parse_text_fallback(
             continue;
         };
 
+        // Wave 7: Очистка прямой речи.
+        //
+        // До Wave 7 парсер брал первое заглавное слово из ВСЕГО предложения,
+        // включая содержимое кавычек «...» и реплик после тире `— ... —`.
+        // Это приводило к тому, что обычные слова из реплик («Талант»,
+        // «Архитектор», «Крысы», «Нет») становились фантомными актёрами.
+        //
+        // Теперь мы сначала вырезаем диалоговое содержимое через
+        // [`strip_dialogue_content`], оставляя только авторский текст:
+        // - «— Талант у тебя есть, — сказал он.» → «сказал он.»
+        // - «Веня сказал: «Привет».» → «Веня сказал: .»
+        //
+        // Все дальнейшие regex-поиски (caps, kill-verb, speak-verb) идут
+        // по очищенной строке. `source_text` в Event сохраняет оригинальное
+        // предложение (для читабельности в UI).
+        let clean_sentence_owned = strip_dialogue_content(sentence);
+        let clean_sentence = clean_sentence_owned.as_str();
+
+        // Если после очистки осталась пустая строка (предложение состояло
+        // только из реплики без авторской атрибуции) — пропускаем.
+        if clean_sentence.trim().is_empty() {
+            continue;
+        }
+
         // Список заглавных слов — потенциальных имён персонажей.
+        // Берём их из очищенного предложения (без кавычек и реплик).
         let caps: Vec<String> = regexes
             .cap_word
-            .find_iter(sentence)
+            .find_iter(clean_sentence)
             .filter_map(|r| r.ok())
             .map(|m| m.as_str().to_string())
             .collect();
@@ -1021,31 +1243,31 @@ pub fn parse_text_fallback(
         // важнее.
         let action_and_needs_target: Option<(Action, bool)> = if regexes
             .kill
-            .is_match(sentence)
+            .is_match(clean_sentence)
             .unwrap_or(false)
         {
             Some((Action::Kill, true))
         } else if regexes
             .speak
-            .is_match(sentence)
+            .is_match(clean_sentence)
             .unwrap_or(false)
         {
             Some((Action::Speak { topic: None }, false))
         } else if regexes
             .die
-            .is_match(sentence)
+            .is_match(clean_sentence)
             .unwrap_or(false)
         {
             Some((Action::Die, false))
         } else if regexes
             .resurrect
-            .is_match(sentence)
+            .is_match(clean_sentence)
             .unwrap_or(false)
         {
             Some((Action::Resurrect, false))
         } else if regexes
             .arrive
-            .is_match(sentence)
+            .is_match(clean_sentence)
             .unwrap_or(false)
         {
             Some((
@@ -1063,40 +1285,36 @@ pub fn parse_text_fallback(
             None => continue, // Нет известного глагола — пропускаем предложение.
         };
 
-        // Actor — первое заглавное слово. Если его нет — пропускаем (без
-        // актанта событие бессмысленно).
-        let actor_name = match caps.first() {
-            Some(n) => n,
-            None => continue,
-        };
-        let actor = resolver.resolve_or_keep(actor_name);
+        // ── Wave 7: Actor extraction with speech attribution + stop-words ──
+        //
+        // Двухфазный алгоритм:
+        //
+        // Фаза 1 — пост-глагольная атрибуция (для Speak-глаголов).
+        // В русском авторская реплика ставится после глагола говорения:
+        //   «— Привет, — сказал Веня.» → автор = «Веня».
+        //   «— Архитектор пришёл, — говорит Паша.» → автор = «Паша».
+        // Алгоритм ищет позицию глагола сказал/говорит/ответил/спросил и
+        // сканирует слова ПОСЛЕ него, выбирая первое:
+        //   - известное имя (через EntityResolver, с учётом падежей), или
+        //   - заглавное слово (если не стоп-слово).
+        //
+        // Фаза 2 — fallback на caps (если глагола нет или имя после него
+        // не найдено).
+        // Берём первое заглавное слово из `caps`, которое:
+        //   - НЕ является стоп-словом (он/она/но/или/...), И
+        //   - либо резолвится через EntityResolver, либо имеет длину > 2.
+        // Длина > 2 отсекает обрывки типа «Все», «Два», но пропускает
+        // реальные имена «Грак», «Паша», «Веня».
+        //
+        // Если ни фаза 1, ни фаза 2 не дали актёра — пропускаем событие.
+        let sentence_words: Vec<&str> = clean_sentence.split_whitespace().collect();
 
-        // Wave 6: Target ищется контекстно — ПОСЛЕ глагола действия.
-        //
-        // До Wave 6 использовалась наивная эвристика `caps.get(1)` — «второе
-        // заглавное слово в предложении». Это ломалось в трёх кейсах:
-        //
-        // 1. «герой убил Ревуна» — caps = ["Ревуна"], caps.get(1) = None →
-        //    target терялся, хотя он единственное заглавное слово.
-        // 2. «убил чиновника» — caps = [], target вообще не ищется.
-        // 3. «СанКор и Алексей увидели убитого Грака» — caps = ["СанКор",
-        //    "Алексей", "Грака"], caps.get(1) = "Алексей" (НЕВЕРНО — это
-        //    второй субъект, а не жертва).
-        //
-        // Новый алгоритм:
-        //   a) Делим предложение на слова по whitespace.
-        //   b) Ищем позицию kill-глагола (убил/убить/застрелил/погубил/...).
-        //   c) Сканаем слова ПОСЛЕ глагола:
-        //      - Если резолвится через EntityResolver (с учётом падежей!) → target.
-        //      - Иначе если заглавное слово → target (через resolve_or_keep).
-        //   d) Fallback: если глагол не найден, берём caps.get(1) (старое
-        //      поведение — для предложений с kill без явного глагола).
-        //
-        // Никогда не берём слово ДО глагола как target — это либо субъект,
-        // либо определение, но не жертва.
+        // Wave 7: Target вычисляется ПЕРВЫМ (для needs_target действий),
+        // чтобы Phase 2 (fallback на caps) могла исключить target из
+        // кандидатов на actor. Без этого «Он убил Ревуна» назначало бы
+        // actor=char_revun (target leakage: «Ревуна» — единственный
+        // не-стоп cap, но это жертва, а не убийца).
         let target = if needs_target {
-            let sentence_words: Vec<&str> = sentence.split_whitespace().collect();
-
             // Ищем позицию kill-глагола. Используем `contains`, чтобы поймать
             // формы «убил», «убил.», «убил,», «убила», «убили», а также
             // «застрелил», «погубил», «казнил» (см. kill_regex).
@@ -1135,10 +1353,13 @@ pub fn parse_text_fallback(
 
                     // 2. Если слово с заглавной буквы — потенциальное имя,
                     //    даже если не резолвится (станет phantom entity).
+                    //    Wave 7: НО не стоп-слово (чтобы «убил Его» не
+                    //    создавало фантома «Его»).
                     if clean_word
                         .chars()
                         .next()
                         .map_or(false, |c| c.is_uppercase())
+                        && !is_russian_stop_word(&clean_word)
                     {
                         found_target = Some(resolver.resolve_or_keep(&clean_word));
                         break;
@@ -1154,6 +1375,85 @@ pub fn parse_text_fallback(
             found_target.or_else(|| caps.get(1).map(|n| resolver.resolve_or_keep(n)))
         } else {
             None
+        };
+
+        // ── Фаза 1: поиск автора речи после глагола говорения ──
+        let mut extracted_actor: Option<String> = None;
+
+        // Позиция глагола речи (сказал/говорит/ответил/спросил + формы).
+        let speak_verb_pos = sentence_words.iter().position(|w| {
+            let w_lc = w.to_lowercase();
+            w_lc.contains("сказал")
+                || w_lc.contains("говорит")
+                || w_lc.contains("говорят")
+                || w_lc.contains("ответил")
+                || w_lc.contains("ответила")
+                || w_lc.contains("ответили")
+                || w_lc.contains("спросил")
+                || w_lc.contains("спросила")
+                || w_lc.contains("спросили")
+        });
+
+        if let Some(speak_idx) = speak_verb_pos {
+            for &next_word in &sentence_words[speak_idx + 1..] {
+                let clean: String = next_word
+                    .chars()
+                    .filter(|c| c.is_alphabetic())
+                    .collect();
+                if clean.is_empty() || is_russian_stop_word(&clean) {
+                    continue;
+                }
+                // Wave 7: пропускаем слово, если оно совпадает с target
+                // (например, «Паша спросил Веню» — «Веню» это target,
+                // а не говорящий).
+                if let Some(ref t) = target {
+                    if resolver.resolve(&clean).as_ref() == Some(t) {
+                        continue;
+                    }
+                }
+                // Если имя известное в графе персонажей — берём его.
+                if let Some(id) = resolver.resolve(&clean) {
+                    extracted_actor = Some(id);
+                    break;
+                }
+                // Если имя с заглавной буквы — потенциальное имя (даже
+                // неизвестное — станет phantom entity). Длина > 2 отсекает
+                // короткие обрывки.
+                if clean.chars().next().map_or(false, |c| c.is_uppercase()) && clean.chars().count() > 2 {
+                    extracted_actor = Some(resolver.resolve_or_keep(&clean));
+                    break;
+                }
+            }
+        }
+
+        // ── Фаза 2: fallback на caps (с фильтром стоп-слов) ──
+        let actor = match extracted_actor {
+            Some(a) => a,
+            None => {
+                // Ищем первое заглавное слово, которое НЕ стоп-слово
+                // и либо резолвится, либо имеет длину > 2.
+                let valid_cap = caps.iter().find(|cap| {
+                    // Wave 7: исключаем target (чтобы «Он убил Ревуна» не
+                    // взяло «Ревуна» как actor).
+                    if let Some(ref t) = target {
+                        if resolver.resolve(cap).as_ref() == Some(t) {
+                            return false;
+                        }
+                    }
+                    // Известное имя в графе — берём, даже если оно формально
+                    // совпадает со стоп-словом (крайне редкий случай).
+                    if resolver.resolve(cap).is_some() {
+                        return true;
+                    }
+                    // Иначе — не стоп-слово и длина > 2.
+                    !is_russian_stop_word(cap) && cap.chars().count() > 2
+                });
+
+                match valid_cap {
+                    Some(name) => resolver.resolve_or_keep(name),
+                    None => continue, // Только стоп-слова или пусто → пропускаем.
+                }
+            }
         };
 
         let time = anchor_from_position(sent_start, chapters);
@@ -2219,6 +2519,487 @@ mod tests {
             kill5[0].target,
             Some("char_alex".to_string()),
             "Случай 5: target = Алексей (через «Алексея» — Wave 6 declension от -й)"
+        );
+    }
+
+    // ── Wave 7: Stop-Words & Dialogue Stripping ──────────────────────
+
+    #[test]
+    fn test_is_russian_stop_word_pronouns() {
+        // Личные местоимения — все стоп-слова.
+        assert!(is_russian_stop_word("Он"), "«Он» — стоп-слово");
+        assert!(is_russian_stop_word("Она"), "«Она» — стоп-слово");
+        assert!(is_russian_stop_word("Они"), "«Они» — стоп-слово");
+        assert!(is_russian_stop_word("Оно"), "«Оно» — стоп-слово");
+        assert!(is_russian_stop_word("Я"), "«Я» — стоп-слово");
+        assert!(is_russian_stop_word("Мы"), "«Мы» — стоп-слово");
+        assert!(is_russian_stop_word("Вы"), "«Вы» — стоп-слово");
+        assert!(is_russian_stop_word("Ты"), "«Ты» — стоп-слово");
+        // Case-insensitive.
+        assert!(is_russian_stop_word("он"), "«он» (lowercase) — стоп-слово");
+        assert!(is_russian_stop_word("ОНА"), "«ОНА» (uppercase) — стоп-слово");
+    }
+
+    #[test]
+    fn test_is_russian_stop_word_conjunctions_and_particles() {
+        // Союзы, частицы, ответы.
+        assert!(is_russian_stop_word("Не"), "«Не» — стоп-слово");
+        assert!(is_russian_stop_word("Но"), "«Но» — стоп-слово");
+        assert!(is_russian_stop_word("Или"), "«Или» — стоп-слово");
+        assert!(is_russian_stop_word("Как"), "«Как» — стоп-слово");
+        assert!(is_russian_stop_word("Когда"), "«Когда» — стоп-слово");
+        assert!(is_russian_stop_word("Потому"), "«Потому» — стоп-слово");
+        assert!(is_russian_stop_word("Что"), "«Что» — стоп-слово");
+        assert!(is_russian_stop_word("Это"), "«Это» — стоп-слово");
+        assert!(is_russian_stop_word("Нет"), "«Нет» — стоп-слово");
+        assert!(is_russian_stop_word("Да"), "«Да» — стоп-слово");
+        assert!(is_russian_stop_word("Если"), "«Если» — стоп-слово");
+        assert!(is_russian_stop_word("Однако"), "«Однако» — стоп-слово");
+    }
+
+    #[test]
+    fn test_is_russian_stop_word_prepositions() {
+        // Предлоги — частые «фантомные актёры».
+        assert!(is_russian_stop_word("За"), "«За» — стоп-слово");
+        assert!(is_russian_stop_word("На"), "«На» — стоп-слово");
+        assert!(is_russian_stop_word("Из"), "«Из» — стоп-слово");
+        assert!(is_russian_stop_word("При"), "«При» — стоп-слово");
+        assert!(is_russian_stop_word("До"), "«До» — стоп-слово");
+        assert!(is_russian_stop_word("После"), "«После» — стоп-слово");
+        assert!(is_russian_stop_word("Для"), "«Для» — стоп-слово");
+    }
+
+    #[test]
+    fn test_is_russian_stop_word_real_names_are_not_stops() {
+        // Реальные имена персонажей НЕ должны быть стоп-словами.
+        // Если имя случайно совпадёт со стоп-словом — caller-код должен
+        // проверить resolver.resolve() ПЕРВЫМ, и только если None — звать
+        // is_russian_stop_word.
+        assert!(!is_russian_stop_word("Грак"), "«Грак» — НЕ стоп-слово");
+        assert!(!is_russian_stop_word("Веня"), "«Веня» — НЕ стоп-слово");
+        assert!(!is_russian_stop_word("Паша"), "«Паша» — НЕ стоп-слово");
+        assert!(!is_russian_stop_word("Архитектор"), "«Архитектор» — НЕ стоп-слово");
+        assert!(!is_russian_stop_word("Раскольников"), "«Раскольников» — НЕ стоп-слово");
+    }
+
+    #[test]
+    fn test_is_russian_stop_word_edge_cases() {
+        // Пустая строка — не стоп-слово (нет смысла).
+        assert!(!is_russian_stop_word(""), "Пустая строка — не стоп-слово");
+        // Только пробелы — тримятся, пустая строка → не стоп.
+        assert!(!is_russian_stop_word("   "), "Только пробелы — не стоп-слово");
+        // Пробелы вокруг реального стоп-слова — тримятся.
+        assert!(is_russian_stop_word("  Он  "), "«  Он  » → «Он» — стоп-слово");
+    }
+
+    #[test]
+    fn test_strip_dialogue_content_guillemets() {
+        // «...» — французские кавычки, самые частые в русском.
+        let s = "Веня сказал: «Привет, друг».";
+        let cleaned = strip_dialogue_content(s);
+        assert!(
+            !cleaned.contains("Привет"),
+            "Содержимое «...» удалено, got: {:?}",
+            cleaned
+        );
+        assert!(
+            cleaned.contains("Веня сказал"),
+            "Авторский текст сохранён, got: {:?}",
+            cleaned
+        );
+        assert!(
+            !cleaned.contains("«") && !cleaned.contains("»"),
+            "Кавычки удалены, got: {:?}",
+            cleaned
+        );
+    }
+
+    #[test]
+    fn test_strip_dialogue_content_typographic_quotes() {
+        // "..." — типографские кавычки.
+        let s = "Паша ответил: \u{201C}Привет\u{201D}.";
+        let cleaned = strip_dialogue_content(s);
+        assert!(
+            !cleaned.contains("Привет"),
+            "Содержимое «\u{201C}...\u{201D}» удалено, got: {:?}",
+            cleaned
+        );
+        assert!(cleaned.contains("Паша"), "Автор сохранён");
+    }
+
+    #[test]
+    fn test_strip_dialogue_content_ascii_quotes() {
+        // "..." — ASCII кавычки.
+        let s = "Веня сказал: \"Привет\".";
+        let cleaned = strip_dialogue_content(s);
+        assert!(
+            !cleaned.contains("Привет"),
+            "Содержимое ASCII-кавычек удалено, got: {:?}",
+            cleaned
+        );
+        assert!(cleaned.contains("Веня"), "Автор сохранён");
+    }
+
+    #[test]
+    fn test_strip_dialogue_content_dash_dialogue_with_attribution() {
+        // — Привет, — сказал Веня.
+        // Два тире: открывающее и закрывающее реплику. После второго — автор.
+        let s = "— Привет, — сказал Веня.";
+        let cleaned = strip_dialogue_content(s);
+        assert_eq!(
+            cleaned, "сказал Веня.",
+            "Берётся текст после последнего тире (авторская атрибуция), got: {:?}",
+            cleaned
+        );
+        assert!(
+            !cleaned.contains("Привет"),
+            "Содержимое реплики удалено"
+        );
+    }
+
+    #[test]
+    fn test_strip_dialogue_content_dash_dialogue_without_attribution() {
+        // — Привет.
+        // Только одно тире (открывающее), без авторской атрибуции.
+        // Должно вернуть пустую строку → caller пропустит событие.
+        let s = "— Привет.";
+        let cleaned = strip_dialogue_content(s);
+        assert!(
+            cleaned.is_empty(),
+            "Диалог без атрибуции → пустая строка, got: {:?}",
+            cleaned
+        );
+    }
+
+    #[test]
+    fn test_strip_dialogue_content_no_dialogue_passthrough() {
+        // Обычное предложение без кавычек и тире — проходит как есть.
+        let s = "Грак убил Ревуна.";
+        let cleaned = strip_dialogue_content(s);
+        assert_eq!(
+            cleaned, s,
+            "Без кавычек/тире — строка не меняется"
+        );
+    }
+
+    #[test]
+    fn test_strip_dialogue_content_em_dash_in_author_text() {
+        // Em-dash в авторском тексте (не в начале) — НЕ считается диалогом.
+        // «Паша — мой друг.» — предложение не начинается с тире.
+        let s = "Паша — мой друг.";
+        let cleaned = strip_dialogue_content(s);
+        assert_eq!(
+            cleaned, s,
+            "Em-dash не в начале — не активирует диалог-режим, got: {:?}",
+            cleaned
+        );
+    }
+
+    #[test]
+    fn test_parse_text_fallback_speech_attribution_after_verb() {
+        // Wave 7, Баг #3: автор реплики стоит ПОСЛЕ глагола говорения.
+        //
+        // «— Привет, — сказал Веня.»
+        // До Wave 7: actor = «Привет» (первое заглавное слово в реплике).
+        // Теперь: actor = «Веня» (имя после «сказал»).
+        let nodes = vec![
+            make_node("char_venya", "Веня", "character", None),
+            make_node("char_pasha", "Паша", "character", None),
+        ];
+        let resolver = EntityResolver::from_nodes(&nodes);
+        let chapters = vec![make_chapter(1, 0, 100000)];
+
+        // Случай 1: «— Привет, — сказал Веня.» → actor = Веня.
+        let text1 = "— Привет, — сказал Веня.";
+        let events1 = parse_text_fallback(text1, &resolver, &chapters);
+        let speak1: Vec<&Event> = events1
+            .iter()
+            .filter(|e| matches!(e.action, Action::Speak { .. }))
+            .collect();
+        assert_eq!(
+            speak1.len(),
+            1,
+            "Случай 1: должно быть 1 Speak-событие, got: {:?}",
+            events1
+        );
+        assert_eq!(
+            speak1[0].actor, "char_venya",
+            "Случай 1: actor = Веня (через пост-глагольную атрибуцию), а НЕ «Привет»"
+        );
+
+        // Случай 2: «— Архитектор пришёл, — говорит Паша.» → actor = Паша.
+        let text2 = "— Архитектор пришёл, — говорит Паша.";
+        let events2 = parse_text_fallback(text2, &resolver, &chapters);
+        let speak2: Vec<&Event> = events2
+            .iter()
+            .filter(|e| matches!(e.action, Action::Speak { .. }))
+            .collect();
+        assert_eq!(
+            speak2.len(),
+            1,
+            "Случай 2: должно быть 1 Speak-событие, got: {:?}",
+            events2
+        );
+        assert_eq!(
+            speak2[0].actor, "char_pasha",
+            "Случай 2: actor = Паша (через «говорит»), а НЕ «Архитектор»"
+        );
+
+        // Случай 3: «— Пришёл, — сказал Веня, не оборачиваясь.»
+        // Дополнительный текст после имени не должен ломать атрибуцию.
+        let text3 = "— Пришёл, — сказал Веня, не оборачиваясь.";
+        let events3 = parse_text_fallback(text3, &resolver, &chapters);
+        let speak3: Vec<&Event> = events3
+            .iter()
+            .filter(|e| matches!(e.action, Action::Speak { .. }))
+            .collect();
+        assert_eq!(speak3.len(), 1, "Случай 3: 1 Speak, got: {:?}", events3);
+        assert_eq!(
+            speak3[0].actor, "char_venya",
+            "Случай 3: actor = Веня, несмотря на текст после имени"
+        );
+
+        // Случай 4: «— Нет, — сказал я.» → нет валидного актёра.
+        // «я» — стоп-слово. caps из «сказал я.» = [] (я в нижнем регистре).
+        // Событие должно быть пропущено.
+        let text4 = "— Нет, — сказал я.";
+        let events4 = parse_text_fallback(text4, &resolver, &chapters);
+        assert!(
+            events4.is_empty(),
+            "Случай 4: «— Нет, — сказал я.» → пропущено (нет валидного актёра), got: {:?}",
+            events4
+        );
+
+        // Случай 5: «— Талант у тебя есть, — сказал он.»
+        // «он» — стоп-слово. Событие должно быть пропущено.
+        // (До Wave 7 это создавало фантомного актёра «Талант».)
+        let text5 = "— Талант у тебя есть, — сказал он.";
+        let events5 = parse_text_fallback(text5, &resolver, &chapters);
+        assert!(
+            events5.is_empty(),
+            "Случай 5: «— Талант у тебя есть, — сказал он.» → пропущено, got: {:?}",
+            events5
+        );
+    }
+
+    #[test]
+    fn test_parse_text_fallback_speak_attribution_with_unknown_speaker() {
+        // Если после глагола говорения стоит неизвестное имя с заглавной буквы,
+        // оно становится phantom entity (как и раньше для caps).
+        let resolver = EntityResolver::from_nodes(&[]);
+        let chapters = vec![make_chapter(1, 0, 100000)];
+
+        // «— Привет, — сказал Призрак.» → actor = "Призрак" (phantom).
+        let text = "— Привет, — сказал Призрак.";
+        let events = parse_text_fallback(text, &resolver, &chapters);
+        let speak: Vec<&Event> = events
+            .iter()
+            .filter(|e| matches!(e.action, Action::Speak { .. }))
+            .collect();
+        assert_eq!(speak.len(), 1, "1 Speak-событие");
+        assert_eq!(
+            speak[0].actor, "Призрак",
+            "Неизвестное имя сохраняется как phantom entity"
+        );
+    }
+
+    #[test]
+    fn test_parse_text_fallback_pronoun_does_not_override_known_name() {
+        // Если «Он» — реально имя персонажа в графе, оно должно
+        // использоваться (stop-word фильтр не должен блокировать known name).
+        let nodes = vec![make_node("char_on", "Он", "character", None)];
+        let resolver = EntityResolver::from_nodes(&nodes);
+        let chapters = vec![make_chapter(1, 0, 100000)];
+
+        // «Он сказал.» — «Он» в графе → actor = char_on.
+        let text = "Он сказал.";
+        let events = parse_text_fallback(text, &resolver, &chapters);
+        assert_eq!(events.len(), 1, "1 событие");
+        assert_eq!(
+            events[0].actor, "char_on",
+            "«Он» — известное имя в графе → резолвится, stop-word фильтр не блокирует"
+        );
+    }
+
+    #[test]
+    fn test_parse_text_fallback_extended_speak_verbs() {
+        // Wave 7: speak regex расширен — теперь ловит «говорит», «ответил»,
+        // «спросил» (раньше только «сказал*»).
+        let nodes = vec![
+            make_node("char_pasha", "Паша", "character", None),
+            make_node("char_venya", "Веня", "character", None),
+            make_node("char_anna", "Анна", "character", None),
+        ];
+        let resolver = EntityResolver::from_nodes(&nodes);
+        let chapters = vec![make_chapter(1, 0, 100000)];
+
+        // «говорит Паша» — настоящее время.
+        let text1 = "— Привет, — говорит Паша.";
+        let events1 = parse_text_fallback(text1, &resolver, &chapters);
+        let speak1: Vec<&Event> = events1
+            .iter()
+            .filter(|e| matches!(e.action, Action::Speak { .. }))
+            .collect();
+        assert_eq!(speak1.len(), 1, "«говорит» → Speak, got: {:?}", events1);
+        assert_eq!(speak1[0].actor, "char_pasha");
+
+        // «ответил Веня» — прошедшее время.
+        let text2 = "— Привет, — ответил Веня.";
+        let events2 = parse_text_fallback(text2, &resolver, &chapters);
+        let speak2: Vec<&Event> = events2
+            .iter()
+            .filter(|e| matches!(e.action, Action::Speak { .. }))
+            .collect();
+        assert_eq!(speak2.len(), 1, "«ответил» → Speak, got: {:?}", events2);
+        assert_eq!(speak2[0].actor, "char_venya");
+
+        // «спросила Анна» — женский род прошедшего.
+        // Особенность: внутри реплики есть `?`, который разбивает предложение
+        // на 2 части: «— Где?» и «— спросила Анна.». Вторая часть должна
+        // распознаться как авторская (через эвристику speech-verb после `—`).
+        let text3 = "— Где? — спросила Анна.";
+        let events3 = parse_text_fallback(text3, &resolver, &chapters);
+        let speak3: Vec<&Event> = events3
+            .iter()
+            .filter(|e| matches!(e.action, Action::Speak { .. }))
+            .collect();
+        assert_eq!(speak3.len(), 1, "«спросила» → Speak, got: {:?}", events3);
+        assert_eq!(speak3[0].actor, "char_anna");
+    }
+
+    #[test]
+    fn test_parse_text_fallback_target_excluded_from_actor() {
+        // Wave 7: target не должен становиться actor при fallback на caps.
+        //
+        // «Он убил Ревуна.» — caps = ["Он", "Ревуна"].
+        // «Он» — стоп-слово. «Ревуна» резолвится в char_revun (через Wave 6
+        // declension). Без target-exclusion «Ревуна» стало бы actor'ом
+        // (target leakage). Теперь: «Ревуна» исключается как target →
+        // не остаётся валидного actor → событие пропускается.
+        let nodes = vec![
+            make_node("char_grak", "Грак", "character", None),
+            make_node("char_revun", "Ревун", "character", None),
+        ];
+        let resolver = EntityResolver::from_nodes(&nodes);
+        let chapters = vec![make_chapter(1, 0, 100000)];
+
+        let text = "Он убил Ревуна.";
+        let events = parse_text_fallback(text, &resolver, &chapters);
+        assert_eq!(
+            events.len(),
+            0,
+            "«Он убил Ревуна» → пропущено: «Он» стоп-слово, «Ревуна» это \
+             target (исключён из actor-кандидатов). Got: {:?}",
+            events
+        );
+
+        // «Но убил Ревуна.» — «Но» стоп-слово, «Ревуна» target → пропущено.
+        let text2 = "Но убил Ревуна.";
+        let events2 = parse_text_fallback(text2, &resolver, &chapters);
+        assert_eq!(events2.len(), 0, "«Но» — стоп-слово, got: {:?}", events2);
+
+        // «Или они убивают Ревуна.» — стоп-слова «Или», «они».
+        let text3 = "Или они убивают Ревуна.";
+        let events3 = parse_text_fallback(text3, &resolver, &chapters);
+        assert_eq!(events3.len(), 0, "«Или/они» — стоп-слова, got: {:?}", events3);
+    }
+
+    #[test]
+    fn test_parse_text_fallback_dash_split_dialogue_attribution() {
+        // Wave 7: когда `?` или `!` внутри реплики разбивает предложение,
+        // авторская часть (после второго `—`) должна распознаваться отдельно.
+        //
+        // «— Где? — спросила Анна.» разбивается sentence_split'ом на:
+        //   1. «— Где?»           → чистая реплика (1 тире, не speech verb) → skip.
+        //   2. «— спросила Анна.» → 1 тире, но первое слово «спросила» —
+        //      speech verb → авторский текст → Speak(Анна).
+        let nodes = vec![make_node("char_anna", "Анна", "character", None)];
+        let resolver = EntityResolver::from_nodes(&nodes);
+        let chapters = vec![make_chapter(1, 0, 100000)];
+
+        let text = "— Где? — спросила Анна.";
+        let events = parse_text_fallback(text, &resolver, &chapters);
+        let speak: Vec<&Event> = events
+            .iter()
+            .filter(|e| matches!(e.action, Action::Speak { .. }))
+            .collect();
+        assert_eq!(speak.len(), 1, "Должно быть 1 Speak (Анна), got: {:?}", events);
+        assert_eq!(speak[0].actor, "char_anna");
+    }
+
+    #[test]
+    fn test_parse_text_fallback_kill_inside_dialogue_uses_speaker_not_victim() {
+        // Wave 7: kill-глагол внутри реплики не должен создавать Kill-событие
+        // с target из реплики — событие должно быть Speak с реальным автором.
+        let nodes = vec![
+            make_node("char_pasha", "Паша", "character", None),
+            make_node("char_grak", "Грак", "character", None),
+            make_node("char_revun", "Ревун", "character", None),
+        ];
+        let resolver = EntityResolver::from_nodes(&nodes);
+        let chapters = vec![make_chapter(1, 0, 100000)];
+
+        // «— Грак убил Ревуна, — сказал Паша.»
+        // После strip_dialogue_content: «сказал Паша.»
+        // Actor = Паша (атрибуция). Action = Speak (сказал).
+        // Kill-глагол «убил» в самой реплике — вырезан, не должен
+        // классифицировать событие как Kill.
+        let text = "— Грак убил Ревуна, — сказал Паша.";
+        let events = parse_text_fallback(text, &resolver, &chapters);
+        let speak: Vec<&Event> = events
+            .iter()
+            .filter(|e| matches!(e.action, Action::Speak { .. }))
+            .collect();
+        let kill: Vec<&Event> = events
+            .iter()
+            .filter(|e| matches!(e.action, Action::Kill))
+            .collect();
+        assert_eq!(speak.len(), 1, "Должно быть 1 Speak (атрибуция Паша)");
+        assert_eq!(
+            kill.len(),
+            0,
+            "Kill-глагол в реплике не должен создавать Kill-событие"
+        );
+        assert_eq!(speak[0].actor, "char_pasha");
+    }
+
+    #[test]
+    fn test_parse_text_fallback_multiple_sentences_mixed() {
+        // Wave 7: комплексный тест — несколько предложений разного типа.
+        let nodes = vec![
+            make_node("char_venya", "Веня", "character", None),
+            make_node("char_grak", "Грак", "character", None),
+            make_node("char_revun", "Ревун", "character", None),
+        ];
+        let resolver = EntityResolver::from_nodes(&nodes);
+        let chapters = vec![make_chapter(1, 0, 100000)];
+
+        let text = "— Привет, — сказал Веня. Грак убил Ревуна. Но он не умер.";
+        let events = parse_text_fallback(text, &resolver, &chapters);
+
+        // Sentence 1: «— Привет, — сказал Веня.» → Speak(actor=Веня). ✅
+        // Sentence 2: «Грак убил Ревуна.» → Kill(actor=Грак, target=Ревун). ✅
+        // Sentence 3: «Но он не умер.» → caps = [], action=Die (умер),
+        //   но «Но» — стоп-слово, других caps нет → пропущено. ✅
+
+        let speak_count = events
+            .iter()
+            .filter(|e| matches!(e.action, Action::Speak { .. }))
+            .count();
+        let kill_count = events
+            .iter()
+            .filter(|e| matches!(e.action, Action::Kill))
+            .count();
+        let die_count = events
+            .iter()
+            .filter(|e| matches!(e.action, Action::Die))
+            .count();
+
+        assert_eq!(speak_count, 1, "1 Speak (Веня)");
+        assert_eq!(kill_count, 1, "1 Kill (Грак → Ревун)");
+        assert_eq!(
+            die_count, 0,
+            "«Но он не умер» — пропущено (стоп-слово «Но», без валидного actor)"
         );
     }
 }
