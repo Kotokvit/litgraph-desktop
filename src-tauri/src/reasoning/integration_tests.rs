@@ -276,7 +276,7 @@ fn test_cycle_idempotent_on_same_events() {
     let mut cycle = ReasoningCycle::from_project(&project);
 
     let events = vec![make_kill_event()];
-    let report1 = cycle.run_cycle(events.clone());
+    let _report1 = cycle.run_cycle(events.clone());
     let facts_after_1 = cycle.facts.all_facts().len();
 
     let report2 = cycle.run_cycle(events);

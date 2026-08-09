@@ -81,7 +81,8 @@ use crate::reasoning::state::{StateTransition, WorldSnapshot, WorldState};
 ///
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CycleReport {
-    /// Количество событий, переданных в `run_cycle` (input size).
+    /// Количество новых событий, обработанных в этом цикле (без дубликатов
+    /// — повторная передача тех же событий через `run_cycle` даст 0).
     pub events_processed: usize,
     /// Количество выведенных фактов (длина `Vec<InferredFact>` из `build_state`).
     pub facts_asserted: usize,
@@ -385,15 +386,32 @@ impl ReasoningCycle {
     /// Полный pipeline: observe → build_state → reason → generate_hypotheses
     /// → verify_all_pending → update_state. Возвращает `CycleReport`.
     ///
-    /// Идемпотентен на уровне событий: повторный вызов с теми же событиями
-    /// не приведёт к повторной обработке (благодаря `processed_event_ids`).
-    /// Но `observe` всё равно запишет дубликаты в `FactLog` — caller
-    /// ответственен за дедупликацию входных событий.
+    /// **Полностью идемпотентен**: повторный вызов с теми же событиями не
+    /// приводит ни к повторной обработке правил, ни к дублированию записей
+    /// в `FactLog`. Дедупликация выполняется по сигнатуре
+    /// `(actor, action, target, time, source_text)` — события, чья
+    /// сигнатура уже присутствует в журнале, отфильтровываются до `observe`.
     pub fn run_cycle(&mut self, events: Vec<Event>) -> CycleReport {
-        let events_processed = events.len();
+        // 0. Дедупликация: пропускаем события, чья сигнатура уже записана
+        // в FactLog. Клонируем существующие события в Vec, чтобы снять
+        // immutable borrow с self.facts перед &mut self.observe.
+        let existing: Vec<Event> = self.facts.all_events().to_vec();
+        let new_events: Vec<Event> = events
+            .into_iter()
+            .filter(|e| {
+                !existing.iter().any(|ex| {
+                    ex.actor == e.actor
+                        && ex.action == e.action
+                        && ex.target == e.target
+                        && ex.time == e.time
+                        && ex.source_text == e.source_text
+                })
+            })
+            .collect();
+        let events_processed = new_events.len();
 
-        // 1. Записать события.
-        self.observe(events);
+        // 1. Записать только новые события.
+        self.observe(new_events);
 
         // 2. Применить правила inference.
         let inferred = self.build_state();
