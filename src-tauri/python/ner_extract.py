@@ -637,14 +637,53 @@ def extract_entities(text: str) -> dict:
             "sentence": loc["sentence"],
         })
     
-    # 4. Группировка падежных форм
+    # 4. Группировка падежных форм (v0.4.1: ПОЛНОСТЬЮ ПЕРЕПИСАНА)
+    #
+    # Старая логика (v0.2.1) использовала common_prefix_len >= 4, что
+    # приводило к КАТАСТРОФЕ: сущности "Архивом" + "Архисферы" + "Архитекторами"
+    # сливались в одну (общий префикс "Архи"). А "Голос Бездны" + "Голос Дракона"
+    # + "Голос Мира" сливались в "Голос мир". Это НЕ разные падежные формы —
+    # это РАЗНЫЕ сущности, случайно имеющие общий префикс.
+    #
+    # Новая логика (v0.4.1):
+    #   1. Single-word + Single-word: merge if cp >= 5 AND cp >= 0.6 * min_len
+    #      (Алексей + Алексея → merge, Архивом + Архисферы → reject)
+    #   2. Multi-word + Multi-word: merge ONLY if first word matches EXACTLY
+    #      AND second word shares prefix >= 4 chars
+    #      (Лорд Моретти + Лорда Моретти → merge, Голос Бездны + Голос Дракона → reject)
+    #   3. Single-word + Multi-word: NEVER merge (different entity types)
     def common_prefix_len(a: str, b: str) -> int:
         n = min(len(a), len(b))
         for i in range(n):
             if a[i].lower() != b[i].lower():
                 return i
         return n
-    
+
+    def should_merge(lemma_a: str, lemma_b: str) -> bool:
+        """Решает, нужно ли сливать две сущности в одну (по лемме)."""
+        a_words = lemma_a.split()
+        b_words = lemma_b.split()
+        # Single + Single
+        if len(a_words) == 1 and len(b_words) == 1:
+            cp = common_prefix_len(lemma_a, lemma_b)
+            min_len = min(len(lemma_a), len(lemma_b))
+            # Жёстче: prefix >= 5 символов И >= 60% длины короткого слова
+            # Алексей(7) + Алексея(7): cp=6, 6/7=0.86 ✓
+            # Архивом(7) + Архисферы(9): cp=4, fails 5-char threshold ✗
+            # Рэй(3) + Рэя(3): cp=2, fails 5-char threshold ✗ (используем alias map)
+            return cp >= 5 and cp >= 0.6 * min_len
+        # Multi + Multi
+        if len(a_words) >= 2 and len(b_words) >= 2:
+            # Первое слово должно совпадать EXACT (case-insensitive)
+            if a_words[0].lower() != b_words[0].lower():
+                return False
+            # Второе слово — prefix >= 4 chars (для падежей)
+            cp2 = common_prefix_len(a_words[1], b_words[1])
+            min_len2 = min(len(a_words[1]), len(b_words[1]))
+            return cp2 >= 4 and cp2 >= 0.6 * min_len2
+        # Single + Multi — NEVER
+        return False
+
     final = {}
     items = list(entities_by_lemma.items())
     items.sort(key=lambda x: (len(x[0][0]), x[0][0]))
@@ -661,16 +700,412 @@ def extract_entities(text: str) -> dict:
             lemma_j, label_j = key_j
             if label_i != label_j:
                 continue
-            cp = common_prefix_len(lemma_i, lemma_j)
-            if cp >= 4:
+            if should_merge(lemma_i, lemma_j):
                 canonical["forms"].update(data_j["forms"])
                 canonical["count"] += data_j["count"]
                 canonical["mentions"].extend(data_j["mentions"])
                 used_keys.add(key_j)
         final[key_i] = canonical
-    
-    # 5. Фильтр: минимум 2 упоминания (одиночные — шум)
-    MIN_COUNT = 2
+
+    # 5. v0.4.1: Post-process — RECLASSIFY multi-word PER entities
+    # по первому слову (role noun). Сюда попадают:
+    #   - "Голос Бездны", "Голос Дракона" — это CONCEPT (абстракция, эпитет)
+    #   - "Сфера Тепла", "Сфера Предела" — это CONCEPT
+    #   - "Клан Фосфор", "Культ Хаоса", "Синдикат Экстракторов" — ORGANIZATION
+    #   - "Сектор Зеркал", "Сектор Свинец" — LOCATION/SECTOR
+    #   - "Лорд Моретти", "Аудитор Вэнс" — CHARACTER (но title = второе слово)
+    #   - "Старик Вода", "Железная Леди" — CHARACTER (epithet, rename to last word)
+    #   - "Хранитель Узора", "Хранитель Знаний" — CHARACTER (rename to second word)
+    # Без этого шага — пользователю показывается 77 "персонажей" типа
+    # "Голос мир" или "Архивом марта", что является смехотворным.
+
+    # Словарь role-noun → целевой тип
+    ROLE_NOUN_TO_TYPE = {
+        # → concept (абстрактные эпитеты, не персонажи)
+        "голос": "CONCEPT",
+        "сфера": "CONCEPT",
+        "бездна": "CONCEPT",
+        "эхо": "CONCEPT",
+        "архив": "CONCEPT",
+        "свет": "CONCEPT",
+        "тьма": "CONCEPT",
+        "тен": "CONCEPT",  # "Тень" (несклоняемая основа)
+        "тень": "CONCEPT",
+        "предел": "CONCEPT",
+        "пустота": "CONCEPT",
+        "хаос": "CONCEPT",
+        "порядок": "CONCEPT",
+        "память": "CONCEPT",
+        "судьба": "CONCEPT",
+        "сеть": "CONCEPT",
+        "кольцо": "CONCEPT",
+        "фаза": "CONCEPT",
+        "осада": "CONCEPT",  # событие, не персонаж
+        "метрика": "CONCEPT",
+        "энтропия": "CONCEPT",
+        "формула": "CONCEPT",
+        "принцип": "CONCEPT",
+        "закон": "CONCEPT",
+        "ядро": "CONCEPT",
+        "узор": "CONCEPT",
+        "ритм": "CONCEPT",
+        "сдвиг": "CONCEPT",
+        "геометрия": "CONCEPT",
+        "скелет": "CONCEPT",
+        "левиафан": "CONCEPT",  # мифическое существо, абстракция
+        # → organization
+        "клан": "ORG",
+        "культ": "ORG",
+        "синдикат": "ORG",
+        "орден": "ORG",
+        "синод": "ORG",
+        "совет": "ORG",
+        "братство": "ORG",
+        "гильдия": "ORG",
+        "корпорация": "ORG",
+        "империя": "ORG",
+        "королевство": "ORG",
+        "княжество": "ORG",
+        "республика": "ORG",
+        "бухгалтерия": "ORG",
+        "реестр": "ORG",
+        "архитектор": "ORG",
+        "институт": "ORG",
+        "академия": "ORG",
+        "университет": "ORG",
+        "министерство": "ORG",
+        "конклав": "ORG",
+        "палата": "ORG",
+        "фактор": "ORG",  # "Нулевой Фактор" — ORG
+        "триада": "ORG",
+        # → location (sector/zone)
+        "сектор": "LOC",
+        "зона": "LOC",
+        "регион": "LOC",
+        "гавань": "LOC",
+        "лес": "LOC",
+        "остров": "LOC",
+        "башня": "LOC",
+        "башни": "LOC",
+        "замок": "LOC",
+        # → character (epithet, rename to second word which is the actual name)
+        "лорд": "PER_KEEP_LAST",
+        "леди": "PER_KEEP_LAST",
+        "аудитор": "PER_KEEP_LAST",
+        "старик": "PER_KEEP_LAST",
+        "хранитель": "PER_KEEP_LAST",
+        "брокер": "PER_KEEP_LAST",
+        "меняла": "PER_KEEP_LAST",
+        "аспид": "PER_KEEP_LAST",
+        "дракон": "PER_KEEP_LAST",
+        "демон": "PER_KEEP_LAST",
+        "ангел": "PER_KEEP_LAST",
+        "род": "PER_KEEP_LAST",  # "Род Вэнс" → "Вэнс"
+        # → reject (чистый шум — не имя, не организация)
+        "платежом": "REJECT",
+        "проклятием": "REJECT",
+        "наследником": "REJECT",
+        "сын": "REJECT",
+        "дочь": "REJECT",
+        "мать": "REJECT",
+        "отец": "REJECT",
+        "брат": "REJECT",
+        "сестра": "REJECT",
+        "дядя": "REJECT",
+        "тётя": "REJECT",
+        "тетя": "REJECT",
+        "триадный": "REJECT",
+        "мертвый": "REJECT",
+        "мёртвый": "REJECT",
+        "платиновый": "REJECT",
+        "железный": "REJECT",
+        "железная": "REJECT",
+        "железной": "REJECT",
+        "серый": "REJECT",
+        "серого": "REJECT",
+        "серой": "REJECT",
+        "ферритовый": "REJECT",
+        "нулевой": "REJECT",
+        "первый": "REJECT",
+        "последний": "REJECT",
+        "высший": "REJECT",
+        "высшего": "REJECT",
+        "нижний": "REJECT",
+        "нижнего": "REJECT",
+        "верхний": "REJECT",
+        "верхнего": "REJECT",
+        "старший": "REJECT",
+        "младший": "REJECT",
+        "белый": "REJECT",
+        "чёрный": "REJECT",
+        "черный": "REJECT",
+        "красный": "REJECT",
+        "тёмный": "REJECT",
+        "темный": "REJECT",
+        "проклятый": "REJECT",
+        "проклятых": "REJECT",
+        "проклятое": "REJECT",
+        "проклятая": "REJECT",
+    }
+
+    # v0.4.2: Слова которые ВСЕГДА отвергаются как первое слово multi-word PER
+    # (числительные, прилагательные, местоимения — не могут быть началом имени)
+    REJECT_FIRST_WORD_LEMMAS = {
+        # Числительные
+        "три", "четыре", "пять", "шесть", "семь", "восемь", "девять", "десять",
+        "трое", "четверо", "пятеро",
+        "первый", "второй", "третий", "четвёртый", "четвертый",
+        "пятый", "шестой", "седьмой", "восьмой", "девятый", "десятый",
+        "один", "одна", "одно", "две", "два",
+        # Местоимения-прилагательные
+        "весь", "вся", "всё", "все", "всех", "всего",
+        "этот", "эта", "это", "эти", "этот",
+        "тот", "та", "то", "те",
+        "такой", "такая", "такое", "такие",
+        "каждый", "каждая", "каждое",
+        "любой", "любая", "любое",
+        "сам", "сама", "само",
+        "наш", "ваш", "их", "его", "её", "ее",
+        "мой", "твой",
+        # Прочие шумы
+        "который", "которая", "которое",
+        "некоторый", "никакой",
+    }
+
+    # 5.1. Применяем реклассификацию
+    # v0.4.2: Определяем lemmatize_word ЗДЕСЬ (до использования в реклассификации)
+    def lemmatize_word(word: str) -> str:
+        """Возвращает normal_form слова через pymorphy3."""
+        if MORPH is None:
+            return word.lower()
+        try:
+            parsed = MORPH.parse(word)
+            if parsed and parsed[0].normal_form:
+                return parsed[0].normal_form.lower()
+        except Exception:
+            pass
+        return word.lower()
+
+    reclassified = {}
+    for key, data in final.items():
+        lemma, label = key
+        # Только multi-word PER подлежат реклассификации
+        if label != "PER" or " " not in lemma.strip():
+            reclassified[key] = data
+            continue
+        words = lemma.split()
+        first_word = words[0]
+        first_word_lower = first_word.lower()
+
+        # v0.4.2: Лемматизируем первое слово через pymorphy3 чтобы
+        # покрыть ОТМИНЁННЫЕ формы role-noun-ов:
+        #   "Сферы" → "сфера", "Культы" → "культ", "Голоса" → "голос",
+        #   "Кланы" → "клан", "Бухгалтерии" → "бухгалтерия",
+        #   "Братства" → "братство", "Синдиката" → "синдикат"
+        first_word_lemma = first_word_lower
+        if MORPH is not None:
+            try:
+                parsed = MORPH.parse(first_word)
+                if parsed:
+                    # Берём normal_form первого разбора
+                    nf = parsed[0].normal_form
+                    if nf:
+                        first_word_lemma = nf.lower()
+            except Exception:
+                pass
+
+        # Проверяем по лемматизированному первому слову
+        target_type = ROLE_NOUN_TO_TYPE.get(first_word_lemma)
+        if target_type is None:
+            # Также проверяем оригинальную форму (для нерусских слов)
+            target_type = ROLE_NOUN_TO_TYPE.get(first_word_lower)
+        # v0.4.2: Жёсткий reject для числительных/прилагательных
+        if target_type is None and first_word_lemma in REJECT_FIRST_WORD_LEMMAS:
+            target_type = "REJECT"
+        if target_type is None:
+            # Не role-noun — оставляем как PER, но проверим валидность
+            reclassified[key] = data
+            continue
+        if target_type == "REJECT":
+            # Полностью отвергаем эту сущность
+            continue
+        if target_type == "PER_KEEP_LAST":
+            # Character с титулом — берём второе слово как canonical name
+            if len(words) >= 2:
+                # Создаём новую сущность с lemma = второе слово
+                new_lemma = words[1]
+                # v0.4.2: Проверяем второе слово:
+                # 1. Должно быть Capitalized, 3-20 chars
+                # 2. Не должно быть в FALSE_POSITIVE_NOUNS (лемматизированное)
+                # 3. Должно пройти pymorphy3 Name/Surn проверку ИЛИ быть в
+                #    KNOWN_RUSSIAN_NAMES
+                if len(new_lemma) < 3 or not re.match(r"^[А-ЯЁ][а-яё]{2,20}$", new_lemma):
+                    continue
+                # Лемматизируем для проверки по словарям
+                new_lemma_nf = lemmatize_word(new_lemma) if MORPH else new_lemma.lower()
+                if new_lemma_nf in FALSE_POSITIVE_NOUNS:
+                    continue  # "Узор", "Шум", "Вода" — не имена
+                # Проверяем pymorphy3 на Name/Surn
+                is_name = False
+                if MORPH is not None:
+                    try:
+                        for p in MORPH.parse(new_lemma):
+                            if "Name" in str(p.tag) or "Surn" in str(p.tag):
+                                is_name = True
+                                break
+                    except Exception:
+                        pass
+                if not is_name and new_lemma.lower() not in KNOWN_RUSSIAN_NAMES:
+                    continue  # не подтверждено как имя — пропускаем
+                new_key = (new_lemma, "PER")
+                if new_key in reclassified:
+                    # Уже есть — добавляем forms и count
+                    existing = reclassified[new_key]
+                    existing["forms"].update(data["forms"])
+                    existing["count"] += data["count"]
+                    existing["mentions"].extend(data["mentions"])
+                else:
+                    new_data = dict(data)
+                    new_data["lemma"] = new_lemma
+                    reclassified[new_key] = new_data
+            continue
+        # CONCEPT/ORG/LOC — меняем label
+        new_key = (lemma, target_type)
+        new_data = dict(data)
+        new_data["label"] = target_type
+        # Если уже есть с таким key — мерджим
+        if new_key in reclassified:
+            existing = reclassified[new_key]
+            existing["forms"].update(data["forms"])
+            existing["count"] += data["count"]
+            existing["mentions"].extend(data["mentions"])
+        else:
+            reclassified[new_key] = new_data
+    final = reclassified
+
+    # 5.2. v0.4.1: Hard filter — отвергаем сущности с мусором в lemma
+    def is_valid_lemma(lemma: str) -> bool:
+        """Лемма должна быть чистой: только буквы, пробелы, дефис, апостроф."""
+        if not lemma or not lemma.strip():
+            return False
+        # Newlines, tabs — недопустимы
+        if "\n" in lemma or "\r" in lemma or "\t" in lemma:
+            return False
+        # Только буквы (кир/лат), пробелы, дефис, апостроф
+        if not re.match(r"^[А-ЯЁA-Z][а-яёa-zА-ЯЁA-Z\s\-'’]+$", lemma.strip()):
+            return False
+        # Первый символ — заглавная буква
+        if not (lemma[0].isalpha() and lemma[0].isupper()):
+            return False
+        # v0.4.2: Reject латино-кириллических смесей типа "Root-Оператор"
+        # Если есть И кириллица, И латиница — это почти всегда шум
+        has_cyr = bool(re.search(r"[А-ЯЁа-яё]", lemma))
+        has_lat = bool(re.search(r"[A-Za-z]", lemma))
+        if has_cyr and has_lat:
+            return False
+        return True
+
+    filtered_final = {}
+    for key, data in final.items():
+        if not is_valid_lemma(data["lemma"]):
+            continue
+        filtered_final[key] = data
+    final = filtered_final
+
+    # 5.3. v0.4.2: MERGE declined forms of same multi-word CONCEPT/ORG/LOC.
+    # До этого шага "Голос мир" + "Голоса мир" + "Голосом мир" — это три
+    # разные CONCEPT-сущности. Сливаем их в одну.
+    # lemmatize_word уже определена выше (в 5.1)
+
+    def make_merge_key(lemma: str, label: str) -> tuple:
+        """Для multi-word CONCEPT/ORG/LOC — ключ с лемматизированными словами.
+        Для single-word — как есть."""
+        if " " not in lemma.strip():
+            return (lemma.lower(), label)
+        words = lemma.split()
+        # Лемматизируем каждое слово
+        lemmatized = [lemmatize_word(w) for w in words]
+        return (" ".join(lemmatized), label)
+
+    # Группируем multi-word CONCEPT/ORG/LOC по merge-ключу
+    merged_final = {}
+    for key, data in final.items():
+        lemma, label = key
+        mk = make_merge_key(lemma, label)
+        if mk in merged_final:
+            existing = merged_final[mk]
+            # Сохраняем кратчайшую исходную форму как canonical lemma
+            if len(lemma) < len(existing["lemma"]):
+                existing["lemma"] = lemma
+            existing["forms"].update(data["forms"])
+            existing["count"] += data["count"]
+            existing["mentions"].extend(data["mentions"])
+        else:
+            merged_final[mk] = dict(data)
+    final = merged_final
+
+    # 5.4. Фильтр: минимум 3 упоминания (одиночные и двойные — шум)
+    MIN_COUNT = 3
+
+    # 5.5. v0.4.2: Post-process ORG — reject adjective+noun ORGs and Latin-only noise.
+    # Применяем ЛЕММАТИЗИРОВАННОЕ первое слово для ORG тоже.
+    REJECT_ORG_FIRST_WORD_LEMMAS = {
+        # Прилагательные (не организация)
+        "мёртвый", "мертвый", "платиновый", "золотой", "серебряный",
+        "платный", "бесплатный", "открытый", "закрытый",
+        "высший", "низший", "верхний", "нижний",
+        "великий", "малый", "большой",
+        "старый", "новый", "древний",
+        "мнемарский", "имперский", "королевский",
+        "триадный", "драконий",
+        # Числительные
+        "первый", "второй", "третий", "четвёртый", "пятый", "шестой",
+        "один", "два", "три", "четыре", "пять",
+        # Английские шумовые ORG-имена (UI labels, не настоящие организации)
+        # — обрабатываются ниже через has_cyr проверку
+    }
+
+    def is_latin_only(s: str) -> bool:
+        """True если строка содержит ТОЛЬКО латиницу (хотя бы одну букву)."""
+        has_lat = bool(re.search(r"[A-Za-z]", s))
+        has_cyr = bool(re.search(r"[А-ЯЁа-яё]", s))
+        return has_lat and not has_cyr
+
+    org_filtered = {}
+    for key, data in final.items():
+        lemma, label = key
+        if label == "ORG":
+            # Reject Latin-only ORGs (Force Close, Root, McWeeny, Instruments)
+            # — почти всегда UI labels или tech terms, не реальные организации
+            if is_latin_only(lemma):
+                continue
+            # Reject adjective+noun ORGs ("Мёртвый актив", "Платиновый голод")
+            words = lemma.split()
+            if words:
+                first_word_lemma_org = lemmatize_word(words[0])
+                if first_word_lemma_org in REJECT_ORG_FIRST_WORD_LEMMAS:
+                    continue
+            # Reject если count < 5 для ORG (строже чем PER)
+            if data["count"] < 5:
+                continue
+        org_filtered[key] = data
+    final = org_filtered
+
+    # 5.6. v0.4.2: Post-process LOC — reject numeral+noun LOCs ("Сектор Четыре")
+    loc_filtered = {}
+    for key, data in final.items():
+        lemma, label = key
+        if label in ("LOC", "GPE") and " " in lemma.strip():
+            words = lemma.split()
+            if len(words) >= 2:
+                second_word_lemma = lemmatize_word(words[1])
+                # Если второе слово — числительное, reject
+                if second_word_lemma in {"один", "два", "три", "четыре", "пять",
+                                          "шесть", "семь", "восемь", "девять"}:
+                    continue
+        loc_filtered[key] = data
+    final = loc_filtered
+
     entities = []
     for data in final.values():
         if data["count"] < MIN_COUNT:

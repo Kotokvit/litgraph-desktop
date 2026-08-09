@@ -8,6 +8,7 @@ pub mod locations;
 pub mod epsilon;
 
 use crate::models::{LitEdge, LitNode, LitNodeData, ParseResult, ParseStats, Position};
+use std::collections::HashMap;
 use chrono::Utc;
 use std::collections::HashSet;
 use thiserror::Error;
@@ -53,17 +54,37 @@ pub fn build_graph(
     // персонажа. Имена персонажей в косвенных падежах часто матчатся
     // локациями через «к Алексея», «от Марты» и т.д.
     // Используем грубую лемматизацию по окончаниям (без pymorphy2).
+    //
+    // v0.4.2: Добавляем в char_lemmas ВСЕ алиасы (включая падежные формы
+    // коротких имён: «рэя»→«рэй», «жору»→«жора», etc.). Раньше «Рэя»
+    // оставалось в локациях, хотя это genitive от персонажа «Рэй».
+    let alias_map: HashMap<String, String> = ALIASES
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
     let char_lemmas: std::collections::HashSet<String> = characters
         .iter()
         .flat_map(|c| {
             let mut l = vec![lemmatize_simple(&c.name)];
             l.extend(c.aliases.iter().map(|a| lemmatize_simple(a)));
+            // v0.4.2: Добавляем все alias keys которые маппят к этому персонажу
+            let canonical_lemma = lemmatize_simple(&c.name);
+            for (alias_key, alias_target) in &alias_map {
+                if lemmatize_simple(alias_target) == canonical_lemma {
+                    l.push(alias_key.clone());
+                }
+            }
             l
         })
         .collect();
     let locations: Vec<locations::ParsedLocation> = locations
         .into_iter()
-        .filter(|l| !char_lemmas.contains(&lemmatize_simple(&l.name)))
+        .filter(|l| {
+            let loc_lemma = lemmatize_simple(&l.name);
+            let loc_lower = l.name.to_lowercase();
+            // Проверяем и lemma, и оригинальную lowercase форму
+            !char_lemmas.contains(&loc_lemma) && !char_lemmas.contains(&loc_lower)
+        })
         .collect();
 
     let mut nodes: Vec<LitNode> = Vec::new();
@@ -583,6 +604,22 @@ pub const ALIASES: &[(&str, &str)] = &[
     ("петя", "пётр"),
     ("петенька", "пётр"),
     ("петюня", "пётр"),
+    // v0.4.2: Короткие имена с падежными формами (≤4 символов —
+    // lemmatize_simple не справляется, нужны явные алиасы).
+    // Рэя / Рэю / Рэем → Рэй (главный герой «1-Сфера Предела»)
+    ("рэя", "рэй"),
+    ("рэю", "рэй"),
+    ("рэем", "рэй"),
+    ("рэю", "рэй"),
+    // Жора / Жору / Жорой → Жора (каноническая форма)
+    ("жору", "жора"),
+    ("жорой", "жора"),
+    // Паша / Пашу / Пашей → Паша
+    ("пашу", "паша"),
+    ("пашей", "паша"),
+    // Сёма / Сёму / Сёмой → Сёма
+    ("сёму", "сёма"),
+    ("сёмой", "сёма"),
 ];
 
 /// v0.4.0: Применить таблицу алиасов к списку персонажей.

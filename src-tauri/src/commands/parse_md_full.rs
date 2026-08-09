@@ -113,6 +113,50 @@ fn run_ner_safe(text: &str) -> Option<NerResult> {
     }
 }
 
+/// v0.4.2: Hard filter для NER entities — отбрасывает мусор до merge.
+///
+/// Критерии reject:
+///   1. lemma содержит \n, \r, \t (многострочный шум)
+///   2. lemma начинается с lowercase буквы
+///   3. lemma содержит одновременно кириллицу И латиницу ("Root-Оператор")
+///   4. lemma содержит цифры или спецсимволы (кроме дефиса и апострофа)
+///   5. count < MIN_NER_COUNT (3 для PER, 5 для ORG)
+fn is_valid_ner_entity(lemma: &str, label: &str, count: u32) -> bool {
+    if lemma.is_empty() {
+        return false;
+    }
+    // 1. Newlines
+    if lemma.contains('\n') || lemma.contains('\r') || lemma.contains('\t') {
+        return false;
+    }
+    // 2. First char must be uppercase letter
+    let first_char = lemma.chars().next().unwrap();
+    if !first_char.is_alphabetic() || !first_char.is_uppercase() {
+        return false;
+    }
+    // 3. Mix of Cyrillic and Latin → reject
+    let has_cyr = lemma.chars().any(|c| ('а'..='я').contains(&c) || ('А'..='Я').contains(&c) || c == 'ё' || c == 'Ё');
+    let has_lat = lemma.chars().any(|c| ('a'..='z').contains(&c) || ('A'..='Z').contains(&c));
+    if has_cyr && has_lat {
+        return false;
+    }
+    // 4. Only letters, spaces, hyphens, apostrophes
+    if !lemma.chars().all(|c| c.is_alphabetic() || c == ' ' || c == '-' || c == '\'' || c == '\u{2019}') {
+        return false;
+    }
+    // 5. Min count
+    let min_count = match label {
+        "PER" => 3,
+        "ORG" => 5,
+        "LOC" | "GPE" => 2,
+        _ => 5,
+    };
+    if count < min_count {
+        return false;
+    }
+    true
+}
+
 /// Merge NER-сущностей в ParseResult.
 ///
 /// Стратегия:
@@ -148,6 +192,10 @@ fn merge_ner_into_parse_result(
 
     // Проходим по всем NER-сущностям
     for entity in &ner.entities {
+        // v0.4.2: Hard filter — отбрасываем мусор до обработки
+        if !is_valid_ner_entity(&entity.lemma, &entity.label, entity.count) {
+            continue;
+        }
         match entity.label.as_str() {
             "PER" => {
                 let lemma_lower = entity.lemma.to_lowercase();

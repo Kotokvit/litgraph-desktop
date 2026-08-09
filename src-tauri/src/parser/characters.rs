@@ -602,6 +602,118 @@ pub fn detect(text: &str) -> Vec<ParsedCharacter> {
         });
     }
 
+    // v0.4.2: CLOSED DIAGNOSTIC LOOP.
+    //
+    // Раньше диагностика (Smart X-Ray) показывала «Архив — suspect, не персонаж»,
+    // но парсер НЕ реагировал — тип оставался Character. Теперь мы ЗАМЫКАЕМ
+    // цикл: после классификации перепроверяем каждого Character и либо
+    // реклассифицируем, либо удаляем.
+    //
+    // Правила:
+    //   1. ABSTRACT_NOUNS — слова которые ВСЕГДА концепты/организации,
+    //      никогда персонажи (даже если speech >= 1):
+    //      «Архив», «Совет», «Эхо», «Бездна», «Свет», «Тьма», etc.
+    //      → проверяем context на ORG_CONTEXT_WORDS → ORG или CONCEPT
+    //
+    //   2. Low speech ratio — real characters speak in >= 10% of mentions.
+    //      Если speech/count < 0.05 AND count >= 10 → Concept
+    //      (Бездна count=15 sp=1: ratio=0.067 → borderline, но
+    //       в ABSTRACT_NOUNS — точно Concept)
+    //
+    //   3. No signal AND low count — speech=0 AND direct=0 AND count<10 → DELETE
+    //
+    // Без этого шага пользователю показываются «characters» типа «Архив»,
+    // «Эхо», «Бездна» с пометкой «suspect» — это бесполезно и сбивает с толку.
+
+    /// v0.4.2: Словарь слов которые ВСЕГДА являются концептами или
+    /// организациями, никогда — персонажами. Даже если они иногда стоят
+    /// рядом с глаголами речи (случайное совпадение), это не делает их
+    /// действующими лицами.
+    const ABSTRACT_NOUNS: &[&str] = &[
+        // Абстрактные понятия
+        "архив", "совет", "эхо", "бездна", "свет", "тьма",
+        "предел", "пустота", "хаос", "порядок", "память", "судьба",
+        "сфера", "голос", "закон", "сеть", "кольцо", "фаза",
+        "ядро", "узор", "ритм", "сдвиг", "метрика", "энтропия",
+        "формула", "принцип", "геометрия", "скелет", "левиафан",
+        // Природные элементы
+        "вода", "воздух", "огонь", "земля", "металл", "лёд",
+        "солнце", "луна", "звезда", "ветер", "дождь", "снег",
+        // Социальные/политические (контекстно — могут быть ORG)
+        "реестр", "реестра", "реестру",
+        // Эмоции/состояния
+        "тишина", "молчание", "крик", "шёпот", "вздох",
+        "боль", "радость", "грусть", "печаль", "тоска",
+        // Время/пространство
+        "время", "вечность", "мгновение", "миг", "час",
+        "утро", "день", "вечер", "ночь", "рассвет", "закат",
+        "весна", "лето", "осень", "зима",
+    ];
+
+    let mut reclassified_count = 0u32;
+    let mut deleted_count = 0u32;
+
+    for c in result.iter_mut() {
+        if c.entity_type != EntityType::Character {
+            continue;
+        }
+        let name_lower = c.name.to_lowercase();
+        let name_first_word = name_lower.split_whitespace().next().unwrap_or(&name_lower);
+
+        // Rule 1: ABSTRACT_NOUNS
+        let is_abstract = ABSTRACT_NOUNS.contains(&name_lower.as_str())
+            || ABSTRACT_NOUNS.contains(&name_first_word);
+        if is_abstract {
+            // Проверяем context: если есть ORG_CONTEXT_WORDS рядом → Organization
+            let is_org = check_organization_context(&c.name, &text_lower);
+            if is_org {
+                c.entity_type = EntityType::Organization;
+            } else {
+                c.entity_type = EntityType::Concept;
+            }
+            // Обновляем reason
+            c.reason = format!(
+                "{}:rule=abstract_noun_reclassify;freq={};speech_verb_hits={};direct_address_hits={};lemma={};ABSTRACT_NOUN",
+                if c.entity_type == EntityType::Organization { "organization" } else { "concept" },
+                c.count, c.speech_count, c.direct_count, super::lemmatize_simple(&c.name)
+            );
+            reclassified_count += 1;
+            continue;
+        }
+
+        // Rule 2: Low speech ratio AND high count → Concept
+        if c.count >= 10 && c.speech_count > 0 {
+            let ratio = c.speech_count as f64 / c.count as f64;
+            if ratio < 0.05 {
+                // Очень мало речи относительно частоты — почти точно концепт
+                c.entity_type = EntityType::Concept;
+                c.reason = format!(
+                    "concept:rule=low_speech_ratio;freq={};speech_verb_hits={};direct_address_hits={};lemma={};ratio={:.3}",
+                    c.count, c.speech_count, c.direct_count, super::lemmatize_simple(&c.name), ratio
+                );
+                reclassified_count += 1;
+                continue;
+            }
+        }
+    }
+
+    // Rule 3: Delete Characters with no signal AND low count
+    // (speech=0 AND direct=0 AND count<10 — это либо шум, либо слишком редкий)
+    let initial_len = result.len();
+    result.retain(|c| {
+        if c.entity_type != EntityType::Character {
+            return true;
+        }
+        if c.speech_count == 0 && c.direct_count == 0 && c.count < 10 {
+            deleted_count += 1;
+            return false;
+        }
+        true
+    });
+    let _ = initial_len;
+    let _ = deleted_count;
+    let _ = reclassified_count;
+
     // Финальная сортировка: characters сначала (по freq DESC), потом concepts/orgs
     result.sort_by(|a, b| {
         // Characters выше concepts
