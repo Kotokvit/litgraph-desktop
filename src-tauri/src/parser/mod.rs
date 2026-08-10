@@ -2010,6 +2010,9 @@ pub const RU_UK_COGNATE_PAIRS: &[(&str, &str)] = &[
 /// assert_eq!(find_cognate_pair("xyz"), None);
 /// ```
 pub fn find_cognate_pair(word: &str) -> Option<&'static str> {
+    if let Some((target, _, _)) = crate::dict::cognate::normalize_token(word) {
+        return Some(target);
+    }
     let w = word.trim().to_lowercase();
     if w.is_empty() {
         return None;
@@ -2031,6 +2034,9 @@ pub fn is_ru_known_name(word: &str) -> bool {
     if w.is_empty() {
         return false;
     }
+    if crate::dict::cognate::normalize_token(&w).is_some() {
+        return true;
+    }
     RU_UK_COGNATE_PAIRS
         .iter()
         .any(|(ru, _)| ru.to_lowercase() == w)
@@ -2041,6 +2047,9 @@ pub fn is_uk_known_name(word: &str) -> bool {
     let w = word.trim().to_lowercase();
     if w.is_empty() {
         return false;
+    }
+    if crate::dict::cognate::normalize_token(&w).is_some() {
+        return true;
     }
     RU_UK_COGNATE_PAIRS
         .iter()
@@ -2099,6 +2108,46 @@ pub fn is_ru_human_quality(word: &str) -> bool {
 /// Проверяет, является ли слово вводным (RU).
 pub fn is_ru_vvodnoe(word: &str) -> bool {
     crate::linguistic_entities::is_ru_vvodnoe(word)
+}
+
+/// Проверяет, является ли слово днём недели (UK).
+pub fn is_uk_weekday(word: &str) -> bool {
+    crate::ukrainian_semantic_categories::is_uk_weekday(word)
+}
+
+/// Проверяет, является ли слово месяцем (UK).
+pub fn is_uk_month(word: &str) -> bool {
+    crate::ukrainian_semantic_categories::is_uk_month(word)
+}
+
+/// Проверяет, является ли слово профессией (UK).
+pub fn is_uk_profession(word: &str) -> bool {
+    crate::ukrainian_semantic_categories::is_uk_profession(word)
+}
+
+/// Проверяет, является ли слово цветом (UK).
+pub fn is_uk_color(word: &str) -> bool {
+    crate::ukrainian_semantic_categories::is_uk_color(word)
+}
+
+/// Проверяет, является ли слово национальностью (UK).
+pub fn is_uk_nation(word: &str) -> bool {
+    crate::ukrainian_semantic_categories::is_uk_nation(word)
+}
+
+/// Проверяет, является ли слово качеством человека (UK).
+pub fn is_uk_human_quality(word: &str) -> bool {
+    crate::ukrainian_semantic_categories::is_uk_human_quality(word)
+}
+
+/// Проверяет, является ли слово вводным (UK).
+pub fn is_uk_vvodnoe(word: &str) -> bool {
+    crate::ukrainian_semantic_categories::is_uk_vvodnoe(word)
+}
+
+/// Ищет украинский пароним и возвращает нормализованную форму.
+pub fn ukrainian_paronym_correction(word: &str) -> Option<&'static str> {
+    crate::ukrainian_semantic_categories::ukrainian_paronym_correct(word)
 }
 
 /// Возвращает суммарное количество записей в таблицах замен.

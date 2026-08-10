@@ -2895,7 +2895,6 @@ pub const UKRAINIAN_CONJUNCTIONS_LOGIC: &[(&str, ConjunctionLogic)] = &[
     ("то...то", ConjunctionLogic::Xor),
     // Імплікація
     ("якщо", ConjunctionLogic::If),
-    ("коли", ConjunctionLogic::If),
     ("якби", ConjunctionLogic::If),
     ("аби", ConjunctionLogic::If),
     ("раз", ConjunctionLogic::If),

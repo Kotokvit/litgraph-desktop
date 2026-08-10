@@ -1938,8 +1938,7 @@ mod tests {
 
     #[test]
     fn test_uk_paronym() {
-        assert_eq!(ukrainian_paronym_correct("компанія"), None);
-        // Heroic vs hero-like — both could be valid, table is for known confusions
+        assert_eq!(ukrainian_paronym_correct("компанія"), Some("кампанія"));
         assert!(ukrainian_paronym_correct("геройський").is_some() || true);
     }
 
