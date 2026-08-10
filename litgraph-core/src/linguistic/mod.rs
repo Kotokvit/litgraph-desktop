@@ -26,3 +26,4 @@
 
 pub mod lemmatizer;
 pub mod pos_tagger;
+pub mod svo_parser;

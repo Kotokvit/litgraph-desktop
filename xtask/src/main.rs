@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 mod build_lemmatizer;
 mod build_pos_tables;
+mod build_svo_templates;
 
 #[derive(Debug, Clone)]
 struct RawCognate {
@@ -29,6 +30,11 @@ fn main() -> Result<()> {
                 let languagetool_dir = resources_path.join("languagetool");
                 let out_path = resources_path.join("derivatives/pos_rules.json.gz");
                 return build_pos_tables::run(&languagetool_dir, &out_path);
+            }
+            "build-svo-templates" => {
+                let ud_dir = resources_path.join("ud-ukrainian");
+                let out_path = resources_path.join("derivatives/svo_templates.json.gz");
+                return build_svo_templates::run(&ud_dir, &out_path);
             }
             _ => {}
         }

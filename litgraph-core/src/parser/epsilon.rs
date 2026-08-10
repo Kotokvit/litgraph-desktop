@@ -412,7 +412,14 @@ fn compute_epsilon_inner(
     // Компоненти формули
     let e_val = 1.5 * emotion_count as f64;
     let c_canon = 3.0 * canon_count as f64;
-    let a_svo = 2.0 * action_count as f64;
+
+    // Layer C SVO Triplet extraction & validation
+    let svo_triplets = crate::linguistic::svo_parser::SvoParser::new().parse_text(chapter_text);
+    let svo_validated_weight: f64 = svo_triplets
+        .iter()
+        .map(|t| if t.target.is_some() { 2.5 * t.confidence } else { 1.5 * t.confidence })
+        .sum();
+    let a_svo = (2.0 * action_count as f64) + svo_validated_weight;
 
     // Канонічна ε
     let epsilon = (kappa * i_kw * d + e_val + c_canon + a_svo) / len_norm;

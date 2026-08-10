@@ -14,3 +14,4 @@
 //! For full Layer A+B pipeline, use `litgraph-core`.
 
 pub mod pos_tagger;
+pub mod svo_parser;
