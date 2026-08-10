@@ -1495,6 +1495,732 @@ pub fn parse_text_fallback(
 
 // ============ Юнит-тесты ============
 
+
+
+// ════════════════════════════════════════════════════════════════
+//  Wave 8: LanguageTool-weights — Ukrainian verbs & declensions
+//  Автоматически сгенерировано из:
+//    /home/z/my-project/scripts/expand_linguistic_weights.py
+// ════════════════════════════════════════════════════════════════
+
+/// Множество позитивных украинских глаголов (мирные действия: помощь,
+/// любовь, созидание). Параллель к [`POSITIVE_VERBS`] для украинского языка.
+/// Источник: куррированный список на основе украинских грамматик
+/// (uk.wikipedia.org/wiki/Дієслово) и LanguageTool uk rules.
+pub const UKRAINIAN_POSITIVE_VERBS: &[&str] = &[
+    "любити",
+    "кохати",
+    "помогти",
+    "допомагати",
+    "допомогти",
+    "врятувати",
+    "рятувати",
+    "захистити",
+    "захищати",
+    "обійняти",
+    "обіймати",
+    "поцілувати",
+    "цілувати",
+    "подарувати",
+    "дарувати",
+    "втішити",
+    "тішити",
+    "пробачити",
+    "вибачати",
+    "вітати",
+    "похвалити",
+    "нагородити",
+    "благословити",
+    "вилікувати",
+    "лікувати",
+    "годувати",
+    "нагодувати",
+    "одягнути",
+    "вбрати",
+    "заспокоїти",
+    "тішити",
+    "радувати",
+    "зрадіти",
+    "захоплюватися",
+    "запрошувати",
+    "зустріти",
+    "зустрічати",
+    "провести",
+    "проводжати",
+    "навідати",
+    "навідувати",
+    "погодитися",
+    "підтримати",
+    "підтримувати",
+    "вірити",
+    "довіряти",
+    "співчувати",
+    "вислухати",
+    "почути",
+    "відповісти",
+    "сказати",
+    "мовити",
+    "благати",
+    "молити",
+];
+
+/// Множество негативных украинских глаголов (насилие, ложь, разрушение).
+/// Параллель к [`NEGATIVE_VERBS`] для украинского языка.
+pub const UKRAINIAN_NEGATIVE_VERBS: &[&str] = &[
+    "вбити",
+    "убивати",
+    "вбивати",
+    "стратити",
+    "катувати",
+    "ударити",
+    "бити",
+    "побити",
+    "поранити",
+    "образити",
+    "образжати",
+    "провинути",
+    "зрадити",
+    "зраджувати",
+    "обдурити",
+    "ошукати",
+    "брехати",
+    "злгати",
+    "вкрасти",
+    "красти",
+    "зруйнувати",
+    "руйнувати",
+    "спалити",
+    "підпалити",
+    "відібрати",
+    "прогнати",
+    "женити",
+    "покарати",
+    "карати",
+    "ненавидіти",
+    "зневажати",
+    "проклясти",
+    "проклинати",
+    "погрожувати",
+    "напасти",
+    "атакувати",
+    "воювати",
+    "боротися",
+    "заборонити",
+    "забороняти",
+    "замкнути",
+    "зачинити",
+    "арештувати",
+    "судити",
+    "засудити",
+    "відштовхнути",
+    "штовхати",
+    "плакати",
+    "страждати",
+    "змінити",
+    "зраджувати",
+    "спокусити",
+    "підкупити",
+    "шантажувати",
+    "тиснути",
+    "підозрювати",
+    "звинуватити",
+    "звинувачувати",
+];
+
+/// Множество нейтральных украинских глаголов (движение, коммуникация).
+/// Параллель к [`NEUTRAL_VERBS`] для украинского языка.
+pub const UKRAINIAN_NEUTRAL_VERBS: &[&str] = &[
+    "піти",
+    "ітти",
+    "прийти",
+    "приходити",
+    "піти",
+    "відійти",
+    "виходити",
+    "вийти",
+    "заходити",
+    "входити",
+    "поехати",
+    "їхати",
+    "приїхати",
+    "поїхати",
+    "стояти",
+    "сидіти",
+    "лежати",
+    "встати",
+    "вставати",
+    "опуститися",
+    "подивитися",
+    "дивитися",
+    "побачити",
+    "бачити",
+    "знайти",
+    "шукати",
+    "взяти",
+    "дати",
+    "отримати",
+    "передати",
+    "принести",
+    "занести",
+    "відчинити",
+    "зачинити",
+    "постукати",
+    "покликати",
+    "зателефонувати",
+    "написати",
+    "читати",
+    "прочитати",
+    "намалювати",
+    "зробити",
+    "почати",
+    "закінчити",
+    "продовжувати",
+    "зупинитися",
+    "повернутися",
+    "познайомитися",
+    "зустрітися",
+    "поговорити",
+    "спитати",
+    "питати",
+    "відповісти",
+    "згадати",
+    "забути",
+    "подумати",
+    "зрозуміти",
+    "впізнати",
+    "помітити",
+    "відчути",
+    "почути",
+    "понюхати",
+    "скуштувати",
+];
+
+/// Возвращает `true` если лемма входит в [`UKRAINIAN_POSITIVE_VERBS`].
+pub fn is_ukrainian_positive_verb(v: &str) -> bool {
+    UKRAINIAN_POSITIVE_VERBS.contains(&v)
+}
+
+/// Возвращает `true` если лемма входит в [`UKRAINIAN_NEGATIVE_VERBS`].
+pub fn is_ukrainian_negative_verb(v: &str) -> bool {
+    UKRAINIAN_NEGATIVE_VERBS.contains(&v)
+}
+
+/// Возвращает `true` если лемма входит в [`UKRAINIAN_NEUTRAL_VERBS`].
+pub fn is_ukrainian_neutral_verb(v: &str) -> bool {
+    UKRAINIAN_NEUTRAL_VERBS.contains(&v)
+}
+
+/// Преобразует лемму украинского глагола в [`Action`].
+///
+/// Параллель к [`verb_to_action`] для украинского языка. Алгоритм:
+/// 1. Явная таблица (украинские леммы, параллельные русским).
+/// 2. Полярность из множеств [`UKRAINIAN_POSITIVE_VERBS`] /
+///    [`UKRAINIAN_NEGATIVE_VERBS`] / [`UKRAINIAN_NEUTRAL_VERBS`].
+/// 3. Fallback на `Action::Custom { polarity: Neutral }`.
+pub fn verb_to_action_ukrainian(verb_lemma: &str, polarity: &str, negated: bool) -> Action {
+    let v = verb_lemma.trim().to_lowercase();
+    match v.as_str() {
+        // ── Фізичне насильство ──
+        "вбити" | "убивати" | "вбивати" | "стратити" | "катувати" => return Action::Kill,
+        "поранити" => return Action::Wound,
+        "ударити" | "бити" | "побити" => return Action::Hit,
+        "арештувати" => return Action::Capture,
+        "замкнути" | "зачинити" => return Action::Imprison,
+        "вилікувати" | "лікувати" => return Action::Heal,
+        // ── Переміщення ──
+        "піти" | "ітти" | "прийти" | "приходити" | "поехати" | "їхати" | "приїхати" => {
+            return Action::Arrive { destination: String::new() };
+        }
+        "відійти" | "виходити" | "вийти" | "поїхати" => {
+            return Action::Leave { source: String::new() };
+        }
+        // ── Комунікація ──
+        "сказати" | "відповісти" | "мовити" | "спитати" | "питати" => {
+            return Action::Speak { topic: None };
+        }
+        // ── Тактильний контакт ──
+        "обійняти" | "обіймати" | "поцілувати" | "цілувати" => return Action::Touch,
+        // ── Прощення ──
+        "пробачити" | "вибачати" => {
+            return Action::Custom { verb_lemma: "пробачити".to_string(), polarity: VerbPolarity::Positive };
+        }
+        // ── Зрада ──
+        "зрадити" | "зраджувати" => {
+            return Action::Betray { victim: String::new() };
+        }
+        // ── Брехня ──
+        "обдурити" | "ошукати" | "брехати" | "злгати" => {
+            return Action::Custom { verb_lemma: "брехати".to_string(), polarity: VerbPolarity::Negative };
+        }
+        // ── Крадіжка ──
+        "вкрасти" | "красти" => {
+            return Action::Custom { verb_lemma: "красти".to_string(), polarity: VerbPolarity::Negative };
+        }
+        // ── Шлюб ──
+        "одружитися" | "взяти шлюб" => {
+            return Action::Marry { partner: String::new() };
+        }
+        // ── Смерть / воскресіння ──
+        "померти" | "вмерти" | "погибнути" => return Action::Die,
+        "воскреснути" | "воскресати" | "ожити" => return Action::Resurrect,
+        // ── Когнітивні ──
+        "забути" => return Action::Forget { fact: String::new() },
+        "згадати" => return Action::Know { fact: String::new() },
+        // ── Емоційні ──
+        "покохати" | "кохати" => {
+            return Action::FallInLove { partner: String::new() };
+        }
+        "ненавидіти" => {
+            return Action::Hate { target: String::new() };
+        }
+        _ => {}
+    }
+
+    // 2) Множини
+    if is_ukrainian_positive_verb(&v) {
+        return Action::Custom { verb_lemma: v, polarity: VerbPolarity::Positive };
+    }
+    if is_ukrainian_negative_verb(&v) {
+        return Action::Custom { verb_lemma: v, polarity: VerbPolarity::Negative };
+    }
+    if is_ukrainian_neutral_verb(&v) {
+        return Action::Custom { verb_lemma: v, polarity: VerbPolarity::Neutral };
+    }
+
+    // 3) Fallback — polarity з триплета + flip if negated
+    let inferred = match polarity.trim().to_lowercase().as_str() {
+        "positive" | "pos" => VerbPolarity::Positive,
+        "negative" | "neg" => VerbPolarity::Negative,
+        _ => VerbPolarity::Neutral,
+    };
+    let final_polarity = if negated {
+        match inferred {
+            VerbPolarity::Positive => VerbPolarity::Negative,
+            VerbPolarity::Negative => VerbPolarity::Positive,
+            VerbPolarity::Neutral => VerbPolarity::Neutral,
+        }
+    } else { inferred };
+    Action::Custom { verb_lemma: v, polarity: final_polarity }
+}
+
+/// Генерирует падежные формы украинских имён собственных.
+///
+/// Параллель к [`generate_russian_declensions`] для украинского языка.
+/// Алгоритм: детерминированные правила по окончанию (lowercase).
+///
+/// # Поддерживаемые правила (украинские)
+///
+/// | Окончание | Пример | Генерируемые формы |
+/// |-----------|--------|-------------------|
+/// | -ія (ж.)  | Марія  | марії, марію, марією |
+/// | -а (ж.)   | Оксана | оксани, оксані, оксану, оксаною |
+/// | -я (ж./м.)| Катя   | каті, каті, катю, катею |
+/// | -й (м.)   | Андрій | андрія, андрію, андрієм, андріє |
+/// | -ь (м./ж.)| Олег   | олега, олегу, олегом, олезі |
+/// | согласна (м.) | Тарас | тараса, тарасу, тарасом, тарасі |
+pub fn generate_ukrainian_declensions(name: &str) -> Vec<String> {
+    let name_trim = name.trim();
+    if name_trim.is_empty() { return Vec::new(); }
+    let lc = name_trim.to_lowercase();
+    let chars: Vec<char> = lc.chars().collect();
+    let len = chars.len();
+    if len < 2 { return vec![lc]; }
+    let mut forms = Vec::new();
+    // 1. Жіночі імена на -ія (Марія → марії, марію, марією)
+    if lc.ends_with("ія") && len > 3 {
+        let stem: String = chars[..len - 2].iter().collect();
+        forms.push(format!("{}ії", stem));
+        forms.push(format!("{}ію", stem));
+        forms.push(format!("{}ією", stem));
+    }
+    // 2. Жіночі на -а (Оксана → оксани, оксані, оксану, оксаною)
+    else if lc.ends_with('а') {
+        let stem: String = chars[..len - 1].iter().collect();
+        forms.push(format!("{}и", stem));  // родовий
+        forms.push(format!("{}і", stem));  // давальний/місцевий
+        forms.push(format!("{}у", stem));  // знахідний
+        forms.push(format!("{}ою", stem));  // орудний
+    }
+    // 3. На -я (Катя → каті, катю, катею)
+    else if lc.ends_with('я') {
+        let stem: String = chars[..len - 1].iter().collect();
+        forms.push(format!("{}і", stem));
+        forms.push(format!("{}ю", stem));
+        forms.push(format!("{}ею", stem));
+    }
+    // 4. Чоловічі на -й (Андрій → андрія, андрію, андрієм, андріє)
+    else if lc.ends_with('й') {
+        let stem: String = chars[..len - 1].iter().collect();
+        forms.push(format!("{}я", stem));
+        forms.push(format!("{}ю", stem));
+        forms.push(format!("{}єм", stem));
+        forms.push(format!("{}ї", stem));
+    }
+    // 5. На -ь (Олег → олега, олегу, олегом, олезі)
+    else if lc.ends_with('ь') {
+        let stem: String = chars[..len - 1].iter().collect();
+        forms.push(format!("{}я", stem));
+        forms.push(format!("{}ю", stem));
+        forms.push(format!("{}ем", stem));
+        forms.push(format!("{}і", stem));
+    }
+    // 6. Чоловічі на твердую согласную (Тарас, Остап, Богдан)
+    else {
+        let last = chars[len - 1];
+        if "бвгджзклмнпрстфхцчшщ".contains(last) {
+            forms.push(format!("{}а", lc));  // родовий
+            forms.push(format!("{}у", lc));  // давальний
+            forms.push(format!("{}ом", lc));  // орудний
+            forms.push(format!("{}і", lc));  // місцевий
+            forms.push(format!("{}е", lc));  // кличний
+        }
+    }
+    forms.sort();
+    forms.dedup();
+    forms
+}
+
+/// Проверяет, является ли слово украинским служебным (займенником,
+/// сполучником, прийменником або вставним словом), которое нельзя
+/// использовать в качестве фантомного актёра.
+///
+/// Параллель к [`is_russian_stop_word`] для украинского языка.
+/// Список содержит ~120 самых частых стоп-слов украинского языка
+/// (полный список из 1982 слов доступен в `src-tauri/data/stopwords-uk.txt`).
+pub fn is_ukrainian_stop_word(word: &str) -> bool {
+    let lc = word.trim().to_lowercase();
+    matches!(lc.as_str(),
+        "він"
+        | "вона"
+        | "воно"
+        | "вони"
+        | "я"
+        | "ми"
+        | "ви"
+        | "ти"
+        | "його"
+        | "її"
+        | "їх"
+        | "мій"
+        | "моя"
+        | "моє"
+        | "наш"
+        | "наша"
+        | "наше"
+        | "твій"
+        | "твоя"
+        | "твоє"
+        | "ваш"
+        | "ваша"
+        | "ваше"
+        | "свій"
+        | "своя"
+        | "своє"
+        | "цей"
+        | "ця"
+        | "це"
+        | "ці"
+        | "той"
+        | "та"
+        | "те"
+        | "ті"
+        | "хто"
+        | "що"
+        | "який"
+        | "яка"
+        | "яке"
+        | "які"
+        | "чий"
+        | "чия"
+        | "чиє"
+        | "і"
+        | "й"
+        | "або"
+        | "ані"
+        | "але"
+        | "однак"
+        | "щоб"
+        | "бо"
+        | "тому"
+        | "як"
+        | "коли"
+        | "де"
+        | "куди"
+        | "звідки"
+        | "чому"
+        | "зачем"
+        | "якщо"
+        | "б"
+        | "би"
+        | "ніби"
+        | "мов"
+        | "нібито"
+        | "в"
+        | "у"
+        | "на"
+        | "з"
+        | "із"
+        | "зі"
+        | "від"
+        | "до"
+        | "к"
+        | "по"
+        | "за"
+        | "під"
+        | "над"
+        | "перед"
+        | "при"
+        | "про"
+        | "без"
+        | "для"
+        | "через"
+        | "між"
+        | "серед"
+        | "поруч"
+        | "біля"
+        | "навколо"
+        | "крізь"
+        | "крім"
+        | "замість"
+        | "не"
+        | "ні"
+        | "так"
+        | "аж"
+        | "навіть"
+        | "хай"
+        | "нехай"
+        | "ось"
+        | "от"
+        | "тож"
+        | "отже"
+        | "значить"
+        | "хіба"
+        | "невже"
+        | "чи"
+        | "бути"
+        | "був"
+        | "була"
+        | "було"
+        | "були"
+        | "буде"
+        | "будуть"
+        | "будемо"
+        | "є"
+        | "сть"
+        | "весь"
+        | "вся"
+        | "все"
+        | "всі"
+        | "всего"
+        | "всім"
+        | "увесь"
+        | "уся"
+        | "усе"
+        | "сам"
+        | "сама"
+        | "саме"
+        | "самі"
+        | "самий"
+        | "інший"
+        | "інша"
+        | "інше"
+        | "інші"
+        | "кожен"
+        | "кожна"
+        | "кожне"
+        | "кожні"
+        | "жоден"
+        | "жодна"
+        | "жодне"
+        | "один"
+        | "одна"
+        | "одне"
+        | "одні"
+        | "два"
+        | "дві"
+        | "три"
+        | "четверо"
+        | "перший"
+        | "другий"
+        | "третій"
+        | "останній"
+        | "тут"
+        | "там"
+        | "туди"
+        | "сюди"
+        | "відти"
+        | "звідси"
+        | "тоді"
+        | "зараз"
+        | "нині"
+        | "сьогодні"
+        | "вчора"
+        | "завтра"
+        | "завжди"
+        | "ніколи"
+        | "часто"
+        | "рідко"
+        | "іноді"
+        | "ще"
+        | "вже"
+    )
+}
+
+/// Таблица управления русских предлогов: (предлог, падеж, пример).
+///
+/// Используется для определения падежа следующего за предлогом
+/// слова. Например, после «без» — родительный падеж, после «к» —
+/// дательный. Это позволяет улучшить разрешение имён в косвенных
+/// падежах и фильтровать ложные совпадения.
+pub const RUSSIAN_PREPOSITION_CASES: &[(&str, &str, &str)] = &[
+    ("без", "genitive", "без друга"),
+    ("близ", "genitive", "близ дома"),
+    ("вместо", "genitive", "вместо меня"),
+    ("вне", "genitive", "вне дома"),
+    ("для", "genitive", "для брата"),
+    ("до", "genitive", "до города"),
+    ("из", "genitive", "из дома"),
+    ("из-за", "genitive", "из-за угла"),
+    ("из-под", "genitive", "из-под стола"),
+    ("кроме", "genitive", "кроме меня"),
+    ("между", "genitive", "между нами"),
+    ("около", "genitive", "около дома"),
+    ("от", "genitive", "от друга"),
+    ("против", "genitive", "против ветра"),
+    ("ради", "genitive", "ради друга"),
+    ("с", "genitive", "со стола"),
+    ("среди", "genitive", "среди друзей"),
+    ("у", "genitive", "у друга"),
+    ("благодаря", "dative", "благодаря другу"),
+    ("вопреки", "dative", "вопреки желанию"),
+    ("к", "dative", "к другу"),
+    ("навстречу", "dative", "навстречу ветру"),
+    ("наперекор", "dative", "наперекор судьбе"),
+    ("по", "dative", "по дороге"),
+    ("согласно", "dative", "согласно приказу"),
+    ("в", "accusative", "в лес"),
+    ("за", "accusative", "за друга"),
+    ("на", "accusative", "на стол"),
+    ("о", "accusative", "о камень"),
+    ("об", "accusative", "об угол"),
+    ("под", "accusative", "под стол"),
+    ("про", "accusative", "про друга"),
+    ("через", "accusative", "через дорогу"),
+    ("за", "instrumental", "за домом"),
+    ("между", "instrumental", "между друзьями"),
+    ("над", "instrumental", "над столом"),
+    ("перед", "instrumental", "перед домом"),
+    ("под", "instrumental", "под столом"),
+    ("с", "instrumental", "с другом"),
+    ("в", "prepositional", "в лесу"),
+    ("на", "prepositional", "на столе"),
+    ("о", "prepositional", "о друге"),
+    ("об", "prepositional", "об отце"),
+    ("при", "prepositional", "при друге"),
+];
+
+/// Возвращает падеж, управляемый русским предлогом, или `None`.
+///
+/// # Примеры
+///
+/// ```rust,ignore
+/// assert_eq!(russian_preposition_case("без"), Some("genitive"));
+/// assert_eq!(russian_preposition_case("к"), Some("dative"));
+/// assert_eq!(russian_preposition_case("xyz"), None);
+/// ```
+pub fn russian_preposition_case(prep: &str) -> Option<&'static str> {
+    let lc = prep.trim().to_lowercase();
+    RUSSIAN_PREPOSITION_CASES
+        .iter()
+        .find(|(p, _, _)| *p == lc)
+        .map(|(_, case, _)| *case)
+}
+
+// ─── Wrapper functions for crate::languagetool_weights ──────────
+
+/// Проверяет, содержит ли текст русскую тавтологию (по LT-правилам).
+/// Wrapper для `crate::languagetool_weights::find_russian_tautology`.
+pub fn find_russian_tautology_in_text(text: &str) -> Option<&'static str> {
+    crate::languagetool_weights::find_russian_tautology(text)
+}
+
+/// Проверяет, содержит ли текст украинский варваризм (по LT-правилам).
+pub fn find_ukrainian_barbarism_in_text(text: &str) -> Option<&'static str> {
+    crate::languagetool_weights::ukrainian_barbarism_fix(text)
+}
+
+/// Возвращает корректный русский вариант для паронима, или `None`.
+pub fn russian_paronym_correct(word: &str) -> Option<&'static str> {
+    crate::languagetool_weights::russian_paronym_correction(word)
+}
+
+/// Возвращает корректный вариант русской коллокации, или `None`.
+pub fn russian_collocation_correct(text: &str) -> Option<&'static str> {
+    crate::languagetool_weights::russian_collocation_fix(text)
+}
+
+/// Ищет первое сработавшее русское LT-правило в тексте.
+pub fn find_russian_grammar_violation(text: &str) -> Option<&'static crate::languagetool_weights::LexicalRule> {
+    crate::languagetool_weights::find_russian_lt_violation(text)
+}
+
+/// Ищет первое сработавшее украинское LT-правило в тексте.
+pub fn find_ukrainian_grammar_violation(text: &str) -> Option<&'static crate::languagetool_weights::LexicalRule> {
+    crate::languagetool_weights::find_ukrainian_lt_violation(text)
+}
+
+/// Дополнительные русские глаголы для расширения `verb_to_action`.
+/// Эти леммы добавлены на основе анализа LanguageTool grammar.xml
+/// (категория GRAMMAR) и дополнены вручную.
+///
+/// Карта: лемма → (Action-вариант, описание). Используется в
+/// `verb_to_action_extended()` как дополнение к базовой таблице.
+pub fn verb_to_action_extended(verb_lemma: &str) -> Option<Action> {
+    let v = verb_lemma.trim().to_lowercase();
+    match v.as_str() {
+        "задушить" => return Some(Action::Kill),
+        "отравить" => return Some(Action::Kill),
+        "утопить" => return Some(Action::Kill),
+        "казнить" => return Some(Action::Kill),
+        "расстрелять" => return Some(Action::Kill),
+        "повесить" => return Some(Action::Kill),
+        "зарезать" => return Some(Action::Kill),
+        "забить" => return Some(Action::Kill),
+        "замучить" => return Some(Action::Kill),
+        "уморить" => return Some(Action::Kill),
+        "покалечить" => return Some(Action::Wound),
+        "изувечить" => return Some(Action::Wound),
+        "поранить" => return Some(Action::Wound),
+        "царапнуть" => return Some(Action::Wound),
+        "шлёпнуть" => return Some(Action::Hit),
+        "стукнуть" => return Some(Action::Hit),
+        "пнуть" => return Some(Action::Hit),
+        "укусить" => return Some(Action::Hit),
+        "толкнуть" => return Some(Action::Hit),
+        "швырнуть" => return Some(Action::Hit),
+        "схватить" => return Some(Action::Capture),
+        "взять в плен" => return Some(Action::Capture),
+        "пленить" => return Some(Action::Capture),
+        "обручиться" => return Some(Action::Marry { partner: String::new() }),
+        "повенчаться" => return Some(Action::Marry { partner: String::new() }),
+        "влюбиться" => return Some(Action::FallInLove { partner: String::new() }),
+        "привязаться" => return Some(Action::FallInLove { partner: String::new() }),
+        "погибнуть" => return Some(Action::Die),
+        "скончаться" => return Some(Action::Die),
+        "умереть" => return Some(Action::Die),
+        "преставиться" => return Some(Action::Die),
+        "ожить" => return Some(Action::Resurrect),
+        "восстать" => return Some(Action::Resurrect),
+        "родиться" => return Some(Action::Custom { verb_lemma: v.clone(), polarity: VerbPolarity::Positive }),
+        "создать" => return Some(Action::Custom { verb_lemma: v.clone(), polarity: VerbPolarity::Positive }),
+        "построить" => return Some(Action::Custom { verb_lemma: v.clone(), polarity: VerbPolarity::Positive }),
+        "написать" => return Some(Action::Custom { verb_lemma: v.clone(), polarity: VerbPolarity::Neutral }),
+        "нарисовать" => return Some(Action::Custom { verb_lemma: v.clone(), polarity: VerbPolarity::Neutral }),
+        "сочинить" => return Some(Action::Custom { verb_lemma: v.clone(), polarity: VerbPolarity::Neutral }),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
