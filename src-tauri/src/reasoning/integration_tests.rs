@@ -323,7 +323,10 @@ fn test_eval_sfera_predela_full() {
     let legacy_report = legacy_cycle.run_cycle(legacy_events.clone());
 
     // 2. New Semantic IR (L1.5) Pipeline
-    let instructions = crate::reasoning::semantic_parser::parse_text_to_instructions(&text, &resolver, &chapters);
+    use crate::reasoning::semantic_parser::{
+        parse_text_to_instructions, SemanticPredicate,
+    };
+    let instructions = parse_text_to_instructions(&text, &resolver, &chapters);
     let mut ir_cycle = ReasoningCycle::from_project(&project);
     let full_ir_report = ir_cycle.run_cycle_with_instructions(instructions.clone());
     let ir_obs = &full_ir_report.ir_report;
