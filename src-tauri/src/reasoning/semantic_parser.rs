@@ -737,7 +737,7 @@ impl SemanticInstruction {
     ///
     /// Используется для приоритизации в inference queue.
     pub fn importance_weight(&self) -> f32 {
-        let base = match &self.predicate {
+        let base: f32 = match &self.predicate {
             SemanticPredicate::LethalHarm { .. } => 1.0,
             SemanticPredicate::CessationOfLife => 1.0,
             SemanticPredicate::Resurrection => 0.95,
@@ -749,10 +749,10 @@ impl SemanticInstruction {
             SemanticPredicate::Generic { .. } => 0.30,
         };
         // Penalize negated instructions (they're often less actionable).
-        let negation_penalty = if self.modifiers.is_negated { 0.10 } else { 0.0 };
+        let negation_penalty: f32 = if self.modifiers.is_negated { 0.10 } else { 0.0 };
         // Boost if both actor and target resolved in graph.
-        let resolution_boost = if self.has_resolved_target() { 0.05 } else { 0.0 };
-        (base - negation_penalty + resolution_boost).clamp(0.0, 1.0)
+        let resolution_boost: f32 = if self.has_resolved_target() { 0.05 } else { 0.0 };
+        (base - negation_penalty + resolution_boost).clamp(0.0f32, 1.0f32)
     }
 }
 
@@ -7427,6 +7427,6 @@ mod tests {
             false,
             100,
         );
-        assert!(neg.summary().contains("Generic{−,злится}"));
+        assert!(neg.summary().contains("Generic{−,злиться}"));
     }
 }
