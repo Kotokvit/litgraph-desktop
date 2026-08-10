@@ -94,9 +94,14 @@ pub async fn parse_md_full(params: ParseParams) -> Result<FullParseResult, Strin
 
 /// Запустить NER с graceful fallback.
 /// Если Python/spaCy недоступны — возвращаем None (не падляем).
+///
+/// Phase 1B: использует v2 (Natasha + pymorphy3) — копируется под именем
+/// ner_extract.py для совместимости. person.py — обязательная зависимость v2.
 fn run_ner_safe(text: &str) -> Option<NerResult> {
-    let script = include_str!("../../python/ner_extract.py");
-    match run_python_with_text_file(script, text, &[]) {
+    let script = include_str!("../../python/ner_extract_v2.py");
+    let person_script = include_str!("../../../scripts/dev/grammar/person.py");
+    let extra_files = vec![("person.py", person_script)];
+    match run_python_with_text_file(script, text, &extra_files) {
         Ok(stdout) => {
             match serde_json::from_str::<NerResult>(&stdout) {
                 Ok(result) => Some(result),

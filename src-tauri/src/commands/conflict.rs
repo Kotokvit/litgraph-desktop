@@ -119,12 +119,16 @@ pub async fn get_conflict_graph(text: String) -> Result<ConflictGraph, String> {
 
     let script = include_str!("../../python/conflict_graph.py");
     // conflict_graph.py импортирует svo_extract, который в свою очередь
-    // импортирует ner_extract — кладём все три файла рядом.
-    let ner_script = include_str!("../../python/ner_extract.py");
+    // импортирует ner_extract — кладём все файлы рядом.
+    // Phase 1B: v2 (ner_extract_v2.py) копируется под именем ner_extract.py
+    // (контракт имени модуля сохранён для conflict_graph.py и svo_extract.py).
+    let ner_script = include_str!("../../python/ner_extract_v2.py");
     let svo_script = include_str!("../../python/svo_extract.py");
+    let person_script = include_str!("../../../scripts/dev/grammar/person.py");
     let extra_files = vec![
-        ("ner_extract.py", ner_script),
+        ("ner_extract.py", ner_script),  // v2 под именем v1
         ("svo_extract.py", svo_script),
+        ("person.py", person_script),    // v2 зависит от person.py
     ];
     let stdout = run_python_with_text_file(script, &text, &extra_files)?;
 

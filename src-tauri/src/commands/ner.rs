@@ -1,20 +1,25 @@
 //! NER-извлечение сущностей через Python (Natasha + pymorphy3).
 //!
-//! v2.0 (commit после 6b78790): extract_entities переключён с v1 (spaCy +
-//! ~100-словный blacklist) на v2 (Natasha Slovnet NER + pymorphy3
-//! морфология). Точность детекции ФИО +60-133%. JSON-контракт сохранён.
+//! v2.0 / Phase 1B: ВСЕ три команды (extract_entities, analyze_characters,
+//! extract_svo) теперь используют v2 (Natasha Slovnet NER + pymorphy3).
+//! v1 ner_extract.py полностью удалён — v2 экспортирует совместимые
+//! символы (NLP, extract_entities, get_proper_lemma, FALSE_POSITIVE_NOUNS)
+//! через spaCy-compat shim, что позволяет poler_entities.py и svo_extract.py
+//! работать без изменений.
 //!
-//! v1 (ner_extract.py) остаётся как библиотека для SVO и POLER pipelines
-//! (analyze_characters, extract_svo) — они импортируют из v1 `NLP`,
-//! `get_proper_lemma`, `FALSE_POSITIVE_NOUNS`. Миграция в v2 — Phase 1B.
+//! ВАЖНО: svo_extract.py загружает spaCy `NLP` напрямую через `spacy.load()`
+//! для dependency parsing (token.children, token.dep_, token.head) — это
+//! осталось на spaCy, потому что Natasha не даёт эквивалентного API.
+//! Из ner_extract.py SVO берёт только extract_entities/get_proper_lemma/
+//! FALSE_POSITIVE_NOUNS — все три экспортируются из v2-shim.
 //!
-//! V1 (сохранено для истории): использовал временный файл для передачи
-//! текста (вместо stdin) — решает проблему "Канал оборвано (os error 32)"
-//! на больших текстах (>100k символов). Pipe buffer переполняется и
-//! write_all блокируется навсегда, если Python не успевает читать.
+//! V1 (история): использовал временный файл для передачи текста (вместо
+//! stdin) — решает проблему "Канал оборвано (os error 32)" на больших
+//! текстах (>100k символов).
 //!
 //! Установка:
-//!   pip install natasha pymorphy3
+//!   pip install natasha pymorphy3 spacy
+//!   python -m spacy download ru_core_news_sm    # только для extract_svo
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -175,10 +180,10 @@ pub(crate) fn run_python_with_text_file(
 /// Точность детекции ФИО +60-133% по сравнению с v1 (см. scripts/dev/grammar/person.py).
 /// JSON-контракт сохранён (NerResult struct не изменился).
 ///
-/// v1 (ner_extract.py) остаётся как библиотека для SVO и POLER pipelines,
-/// потому что svo_extract.py и poler_entities.py импортируют из него
-/// `NLP`, `get_proper_lemma`, `FALSE_POSITIVE_NOUNS` — их миграция в v2
-/// это Phase 1B.
+/// Phase 1B: v1 ner_extract.py полностью удалён. v2 экспортирует совместимые
+/// символы (NLP, extract_entities, get_proper_lemma, FALSE_POSITIVE_NOUNS)
+/// через spaCy-compat shim, что позволяет poler_entities.py и svo_extract.py
+/// работать без изменений.
 #[tauri::command]
 pub async fn extract_entities(text: String) -> Result<NerResult, String> {
     if text.trim().is_empty() {
@@ -207,10 +212,15 @@ pub async fn extract_entities(text: String) -> Result<NerResult, String> {
 /// Tauri команда: анализ графа персонажей (NER + POLER).
 ///
 /// Запускает poler_entities.py который:
-/// 1. Извлекает персонажей через spaCy NER
+/// 1. Извлекает персонажей через v2 NER (Natasha)
 /// 2. Строит граф co-occurrence
 /// 3. Запускает POLER-динамику
 /// 4. Возвращает кластеры персонажей
+///
+/// Phase 1B: вместо v1 ner_extract.py используем v2 (ner_extract_v2.py),
+/// который копируется в temp dir под именем 'ner_extract.py' (контракт
+/// имени модуля сохранён для poler_entities.py).
+/// v2 экспортирует NLP, extract_entities через spaCy-compat shim.
 #[tauri::command]
 pub async fn analyze_characters(text: String) -> Result<serde_json::Value, String> {
     if text.trim().is_empty() {
@@ -218,12 +228,15 @@ pub async fn analyze_characters(text: String) -> Result<serde_json::Value, Strin
     }
 
     let script = include_str!("../../python/poler_entities.py");
-    // poler_entities.py импортирует ner_extract И svo_extract — кладём все 3 файла
-    let ner_script = include_str!("../../python/ner_extract.py");
+    // v2 вместо v1: копируем ner_extract_v2.py под именем ner_extract.py
+    // (poler_entities.py делает `from ner_extract import extract_entities, NLP`)
+    let ner_script = include_str!("../../python/ner_extract_v2.py");
     let svo_script = include_str!("../../python/svo_extract.py");
+    let person_script = include_str!("../../../scripts/dev/grammar/person.py");
     let extra_files = vec![
-        ("ner_extract.py", ner_script),
+        ("ner_extract.py", ner_script),  // v2 под именем v1
         ("svo_extract.py", svo_script),
+        ("person.py", person_script),    // v2 зависит от person.py
     ];
     let stdout = run_python_with_text_file(script, &text, &extra_files)?;
 
@@ -236,6 +249,11 @@ pub async fn analyze_characters(text: String) -> Result<serde_json::Value, Strin
 /// Tauri команда: извлечь SVO (Subject-Verb-Object) из текста.
 /// Запускает svo_extract.py который через spaCy dependency parsing
 /// находит триплеты: кто -> что сделал -> с кем/чем.
+///
+/// Phase 1B: NLP (spaCy) остаётся для dependency parsing — Natasha не даёт
+/// эквивалентного API (token.children, token.dep_, token.head).
+/// Но extract_entities, get_proper_lemma, FALSE_POSITIVE_NOUNS теперь
+/// берутся из v2-shim (копируется под именем ner_extract.py).
 #[tauri::command]
 pub async fn extract_svo(text: String) -> Result<serde_json::Value, String> {
     if text.trim().is_empty() {
@@ -243,9 +261,13 @@ pub async fn extract_svo(text: String) -> Result<serde_json::Value, String> {
     }
 
     let script = include_str!("../../python/svo_extract.py");
-    // svo_extract.py импортирует ner_extract — кладём оба файла
-    let ner_script = include_str!("../../python/ner_extract.py");
-    let extra_files = vec![("ner_extract.py", ner_script)];
+    // v2 вместо v1: копируем ner_extract_v2.py под именем ner_extract.py
+    let ner_script = include_str!("../../python/ner_extract_v2.py");
+    let person_script = include_str!("../../../scripts/dev/grammar/person.py");
+    let extra_files = vec![
+        ("ner_extract.py", ner_script),  // v2 под именем v1
+        ("person.py", person_script),    // v2 зависит от person.py
+    ];
     let stdout = run_python_with_text_file(script, &text, &extra_files)?;
 
     let result: serde_json::Value = serde_json::from_str(&stdout)
