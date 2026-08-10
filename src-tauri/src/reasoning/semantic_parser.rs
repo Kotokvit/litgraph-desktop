@@ -63,7 +63,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::models::LitNode;
 use crate::parser::chapters::ParsedChapter;
-use crate::reasoning::facts::{Action, Event, EventId, Provenance, VerbPolarity};
+use crate::reasoning::facts::{Action, EntityId, Event, EventId, Provenance, VerbPolarity};
 use crate::reasoning::timeline::TemporalAnchor;
 
 // ============ SvoTriplet — зеркало Python JSON shape ============
@@ -129,6 +129,146 @@ pub struct SvoTriplet {
     /// маппинг в `Action` не влияет.
     #[serde(default)]
     pub pronoun_resolved: bool,
+}
+
+// ============ Semantic IR Layer (L1.5) ============
+
+/// Ссылка на сущность в промежуточном представлении (Semantic IR).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EntityRef {
+    /// Исходный токен из текста: «Алексею», «авіанальоту».
+    pub raw_token: String,
+    /// Нормализованный токен (после LanguageTool / Cognate mapping): «Алексей».
+    pub normalized_token: String,
+    /// Идентификатор сущности в графе (если найден `EntityResolver`'ом).
+    pub resolved_id: Option<EntityId>,
+    /// Тип применённой нормализации (Barbarism, Spelling, Grammar, Manual).
+    pub source_type: Option<crate::dict::cognate::SourceType>,
+}
+
+/// Абстрактный семантический предикат (категоризированное действие).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum SemanticPredicate {
+    /// Физическое устранение или летальный урон ("убить", "знищити").
+    LethalHarm { instrument: Option<String> },
+    /// Прекращение жизни ("умереть", "загинути").
+    CessationOfLife,
+    /// Возвращение к жизни ("воскреснуть", "ожити").
+    Resurrection,
+    /// Вербальная или символическая коммуникация ("сказать", "проговорити").
+    Communication { topic: Option<String> },
+    /// Пространственное перемещение ("пойти", "приехать").
+    SpatialTransition { destination: String, origin: Option<String> },
+    /// Когнитивное состояние или память ("узнать", "забыть").
+    CognitiveState { knowledge: String, is_forgotten: bool },
+    /// Социальная или брачная связь ("жениться", "одружитися").
+    SocialBind { relationship: String },
+    /// Несклассифицированный предикат с полярностью.
+    Generic { polarity: bool, raw_verb: String },
+}
+
+/// Семантические модификаторы (отрицание, время, временной анкор).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SemanticModifiers {
+    pub temporal_anchor: TemporalAnchor,
+    pub tense: String,
+    pub is_negated: bool,
+    pub pronoun_resolved: bool,
+}
+
+/// Семантическая инструкция (L1.5 IR) — промежуточный слой между NLP и Event/Fact.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SemanticInstruction {
+    pub actor_ref: EntityRef,
+    pub predicate: SemanticPredicate,
+    pub target_ref: Option<EntityRef>,
+    pub modifiers: SemanticModifiers,
+    pub confidence: f32,
+    pub source_text: String,
+}
+
+impl SemanticInstruction {
+    /// Понижение (lowering) IR-инструкции до доменного [`Event`].
+    pub fn lower_to_event(&self) -> Event {
+        let actor = self
+            .actor_ref
+            .resolved_id
+            .clone()
+            .unwrap_or_else(|| EntityId::from(self.actor_ref.normalized_token.as_str()));
+
+        let (action, target) = match &self.predicate {
+            SemanticPredicate::LethalHarm { .. } => {
+                let target = self.target_ref.as_ref().map(|t| {
+                    t.resolved_id
+                        .clone()
+                        .unwrap_or_else(|| EntityId::from(t.normalized_token.as_str()))
+                });
+                (Action::Kill, target)
+            }
+            SemanticPredicate::CessationOfLife => (Action::Die, None),
+            SemanticPredicate::Resurrection => (Action::Resurrect, None),
+            SemanticPredicate::Communication { topic } => (
+                Action::Speak {
+                    topic: topic.clone(),
+                },
+                None,
+            ),
+            SemanticPredicate::SpatialTransition { destination, .. } => (
+                Action::Move {
+                    destination: destination.clone(),
+                },
+                None,
+            ),
+            SemanticPredicate::CognitiveState { knowledge, is_forgotten: false } => (
+                Action::Know {
+                    fact: knowledge.clone(),
+                },
+                None,
+            ),
+            SemanticPredicate::CognitiveState { knowledge, is_forgotten: true } => (
+                Action::Forget {
+                    fact: knowledge.clone(),
+                },
+                None,
+            ),
+            SemanticPredicate::SocialBind { relationship: _ } => {
+                let partner = self
+                    .target_ref
+                    .as_ref()
+                    .map(|t| {
+                        t.resolved_id
+                            .as_ref()
+                            .map(|id| id.to_string())
+                            .unwrap_or_else(|| t.normalized_token.clone())
+                    })
+                    .unwrap_or_default();
+                (Action::Marry { partner }, None)
+            }
+            SemanticPredicate::Generic { polarity, raw_verb } => (
+                Action::Custom {
+                    polarity: if *polarity {
+                        VerbPolarity::Positive
+                    } else {
+                        VerbPolarity::Negative
+                    },
+                    verb_lemma: raw_verb.clone(),
+                },
+                None,
+            ),
+        };
+
+        Event {
+            id: EventId::default(),
+            actor,
+            action,
+            target,
+            instrument: None,
+            time: self.modifiers.temporal_anchor.clone(),
+            source_text: self.source_text.clone(),
+            confidence: self.confidence,
+            provenance: Provenance::SvoParser,
+        }
+    }
 }
 
 // ============ Лексикон глаголов: лемма → Action ============
@@ -1066,33 +1206,131 @@ fn extract_string_array(meta: &serde_json::Value, key: &str) -> Option<Vec<Strin
 ///
 /// `Vec<Event>` в том же порядке, что и входные триплеты. Пустой вход →
 /// пустой выход.
+/// Преобразует `SvoTriplet` в семантическую инструкцию (L1.5 IR).
+pub fn lower_svo_to_ir(
+    t: &SvoTriplet,
+    resolver: &EntityResolver,
+    chapters: &[ParsedChapter],
+) -> SemanticInstruction {
+    let time = anchor_from_position(t.position, chapters);
+
+    // Actor resolution & normalization
+    let (actor_norm, actor_source) = match crate::dict::cognate::normalize_token(&t.subject_lemma) {
+        Some((norm, _w, st)) => (norm.to_string(), Some(st)),
+        None => (t.subject_lemma.clone(), None),
+    };
+    let actor_resolved = resolver
+        .resolve(&actor_norm)
+        .or_else(|| resolver.resolve(&t.subject_lemma));
+    let actor_ref = EntityRef {
+        raw_token: t.subject.clone(),
+        normalized_token: actor_norm,
+        resolved_id: actor_resolved,
+        source_type: actor_source,
+    };
+
+    // Action & Predicate lowering
+    let raw_action = verb_to_action(&t.verb_lemma, &t.polarity, t.negated);
+    let action = populate_action_payload(raw_action, t, resolver);
+
+    let predicate = match &action {
+        Action::Kill => SemanticPredicate::LethalHarm { instrument: None },
+        Action::Die => SemanticPredicate::CessationOfLife,
+        Action::Resurrect => SemanticPredicate::Resurrection,
+        Action::Speak { topic } => SemanticPredicate::Communication {
+            topic: topic.clone(),
+        },
+        Action::Move { destination } => SemanticPredicate::SpatialTransition {
+            destination: destination.clone(),
+            origin: None,
+        },
+        Action::Know { fact } => SemanticPredicate::CognitiveState {
+            knowledge: fact.clone(),
+            is_forgotten: false,
+        },
+        Action::Forget { fact } => SemanticPredicate::CognitiveState {
+            knowledge: fact.clone(),
+            is_forgotten: true,
+        },
+        Action::Marry { partner } => SemanticPredicate::SocialBind {
+            relationship: partner.clone(),
+        },
+        Action::Custom { polarity, verb_lemma } => SemanticPredicate::Generic {
+            polarity: matches!(polarity, VerbPolarity::Positive),
+            raw_verb: verb_lemma.clone(),
+        },
+        _ => SemanticPredicate::Generic {
+            polarity: t.polarity == "positive",
+            raw_verb: t.verb_lemma.clone(),
+        },
+    };
+
+    // Target resolution & normalization
+    let target_ref = if !t.object_lemma.is_empty() {
+        let (target_norm, target_source) =
+            match crate::dict::cognate::normalize_token(&t.object_lemma) {
+                Some((norm, _w, st)) => (norm.to_string(), Some(st)),
+                None => (t.object_lemma.clone(), None),
+            };
+        let target_resolved = resolver
+            .resolve(&target_norm)
+            .or_else(|| resolver.resolve(&t.object_lemma));
+        Some(EntityRef {
+            raw_token: t.object.clone(),
+            normalized_token: target_norm,
+            resolved_id: target_resolved,
+            source_type: target_source,
+        })
+    } else {
+        None
+    };
+
+    // Dynamic confidence score calculation
+    let mut confidence = 0.9f32;
+    if let Some(ref st) = actor_ref.source_type {
+        if matches!(st, crate::dict::cognate::SourceType::Spelling) {
+            confidence *= 0.95;
+        } else if matches!(st, crate::dict::cognate::SourceType::Barbarism) {
+            confidence *= 0.90;
+        }
+    }
+
+    SemanticInstruction {
+        actor_ref,
+        predicate,
+        target_ref,
+        modifiers: SemanticModifiers {
+            temporal_anchor: time,
+            tense: t.tense.clone(),
+            is_negated: t.negated,
+            pronoun_resolved: t.pronoun_resolved,
+        },
+        confidence,
+        source_text: t.sentence.clone(),
+    }
+}
+
+/// Извлекает массив семантических инструкций (L1.5 IR) из SVO-триплетов.
+pub fn triplets_to_ir(
+    triplets: &[SvoTriplet],
+    resolver: &EntityResolver,
+    chapters: &[ParsedChapter],
+) -> Vec<SemanticInstruction> {
+    triplets
+        .iter()
+        .map(|t| lower_svo_to_ir(t, resolver, chapters))
+        .collect()
+}
+
+/// Превращает срез [`SvoTriplet`] в доменные события [`Event`] через IR-слой (L1.5).
 pub fn triplets_to_events(
     triplets: &[SvoTriplet],
     resolver: &EntityResolver,
     chapters: &[ParsedChapter],
 ) -> Vec<Event> {
-    triplets
-        .iter()
-        .map(|t| {
-            let time = anchor_from_position(t.position, chapters);
-            let raw_action = verb_to_action(&t.verb_lemma, &t.polarity, t.negated);
-            let action = populate_action_payload(raw_action, t, resolver);
-
-            let actor = resolver.resolve_or_keep(&t.subject_lemma);
-            let target = target_for_action(&action, &t.object_lemma, resolver);
-
-            Event {
-                id: EventId::default(), // 0 — назначается FactLog::record_event
-                actor,
-                action,
-                target,
-                instrument: None,
-                time,
-                source_text: t.sentence.clone(),
-                confidence: 0.9,
-                provenance: Provenance::SvoParser,
-            }
-        })
+    triplets_to_ir(triplets, resolver, chapters)
+        .into_iter()
+        .map(|ir| ir.lower_to_event())
         .collect()
 }
 
@@ -5945,5 +6183,82 @@ mod tests {
             "Expected >=50 UK preposition entries, got {}",
             UKRAINIAN_PREPOSITION_CASES.len()
         );
+    }
+
+    #[test]
+    fn test_semantic_ir_lowering_lethal_harm() {
+        let triplet = SvoTriplet {
+            subject: "Раскольников".to_string(),
+            subject_lemma: "Раскольников".to_string(),
+            subject_gender: Some("Masc".to_string()),
+            verb: "убил".to_string(),
+            verb_lemma: "убить".to_string(),
+            object: "Алёну".to_string(),
+            object_lemma: "Алёна".to_string(),
+            object_gender: Some("Fem".to_string()),
+            sentence: "Раскольников убил Алёну.".to_string(),
+            position: 100,
+            tense: "past".to_string(),
+            polarity: "negative".to_string(),
+            negated: false,
+            pronoun_resolved: false,
+        };
+
+        let resolver = EntityResolver::default();
+        let chapters = vec![ParsedChapter {
+            num: 1,
+            title: "Глава 1".to_string(),
+            body: String::new(),
+            full_text: String::new(),
+            pos: 0,
+            end: 500,
+        }];
+
+        let ir = lower_svo_to_ir(&triplet, &resolver, &chapters);
+        assert_eq!(ir.actor_ref.normalized_token, "Раскольников");
+        assert_eq!(
+            ir.predicate,
+            SemanticPredicate::LethalHarm { instrument: None }
+        );
+        assert_eq!(ir.target_ref.as_ref().unwrap().normalized_token, "Алёна");
+        assert_eq!(ir.confidence, 0.9);
+
+        let event = ir.lower_to_event();
+        assert_eq!(event.actor, EntityId::from("Раскольников"));
+        assert_eq!(event.action, Action::Kill);
+        assert_eq!(event.time.chapter_num, 1);
+    }
+
+    #[test]
+    fn test_semantic_ir_cognate_normalization_and_confidence() {
+        let triplet = SvoTriplet {
+            subject: "Олексій".to_string(),
+            subject_lemma: "олексій".to_string(),
+            subject_gender: Some("Masc".to_string()),
+            verb: "сказав".to_string(),
+            verb_lemma: "сказать".to_string(),
+            object: "".to_string(),
+            object_lemma: "".to_string(),
+            object_gender: None,
+            sentence: "Олексій сказав про правду.".to_string(),
+            position: 50,
+            tense: "past".to_string(),
+            polarity: "positive".to_string(),
+            negated: false,
+            pronoun_resolved: false,
+        };
+
+        let resolver = EntityResolver::default();
+        let chapters = vec![];
+
+        let ir = lower_svo_to_ir(&triplet, &resolver, &chapters);
+        // Manual cognate normalizes "олексій" -> "алексей"
+        assert_eq!(ir.actor_ref.normalized_token, "алексей");
+        assert_eq!(ir.actor_ref.source_type, Some(crate::dict::cognate::SourceType::Manual));
+        assert_eq!(ir.predicate, SemanticPredicate::Communication { topic: None });
+
+        let event = ir.lower_to_event();
+        assert_eq!(event.actor, EntityId::from("алексей"));
+        assert_eq!(event.action, Action::Speak { topic: None });
     }
 }
