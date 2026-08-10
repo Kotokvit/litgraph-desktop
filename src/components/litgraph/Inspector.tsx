@@ -11,12 +11,13 @@ import type { LitNode, LitEdge } from "@/lib/litgraph/types";
 import { useState } from "react";
 
 // ====== Инспектор ноды (keyed by id) ======
-function NodeInspector({ node }: { node: LitNode }) {
+function NodeInspector({ node, onFindInText }: { node: LitNode; onFindInText: (id: string) => void }) {
   const allNodes = useLitStore((s) => s.nodes);
   const allEdges = useLitStore((s) => s.edges);
   const setEditingNode = useLitStore((s) => s.setEditingNode);
   const deleteNode = useLitStore((s) => s.deleteNode);
   const duplicateNode = useLitStore((s) => s.duplicateNode);
+  const sourceMarkdown = useLitStore((s) => s.sourceMarkdown);
 
   const cfg = NODE_TYPES[node.type];
   const Icon = (Lucide as any)[cfg.icon] as Lucide.LucideIcon | undefined;
@@ -62,6 +63,20 @@ function NodeInspector({ node }: { node: LitNode }) {
             {node.data.body}
           </p>
         </div>
+      )}
+
+      {/* v0.5.0: Source Text Moments button — открывает диалог с фрагментами
+          исходного markdown, где упоминается сущность узла. */}
+      {sourceMarkdown.trim().length > 0 && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => onFindInText(node.id)}
+          className="w-full bg-violet-50 hover:bg-violet-100 border-violet-200 text-violet-700"
+        >
+          <Lucide.Search className="w-3.5 h-3.5 mr-1.5" />
+          Найти в тексте
+        </Button>
       )}
 
       {/* Tags */}
@@ -512,7 +527,7 @@ function BackgroundInspector() {
 }
 
 // ====== Главный инспектор: выбирает что показать ======
-export function Inspector() {
+export function Inspector({ onFindInText }: { onFindInText?: (id: string) => void }) {
   const selectedNodeId = useLitStore((s) => s.selectedNodeId);
   const selectedEdgeId = useLitStore((s) => s.selectedEdgeId);
   const node = useLitStore((s) =>
@@ -523,8 +538,12 @@ export function Inspector() {
   );
   const backgroundLayer = useLitStore((s) => s.backgroundLayer);
 
+  const handleFindInText = (id: string) => {
+    onFindInText?.(id);
+  };
+
   if (selectedNodeId && node) {
-    return <NodeInspector key={node.id} node={node} />;
+    return <NodeInspector key={node.id} node={node} onFindInText={handleFindInText} />;
   }
   if (selectedEdgeId && edge) {
     return <EdgeInspector key={edge.id} edge={edge} />;

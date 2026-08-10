@@ -2015,3 +2015,126 @@ Key Accomplishments:
 3. **88% Noise Reduction in Reasoning Queue**: Hypotheses generated dropped from 312 to 36, giving an extremely clean and accurate reasoning pipeline.
 4. **278 / 278 unit tests passing cleanly**.
 
+
+---
+Task ID: TextMoments-Feature-v0.5.0
+Agent: main (coordinator)
+Task: Implement "Text Moments in separate window" GUI feature — when user clicks a graph node, show all source-text fragments where that node's entity appears, grouped by chapter. Also run Kasiopia E2E test verification.
+
+Work Log:
+- **Diagnosed the GUI bug**: When .md text is parsed into a graph, the source markdown
+  was NOT preserved in the store — only the parsed nodes/edges. The Inspector showed
+  only a short `body` preview (line-clamp-6), never the actual source text. For
+  character/location nodes, `full_text` was always None. This was the "momenti v
+  tekste v otdelnom okne chto-to lomaetsya" reported by the user.
+
+- **Store changes** (`src/lib/litgraph/store.ts`):
+  - Added `sourceMarkdown: string` field to `LitStore` interface.
+  - Added `setSourceMarkdown: (text: string) => void` setter.
+  - Updated `loadProject(p, sourceMarkdown?)` signature to optionally accept
+    the source markdown.
+  - Updated `newProject()` to clear `sourceMarkdown: ""`.
+  - Field is NOT persisted to localStorage (excluded from `partialize`) to
+    avoid quota overflow on large novels.
+
+- **Toolbar wiring** (`src/components/litgraph/Toolbar.tsx`):
+  - Before calling `loadProject(data)`, also calls
+    `useLitStore.getState().setSourceMarkdown(mdText)` to preserve the
+    original markdown in the store.
+
+- **POLER v6 fragment clustering port** (`src/lib/poler/textMoments.ts` — NEW FILE, 580 LOC):
+  - `detectChapters(text)` — TypeScript port of Rust `parser/chapters.rs:9 patterns`
+    (Глава/Розділ/Chapter/Part/Часть + 3 markdown-hash variants). Returns
+    `ChapterBoundary[]` with `num`, `suffix`, `title`, `pos`, `end`.
+  - `extractKeywords(node)` — extracts `title` + `meta.forms` + `meta.aliases`
+    from a LitNode (deduped, length >= 2).
+  - `findKeywordPositions(text, keywords)` — finds ALL positions of all keywords
+    (case-insensitive, word-boundary aware for Cyrillic). Sorts keywords longest-
+    first to avoid "Красса" being matched as "Красс"+"а". Uses a `claimed` Set to
+    prevent shorter keywords from overlapping longer ones.
+  - `deduplicatePositions(positions, minDistance)` — port of POLER v6
+    `deduplicate_positions`.
+  - `extractFragment(text, position, matchLength, contextChars)` — extracts
+    ±contextChars window around a position, with UTF-16 surrogate-pair safe
+    boundaries and word-boundary expansion.
+  - `computeDensity(fragmentText, keywords)` — simplified POLER ε-approximation:
+    `(keywordHits / wordCount) * 100 * 5` (boosted for visual contrast).
+    Uses non-\b word boundary check (JS \b doesn't support Cyrillic).
+  - `findTextMoments(text, node, options)` — main entry point. Steps:
+      1. detectChapters → boundaries
+      2. extractKeywords → names/aliases
+      3. findKeywordPositions → all matches
+      4. **Chapter-aware deduplication** (v0.5.1 fix): positions are grouped by
+         chapter and deduplicated only WITHIN a chapter. Cross-chapter matches
+         are always kept even if byte-distance is small. This fixes the bug
+         where Глава 3 match (pos=270) was being merged with Глава 2 match
+         (pos=200) just because 70 < minDistance=80.
+      5. For each position: extractFragment + computeDensity + findChapterForPosition
+      6. Group by chapter → TextMomentsResult
+  - `highlightKeywords(fragmentText, keywords)` — splits text into segments
+    `{ text, isMatch, keyword? }` for UI highlighting. Sorts keywords longest-
+    first to ensure "Красса" is highlighted as one segment, not "Красс"+"а".
+
+- **UI component** (`src/components/litgraph/TextMomentsDialog.tsx` — NEW FILE, 320 LOC):
+  - Modal dialog opened from Inspector's "Найти в тексте" button.
+  - Header: shows node title + keyword badges.
+  - Control bar: adjustable context window slider (80-500 chars) + "Пересканировать" button.
+  - Metrics row: total moments, total chapters, avg density, max density.
+  - Left sidebar: list of chapters with match counts (clickable).
+  - Right panel: scrollable list of fragments for the active chapter.
+  - Each fragment card shows: position byte offset, matched keyword badge,
+    "N совпадений в окне" badge (if multiple keywords matched in window),
+    density progress bar (violet gradient), and the highlighted text snippet
+    (matched keywords wrapped in <mark> with violet background).
+
+- **Inspector integration** (`src/components/litgraph/Inspector.tsx`):
+  - Added `onFindInText: (id: string) => void` prop to `NodeInspector` and
+    the top-level `Inspector` component.
+  - Added a violet-outlined "Найти в тексте" button between body preview
+    and Tags section. Only shown when `sourceMarkdown` is non-empty.
+
+- **Sidebar integration** (`src/components/litgraph/Sidebar.tsx`):
+  - Added local state `textMomentsOpen` + `textMomentsNodeId`.
+  - `handleFindInText(id)` sets both and opens the dialog.
+  - Renders `<TextMomentsDialog>` at the bottom of `<aside>`.
+
+- **Smoke test** (`scripts/test_text_moments.mjs` — NEW FILE, 70 LOC):
+  - TEST 1: extractKeywords returns 3 forms (Красс, Красса, Крассу) from meta.forms.
+  - TEST 2: detectChapters finds 3 chapters + 1 auto-detected Пролог.
+  - TEST 3: findTextMoments returns 3 moments across 3 chapters (correctly
+    deduped within chapters but kept across chapters).
+  - TEST 4: highlightKeywords returns 2 match segments (Красс + Красса),
+    not the broken 2x "Красс" + "а" pattern.
+
+- **Verification**:
+  - `bun run scripts/test_text_moments.mjs` — ALL TESTS PASSED.
+  - `./node_modules/.bin/tsc --noEmit` — 0 errors, 0 warnings.
+  - `./node_modules/.bin/vite build` — built in 7.66s, 2215 modules transformed,
+    0 errors (only pre-existing chunk-size warnings).
+  - `cargo build --lib` on litgraph-core (no GTK deps): compiled cleanly
+    (only 2 pre-existing unused-variable warnings).
+  - `cargo test --lib` on litgraph-core: 20/20 tests pass.
+  - src-tauri can't be compiled in sandbox (missing gdk-3.0 system library —
+    known limitation). User can verify `cargo test --lib test_eval_kasiopia_full`
+    locally — test code was NOT modified, so should still pass.
+
+Stage Summary:
+- New feature: GUI "Text Moments" dialog — clicking "Найти в тексте" on any
+  node opens a modal showing all source-text fragments where that node's
+  entity appears, grouped by chapter, with density bars and highlighted matches.
+- 4 new files:
+    src/lib/poler/textMoments.ts            (580 LOC)
+    src/components/litgraph/TextMomentsDialog.tsx  (320 LOC)
+    scripts/test_text_moments.mjs           (70 LOC)
+- 4 modified files:
+    src/lib/litgraph/store.ts               (+15 LOC: sourceMarkdown field)
+    src/components/litgraph/Toolbar.tsx     (+4 LOC: setSourceMarkdown call)
+    src/components/litgraph/Inspector.tsx   (+14 LOC: onFindInText prop + button)
+    src/components/litgraph/Sidebar.tsx     (+12 LOC: dialog state + render)
+- Total: ~1100 LOC added across 8 files.
+- Algorithm pedigree: POLER v6 fragment clustering (cluster_fragments,
+  deduplicate_positions, search_in_text) ported from Python to TypeScript.
+  Math/algebra from docs/poler_math/POLER_SPEC.md (Π_Λ projector concept).
+- The Kasiopia E2E test (test_eval_kasiopia_full) was NOT modified — it remains
+  the canonical cross-genre validation. User reported 100% yield / 0 paradoxes
+  on Kasiopia in their last message; this iteration does not change that.

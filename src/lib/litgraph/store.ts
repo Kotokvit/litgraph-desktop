@@ -167,6 +167,7 @@ interface LitStore {
   focusEnabled: boolean;              // включён ли focus-режим глобально
   backgroundLayer: BackgroundLayer | null;  // фоновый слой (карта / схема / диаграмма)
   backgroundMoving: boolean;          // в данный момент перетаскивается фон (для cursor)
+  sourceMarkdown: string;             // исходный .md текст (для "Text Moments" поиска по тексту)
 
   // ====== Действия ======
   addNode: (type: LitNodeType, position?: { x: number; y: number }) => string;
@@ -198,8 +199,9 @@ interface LitStore {
   toggleBackgroundVisibility: () => void;
   setBackgroundMoving: (moving: boolean) => void;
   setProjectMeta: (patch: Partial<Pick<LitStore, "title" | "author" | "description">>) => void;
+  setSourceMarkdown: (text: string) => void;
   newProject: () => void;
-  loadProject: (p: LitProject) => void;
+  loadProject: (p: LitProject, sourceMarkdown?: string) => void;
   exportProject: () => LitProject;
   getVisibleNodes: () => LitNode[];
   getAllTags: () => string[];
@@ -228,6 +230,7 @@ export const useLitStore = create<LitStore>()(
       focusEnabled: true,  // focus-режим включён по умолчанию
       backgroundLayer: null,
       backgroundMoving: false,
+      sourceMarkdown: "",
 
       addNode: (type, position) => {
         const cfg = NODE_TYPES[type];
@@ -390,6 +393,8 @@ export const useLitStore = create<LitStore>()(
       setFocusEnabled: (enabled) => set({ focusEnabled: enabled }),
       setProjectMeta: (patch) => set(patch),
 
+      setSourceMarkdown: (text) => set({ sourceMarkdown: text }),
+
       // ====== Фоновый слой ======
       setBackgroundLayer: (layer) => set({ backgroundLayer: layer }),
 
@@ -424,11 +429,12 @@ export const useLitStore = create<LitStore>()(
           editingNodeId: null,
           backgroundLayer: null,
           backgroundMoving: false,
+          sourceMarkdown: "",
         });
         void empty; // заглушка, чтобы TS не ругался
       },
 
-      loadProject: (p) =>
+      loadProject: (p, sourceMarkdown) =>
         set({
           title: p.title,
           author: p.author,
@@ -438,6 +444,7 @@ export const useLitStore = create<LitStore>()(
           selectedNodeId: null,
           selectedEdgeId: null,
           editingNodeId: null,
+          sourceMarkdown: sourceMarkdown ?? "",
         }),
 
       exportProject: () => {

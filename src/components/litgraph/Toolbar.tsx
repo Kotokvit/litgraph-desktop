@@ -258,6 +258,9 @@ export function Toolbar() {
         nerNote = " (fallback: Rust-парсер без NER)";
       }
 
+      // v0.5.0: сохраняем исходный markdown в store, чтобы диалог
+      // "Text Moments" мог искать фрагменты в исходном тексте.
+      useLitStore.getState().setSourceMarkdown(mdText);
       loadProject(data as any);
       // Обновляем description если NER сработал
       if (nerMerged && nerNote) {

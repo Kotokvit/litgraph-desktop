@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import * as Lucide from "lucide-react";
 import { NodePalette } from "./NodePalette";
 import { Inspector } from "./Inspector";
+import { TextMomentsDialog } from "./TextMomentsDialog";
 import { useLitStore } from "@/lib/litgraph/store";
 import { EDGE_TYPES, NODE_TYPES, NODE_TYPE_ORDER } from "@/lib/litgraph/types";
 
@@ -11,6 +12,8 @@ type Tab = "palette" | "inspector" | "legend";
 
 export function Sidebar() {
   const [tab, setTab] = useState<Tab>("palette");
+  const [textMomentsOpen, setTextMomentsOpen] = useState(false);
+  const [textMomentsNodeId, setTextMomentsNodeId] = useState<string | null>(null);
   const selectedNodeId = useLitStore((s) => s.selectedNodeId);
   const selectedEdgeId = useLitStore((s) => s.selectedEdgeId);
   const nodes = useLitStore((s) => s.nodes);
@@ -25,6 +28,11 @@ export function Sidebar() {
   }, [nodes]);
 
   const hasSelection = selectedNodeId || selectedEdgeId;
+
+  const handleFindInText = (id: string) => {
+    setTextMomentsNodeId(id);
+    setTextMomentsOpen(true);
+  };
 
   return (
     <aside className="w-80 shrink-0 bg-white border-l border-stone-200 flex flex-col">
@@ -93,7 +101,7 @@ export function Sidebar() {
           </div>
         )}
 
-        {tab === "inspector" && <Inspector />}
+        {tab === "inspector" && <Inspector onFindInText={handleFindInText} />}
 
         {tab === "legend" && (
           <div className="space-y-4 text-xs">
@@ -183,6 +191,13 @@ export function Sidebar() {
           </div>
         )}
       </div>
+
+      {/* v0.5.0: Dialog «Моменты в тексте» — открывается из Inspector */}
+      <TextMomentsDialog
+        open={textMomentsOpen}
+        nodeId={textMomentsNodeId}
+        onClose={() => setTextMomentsOpen(false)}
+      />
     </aside>
   );
 }
