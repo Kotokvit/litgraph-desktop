@@ -136,46 +136,186 @@ pub struct SvoTriplet {
 /// Множество позитивных русских глаголов (мирные действия: помощь, любовь,
 /// созидание). Зеркало `POSITIVE_VERBS` из `svo_extract.py` (lines 99-108).
 const POSITIVE_VERBS: &[&str] = &[
-    "любить", "помочь", "помогать", "спасти", "спасать", "защитить", "защищать",
-    "обнять", "обнимать", "поцеловать", "целовать", "подарить", "дарить",
-    "утешить", "утешать", "простить", "прощать", "поздравить", "похвалить",
-    "наградить", "благословить", "вылечить", "лечить", "кормить", "накормить",
-    "одеть", "успокоить", "радовать", "обрадовать", "восхищать", "восхитить",
-    "пригласить", "встретить", "проводить", "навестить", "навещать",
-    "согласиться", "поддержать", "верить", "доверять", "посочувствовать",
-    "сочувствовать", "выслушать", "послушать", "ответить", "сказать", "молвить",
+    "любить",
+    "помочь",
+    "помогать",
+    "спасти",
+    "спасать",
+    "защитить",
+    "защищать",
+    "обнять",
+    "обнимать",
+    "поцеловать",
+    "целовать",
+    "подарить",
+    "дарить",
+    "утешить",
+    "утешать",
+    "простить",
+    "прощать",
+    "поздравить",
+    "похвалить",
+    "наградить",
+    "благословить",
+    "вылечить",
+    "лечить",
+    "кормить",
+    "накормить",
+    "одеть",
+    "успокоить",
+    "радовать",
+    "обрадовать",
+    "восхищать",
+    "восхитить",
+    "пригласить",
+    "встретить",
+    "проводить",
+    "навестить",
+    "навещать",
+    "согласиться",
+    "поддержать",
+    "верить",
+    "доверять",
+    "посочувствовать",
+    "сочувствовать",
+    "выслушать",
+    "послушать",
+    "ответить",
+    "сказать",
+    "молвить",
 ];
 
 /// Множество негативных русских глаголов (насилие, ложь, разрушение).
 /// Зеркало `NEGATIVE_VERBS` из `svo_extract.py` (lines 111-123).
 const NEGATIVE_VERBS: &[&str] = &[
-    "убить", "убивать", "ударить", "бить", "избить", "ранить", "ранять",
-    "обидеть", "обижать", "оскорбить", "оскорблять", "предать", "предавать",
-    "обмануть", "обманывать", "солгать", "лгать", "украсть", "красть",
-    "разрушить", "разрушать", "сжечь", "поджечь", "отнять", "отнимать",
-    "выгнать", "гонять", "прогнать", "наказать", "казнить", "пытать",
-    "ненавидеть", "презирать", "проклясть", "проклинать", "угрожать",
-    "напасть", "атаковать", "воевать", "бороться", "запретить", "запрещать",
-    "запереть", "запирать", "арестовать", "судить", "осуждать", "осудить",
-    "оттолкнуть", "толкать", "плакать", "страдать",
-    "изменить", "изменять", "соблазнить", "соблазнять", "подкупить",
-    "шантажировать", "давить", "подозревать", "обвинить", "обвинять",
+    "убить",
+    "убивать",
+    "ударить",
+    "бить",
+    "избить",
+    "ранить",
+    "ранять",
+    "обидеть",
+    "обижать",
+    "оскорбить",
+    "оскорблять",
+    "предать",
+    "предавать",
+    "обмануть",
+    "обманывать",
+    "солгать",
+    "лгать",
+    "украсть",
+    "красть",
+    "разрушить",
+    "разрушать",
+    "сжечь",
+    "поджечь",
+    "отнять",
+    "отнимать",
+    "выгнать",
+    "гонять",
+    "прогнать",
+    "наказать",
+    "казнить",
+    "пытать",
+    "ненавидеть",
+    "презирать",
+    "проклясть",
+    "проклинать",
+    "угрожать",
+    "напасть",
+    "атаковать",
+    "воевать",
+    "бороться",
+    "запретить",
+    "запрещать",
+    "запереть",
+    "запирать",
+    "арестовать",
+    "судить",
+    "осуждать",
+    "осудить",
+    "оттолкнуть",
+    "толкать",
+    "плакать",
+    "страдать",
+    "изменить",
+    "изменять",
+    "соблазнить",
+    "соблазнять",
+    "подкупить",
+    "шантажировать",
+    "давить",
+    "подозревать",
+    "обвинить",
+    "обвинять",
 ];
 
 /// Множество нейтральных русских глаголов (движение, коммуникация, восприятие).
 /// Зеркало `NEUTRAL_VERBS` из `svo_extract.py` (lines 126-138).
 const NEUTRAL_VERBS: &[&str] = &[
-    "пойти", "идти", "прийти", "приходить", "уйти", "уходить", "выйти",
-    "входить", "войти", "поехать", "ехать", "приехать", "уехать",
-    "стоять", "сидеть", "лежать", "встать", "вставать", "опуститься",
-    "посмотреть", "смотреть", "увидеть", "видеть", "найти", "искать",
-    "взять", "дать", "получить", "передать", "принести", "унести",
-    "открыть", "закрыть", "постучать", "позвать", "позвонить",
-    "написать", "читать", "прочитать", "нарисовать", "сделать",
-    "начать", "кончить", "продолжать", "остановиться", "вернуться",
-    "познакомиться", "встретиться", "поговорить", "спросить", "ответить",
-    "вспомнить", "забыть", "подумать", "понять", "узнать", "заметить",
-    "почувствовать", "услышать", "понюхать", "попробовать",
+    "пойти",
+    "идти",
+    "прийти",
+    "приходить",
+    "уйти",
+    "уходить",
+    "выйти",
+    "входить",
+    "войти",
+    "поехать",
+    "ехать",
+    "приехать",
+    "уехать",
+    "стоять",
+    "сидеть",
+    "лежать",
+    "встать",
+    "вставать",
+    "опуститься",
+    "посмотреть",
+    "смотреть",
+    "увидеть",
+    "видеть",
+    "найти",
+    "искать",
+    "взять",
+    "дать",
+    "получить",
+    "передать",
+    "принести",
+    "унести",
+    "открыть",
+    "закрыть",
+    "постучать",
+    "позвать",
+    "позвонить",
+    "написать",
+    "читать",
+    "прочитать",
+    "нарисовать",
+    "сделать",
+    "начать",
+    "кончить",
+    "продолжать",
+    "остановиться",
+    "вернуться",
+    "познакомиться",
+    "встретиться",
+    "поговорить",
+    "спросить",
+    "ответить",
+    "вспомнить",
+    "забыть",
+    "подумать",
+    "понять",
+    "узнать",
+    "заметить",
+    "почувствовать",
+    "услышать",
+    "понюхать",
+    "попробовать",
 ];
 
 /// Возвращает `true` если лемма входит в [`POSITIVE_VERBS`].
@@ -238,7 +378,8 @@ pub fn verb_to_action(verb_lemma: &str, polarity: &str, negated: bool) -> Action
         "вылечить" | "лечить" => return Action::Heal,
 
         // ── Перемещение (destination/source заполняются в populate_action_payload) ──
-        "пойти" | "идти" | "прийти" | "приходить" | "поехать" | "ехать" | "приехать" => {
+        "пойти" | "идти" | "прийти" | "приходить" | "поехать" | "ехать" | "приехать" =>
+        {
             return Action::Arrive {
                 destination: String::new(),
             };
@@ -256,7 +397,9 @@ pub fn verb_to_action(verb_lemma: &str, polarity: &str, negated: bool) -> Action
 
         // ── Тактильный контакт / нежность ──
         // Task brief: «choose Touch to be safe» — не FallInLove.
-        "обнять" | "обнимать" | "поцеловать" | "целовать" => return Action::Touch,
+        "обнять" | "обнимать" | "поцеловать" | "целовать" => {
+            return Action::Touch
+        }
 
         // ── Прощение — позитивный, но не стандартный физический ──
         "простить" | "прощать" => {
@@ -766,10 +909,7 @@ impl EntityResolver {
 
         for node in nodes {
             // Только персонажи и организации — актанты в SVO.
-            let is_actor = matches!(
-                node.node_type.as_str(),
-                "character" | "organization"
-            );
+            let is_actor = matches!(node.node_type.as_str(), "character" | "organization");
             if !is_actor {
                 continue;
             }
@@ -785,7 +925,9 @@ impl EntityResolver {
                 // aliases/forms (добавленные ниже) имели приоритет над
                 // автоматически сгенерированными формами.
                 for declension in generate_russian_declensions(&node.data.title) {
-                    by_alias.entry(declension).or_insert_with(|| node.id.clone());
+                    by_alias
+                        .entry(declension)
+                        .or_insert_with(|| node.id.clone());
                 }
             }
 
@@ -825,10 +967,7 @@ impl EntityResolver {
             }
         }
 
-        Self {
-            by_lemma,
-            by_alias,
-        }
+        Self { by_lemma, by_alias }
     }
 
     /// Точный поиск имени в индексах. Case-insensitive (через lowercase).
@@ -1006,11 +1145,7 @@ fn anchor_from_position(position: usize, chapters: &[ParsedChapter]) -> Temporal
 /// (full sentence as the "fact" — approximation)». Это аппроксимация: в
 /// идеале факт — это пропозиция («Иван знает, что Пётр мёртв»), но SVO даёт
 /// только глагол + объект. Полное предложение — лучший доступный субститут.
-fn populate_action_payload(
-    action: Action,
-    t: &SvoTriplet,
-    resolver: &EntityResolver,
-) -> Action {
+fn populate_action_payload(action: Action, t: &SvoTriplet, resolver: &EntityResolver) -> Action {
     // Резолвим объект один раз — он нужен в нескольких ветках.
     let object_resolved = || resolver.resolve_or_keep(&t.object_lemma);
 
@@ -1241,44 +1376,25 @@ pub fn parse_text_fallback(
         // Определяем action по первому матчу глагола. Порядок важен: kill
         // проверяем первым — если в предложении «убил» и «сказал», Kill
         // важнее.
-        let action_and_needs_target: Option<(Action, bool)> = if regexes
-            .kill
-            .is_match(clean_sentence)
-            .unwrap_or(false)
-        {
-            Some((Action::Kill, true))
-        } else if regexes
-            .speak
-            .is_match(clean_sentence)
-            .unwrap_or(false)
-        {
-            Some((Action::Speak { topic: None }, false))
-        } else if regexes
-            .die
-            .is_match(clean_sentence)
-            .unwrap_or(false)
-        {
-            Some((Action::Die, false))
-        } else if regexes
-            .resurrect
-            .is_match(clean_sentence)
-            .unwrap_or(false)
-        {
-            Some((Action::Resurrect, false))
-        } else if regexes
-            .arrive
-            .is_match(clean_sentence)
-            .unwrap_or(false)
-        {
-            Some((
-                Action::Arrive {
-                    destination: String::new(),
-                },
-                false,
-            ))
-        } else {
-            None
-        };
+        let action_and_needs_target: Option<(Action, bool)> =
+            if regexes.kill.is_match(clean_sentence).unwrap_or(false) {
+                Some((Action::Kill, true))
+            } else if regexes.speak.is_match(clean_sentence).unwrap_or(false) {
+                Some((Action::Speak { topic: None }, false))
+            } else if regexes.die.is_match(clean_sentence).unwrap_or(false) {
+                Some((Action::Die, false))
+            } else if regexes.resurrect.is_match(clean_sentence).unwrap_or(false) {
+                Some((Action::Resurrect, false))
+            } else if regexes.arrive.is_match(clean_sentence).unwrap_or(false) {
+                Some((
+                    Action::Arrive {
+                        destination: String::new(),
+                    },
+                    false,
+                ))
+            } else {
+                None
+            };
 
         let (action, needs_target) = match action_and_needs_target {
             Some(x) => x,
@@ -1336,10 +1452,7 @@ pub fn parse_text_fallback(
                     // Чистим от пунктуации: «Грака» → «Грака», «Грака,» → «Грака»,
                     // ««Грака»» → «Грака», «Грака.» → «Грака» (хотя точка уже
                     // убрана sentence_split, на всякий случай).
-                    let clean_word: String = word
-                        .chars()
-                        .filter(|c| c.is_alphabetic())
-                        .collect();
+                    let clean_word: String = word.chars().filter(|c| c.is_alphabetic()).collect();
                     if clean_word.is_empty() {
                         continue;
                     }
@@ -1398,10 +1511,7 @@ pub fn parse_text_fallback(
             // Сначала ищем субъекта ДО глагола речи (например, «Пётр сказал Анне...»).
             let mut before_actor = None;
             for &prev_word in &sentence_words[..speak_idx] {
-                let clean: String = prev_word
-                    .chars()
-                    .filter(|c| c.is_alphabetic())
-                    .collect();
+                let clean: String = prev_word.chars().filter(|c| c.is_alphabetic()).collect();
                 if clean.is_empty() || is_russian_stop_word(&clean) {
                     continue;
                 }
@@ -1409,7 +1519,9 @@ pub fn parse_text_fallback(
                     before_actor = Some(id);
                     break;
                 }
-                if clean.chars().next().map_or(false, |c| c.is_uppercase()) && clean.chars().count() > 2 {
+                if clean.chars().next().map_or(false, |c| c.is_uppercase())
+                    && clean.chars().count() > 2
+                {
                     before_actor = Some(resolver.resolve_or_keep(&clean));
                     break;
                 }
@@ -1421,10 +1533,7 @@ pub fn parse_text_fallback(
                 // Если ДО глагола субъекта нет (например, «— Привет, — сказал Паша.»),
                 // ищем авторскую атрибуцию ПОСЛЕ глагола речи.
                 for &next_word in &sentence_words[speak_idx + 1..] {
-                    let clean: String = next_word
-                        .chars()
-                        .filter(|c| c.is_alphabetic())
-                        .collect();
+                    let clean: String = next_word.chars().filter(|c| c.is_alphabetic()).collect();
                     if clean.is_empty() || is_russian_stop_word(&clean) {
                         continue;
                     }
@@ -1437,7 +1546,9 @@ pub fn parse_text_fallback(
                         extracted_actor = Some(id);
                         break;
                     }
-                    if clean.chars().next().map_or(false, |c| c.is_uppercase()) && clean.chars().count() > 2 {
+                    if clean.chars().next().map_or(false, |c| c.is_uppercase())
+                        && clean.chars().count() > 2
+                    {
                         extracted_actor = Some(resolver.resolve_or_keep(&clean));
                         break;
                     }
@@ -1494,8 +1605,6 @@ pub fn parse_text_fallback(
 }
 
 // ============ Юнит-тесты ============
-
-
 
 // ════════════════════════════════════════════════════════════════
 //  Wave 8: LanguageTool-weights — Ukrainian verbs & declensions
@@ -1721,70 +1830,116 @@ pub fn verb_to_action_ukrainian(verb_lemma: &str, polarity: &str, negated: bool)
     let v = verb_lemma.trim().to_lowercase();
     match v.as_str() {
         // ── Фізичне насильство ──
-        "вбити" | "убивати" | "вбивати" | "стратити" | "катувати" => return Action::Kill,
+        "вбити" | "убивати" | "вбивати" | "стратити" | "катувати" => {
+            return Action::Kill
+        }
         "поранити" => return Action::Wound,
         "ударити" | "бити" | "побити" => return Action::Hit,
         "арештувати" => return Action::Capture,
         "замкнути" | "зачинити" => return Action::Imprison,
         "вилікувати" | "лікувати" => return Action::Heal,
         // ── Переміщення ──
-        "піти" | "ітти" | "прийти" | "приходити" | "поехати" | "їхати" | "приїхати" => {
-            return Action::Arrive { destination: String::new() };
+        "піти" | "ітти" | "прийти" | "приходити" | "поехати" | "їхати" | "приїхати" =>
+        {
+            return Action::Arrive {
+                destination: String::new(),
+            };
         }
         "відійти" | "виходити" | "вийти" | "поїхати" => {
-            return Action::Leave { source: String::new() };
+            return Action::Leave {
+                source: String::new(),
+            };
         }
         // ── Комунікація ──
-        "сказати" | "відповісти" | "мовити" | "спитати" | "питати" => {
+        "сказати" | "відповісти" | "мовити" | "спитати" | "питати" =>
+        {
             return Action::Speak { topic: None };
         }
         // ── Тактильний контакт ──
-        "обійняти" | "обіймати" | "поцілувати" | "цілувати" => return Action::Touch,
+        "обійняти" | "обіймати" | "поцілувати" | "цілувати" => {
+            return Action::Touch
+        }
         // ── Прощення ──
         "пробачити" | "вибачати" => {
-            return Action::Custom { verb_lemma: "пробачити".to_string(), polarity: VerbPolarity::Positive };
+            return Action::Custom {
+                verb_lemma: "пробачити".to_string(),
+                polarity: VerbPolarity::Positive,
+            };
         }
         // ── Зрада ──
         "зрадити" | "зраджувати" => {
-            return Action::Betray { victim: String::new() };
+            return Action::Betray {
+                victim: String::new(),
+            };
         }
         // ── Брехня ──
         "обдурити" | "ошукати" | "брехати" | "злгати" => {
-            return Action::Custom { verb_lemma: "брехати".to_string(), polarity: VerbPolarity::Negative };
+            return Action::Custom {
+                verb_lemma: "брехати".to_string(),
+                polarity: VerbPolarity::Negative,
+            };
         }
         // ── Крадіжка ──
         "вкрасти" | "красти" => {
-            return Action::Custom { verb_lemma: "красти".to_string(), polarity: VerbPolarity::Negative };
+            return Action::Custom {
+                verb_lemma: "красти".to_string(),
+                polarity: VerbPolarity::Negative,
+            };
         }
         // ── Шлюб ──
         "одружитися" | "взяти шлюб" => {
-            return Action::Marry { partner: String::new() };
+            return Action::Marry {
+                partner: String::new(),
+            };
         }
         // ── Смерть / воскресіння ──
         "померти" | "вмерти" | "погибнути" => return Action::Die,
-        "воскреснути" | "воскресати" | "ожити" => return Action::Resurrect,
+        "воскреснути" | "воскресати" | "ожити" => {
+            return Action::Resurrect
+        }
         // ── Когнітивні ──
-        "забути" => return Action::Forget { fact: String::new() },
-        "згадати" => return Action::Know { fact: String::new() },
+        "забути" => {
+            return Action::Forget {
+                fact: String::new(),
+            }
+        }
+        "згадати" => {
+            return Action::Know {
+                fact: String::new(),
+            }
+        }
         // ── Емоційні ──
         "покохати" | "кохати" => {
-            return Action::FallInLove { partner: String::new() };
+            return Action::FallInLove {
+                partner: String::new(),
+            };
         }
         "ненавидіти" => {
-            return Action::Hate { target: String::new() };
+            return Action::Hate {
+                target: String::new(),
+            };
         }
         _ => {}
     }
 
     // 2) Множини
     if is_ukrainian_positive_verb(&v) {
-        return Action::Custom { verb_lemma: v, polarity: VerbPolarity::Positive };
+        return Action::Custom {
+            verb_lemma: v,
+            polarity: VerbPolarity::Positive,
+        };
     }
     if is_ukrainian_negative_verb(&v) {
-        return Action::Custom { verb_lemma: v, polarity: VerbPolarity::Negative };
+        return Action::Custom {
+            verb_lemma: v,
+            polarity: VerbPolarity::Negative,
+        };
     }
     if is_ukrainian_neutral_verb(&v) {
-        return Action::Custom { verb_lemma: v, polarity: VerbPolarity::Neutral };
+        return Action::Custom {
+            verb_lemma: v,
+            polarity: VerbPolarity::Neutral,
+        };
     }
 
     // 3) Fallback — polarity з триплета + flip if negated
@@ -1799,8 +1954,13 @@ pub fn verb_to_action_ukrainian(verb_lemma: &str, polarity: &str, negated: bool)
             VerbPolarity::Negative => VerbPolarity::Positive,
             VerbPolarity::Neutral => VerbPolarity::Neutral,
         }
-    } else { inferred };
-    Action::Custom { verb_lemma: v, polarity: final_polarity }
+    } else {
+        inferred
+    };
+    Action::Custom {
+        verb_lemma: v,
+        polarity: final_polarity,
+    }
 }
 
 /// Генерирует падежные формы украинских имён собственных.
@@ -1820,11 +1980,15 @@ pub fn verb_to_action_ukrainian(verb_lemma: &str, polarity: &str, negated: bool)
 /// | согласна (м.) | Тарас | тараса, тарасу, тарасом, тарасі |
 pub fn generate_ukrainian_declensions(name: &str) -> Vec<String> {
     let name_trim = name.trim();
-    if name_trim.is_empty() { return Vec::new(); }
+    if name_trim.is_empty() {
+        return Vec::new();
+    }
     let lc = name_trim.to_lowercase();
     let chars: Vec<char> = lc.chars().collect();
     let len = chars.len();
-    if len < 2 { return vec![lc]; }
+    if len < 2 {
+        return vec![lc];
+    }
     let mut forms = Vec::new();
     // 1. Жіночі імена на -ія (Марія → марії, марію, марією)
     if lc.ends_with("ія") && len > 3 {
@@ -1836,10 +2000,10 @@ pub fn generate_ukrainian_declensions(name: &str) -> Vec<String> {
     // 2. Жіночі на -а (Оксана → оксани, оксані, оксану, оксаною)
     else if lc.ends_with('а') {
         let stem: String = chars[..len - 1].iter().collect();
-        forms.push(format!("{}и", stem));  // родовий
-        forms.push(format!("{}і", stem));  // давальний/місцевий
-        forms.push(format!("{}у", stem));  // знахідний
-        forms.push(format!("{}ою", stem));  // орудний
+        forms.push(format!("{}и", stem)); // родовий
+        forms.push(format!("{}і", stem)); // давальний/місцевий
+        forms.push(format!("{}у", stem)); // знахідний
+        forms.push(format!("{}ою", stem)); // орудний
     }
     // 3. На -я (Катя → каті, катю, катею)
     else if lc.ends_with('я') {
@@ -1868,11 +2032,11 @@ pub fn generate_ukrainian_declensions(name: &str) -> Vec<String> {
     else {
         let last = chars[len - 1];
         if "бвгджзклмнпрстфхцчшщ".contains(last) {
-            forms.push(format!("{}а", lc));  // родовий
-            forms.push(format!("{}у", lc));  // давальний
-            forms.push(format!("{}ом", lc));  // орудний
-            forms.push(format!("{}і", lc));  // місцевий
-            forms.push(format!("{}е", lc));  // кличний
+            forms.push(format!("{}а", lc)); // родовий
+            forms.push(format!("{}у", lc)); // давальний
+            forms.push(format!("{}ом", lc)); // орудний
+            forms.push(format!("{}і", lc)); // місцевий
+            forms.push(format!("{}е", lc)); // кличний
         }
     }
     forms.sort();
@@ -1889,180 +2053,181 @@ pub fn generate_ukrainian_declensions(name: &str) -> Vec<String> {
 /// (полный список из 1982 слов доступен в `src-tauri/data/stopwords-uk.txt`).
 pub fn is_ukrainian_stop_word(word: &str) -> bool {
     let lc = word.trim().to_lowercase();
-    matches!(lc.as_str(),
+    matches!(
+        lc.as_str(),
         "він"
-        | "вона"
-        | "воно"
-        | "вони"
-        | "я"
-        | "ми"
-        | "ви"
-        | "ти"
-        | "його"
-        | "її"
-        | "їх"
-        | "мій"
-        | "моя"
-        | "моє"
-        | "наш"
-        | "наша"
-        | "наше"
-        | "твій"
-        | "твоя"
-        | "твоє"
-        | "ваш"
-        | "ваша"
-        | "ваше"
-        | "свій"
-        | "своя"
-        | "своє"
-        | "цей"
-        | "ця"
-        | "це"
-        | "ці"
-        | "той"
-        | "та"
-        | "те"
-        | "ті"
-        | "хто"
-        | "що"
-        | "який"
-        | "яка"
-        | "яке"
-        | "які"
-        | "чий"
-        | "чия"
-        | "чиє"
-        | "і"
-        | "й"
-        | "або"
-        | "ані"
-        | "але"
-        | "однак"
-        | "щоб"
-        | "бо"
-        | "тому"
-        | "як"
-        | "коли"
-        | "де"
-        | "куди"
-        | "звідки"
-        | "чому"
-        | "зачем"
-        | "якщо"
-        | "б"
-        | "би"
-        | "ніби"
-        | "мов"
-        | "нібито"
-        | "в"
-        | "у"
-        | "на"
-        | "з"
-        | "із"
-        | "зі"
-        | "від"
-        | "до"
-        | "к"
-        | "по"
-        | "за"
-        | "під"
-        | "над"
-        | "перед"
-        | "при"
-        | "про"
-        | "без"
-        | "для"
-        | "через"
-        | "між"
-        | "серед"
-        | "поруч"
-        | "біля"
-        | "навколо"
-        | "крізь"
-        | "крім"
-        | "замість"
-        | "не"
-        | "ні"
-        | "так"
-        | "аж"
-        | "навіть"
-        | "хай"
-        | "нехай"
-        | "ось"
-        | "от"
-        | "тож"
-        | "отже"
-        | "значить"
-        | "хіба"
-        | "невже"
-        | "чи"
-        | "бути"
-        | "був"
-        | "була"
-        | "було"
-        | "були"
-        | "буде"
-        | "будуть"
-        | "будемо"
-        | "є"
-        | "сть"
-        | "весь"
-        | "вся"
-        | "все"
-        | "всі"
-        | "всего"
-        | "всім"
-        | "увесь"
-        | "уся"
-        | "усе"
-        | "сам"
-        | "сама"
-        | "саме"
-        | "самі"
-        | "самий"
-        | "інший"
-        | "інша"
-        | "інше"
-        | "інші"
-        | "кожен"
-        | "кожна"
-        | "кожне"
-        | "кожні"
-        | "жоден"
-        | "жодна"
-        | "жодне"
-        | "один"
-        | "одна"
-        | "одне"
-        | "одні"
-        | "два"
-        | "дві"
-        | "три"
-        | "четверо"
-        | "перший"
-        | "другий"
-        | "третій"
-        | "останній"
-        | "тут"
-        | "там"
-        | "туди"
-        | "сюди"
-        | "відти"
-        | "звідси"
-        | "тоді"
-        | "зараз"
-        | "нині"
-        | "сьогодні"
-        | "вчора"
-        | "завтра"
-        | "завжди"
-        | "ніколи"
-        | "часто"
-        | "рідко"
-        | "іноді"
-        | "ще"
-        | "вже"
+            | "вона"
+            | "воно"
+            | "вони"
+            | "я"
+            | "ми"
+            | "ви"
+            | "ти"
+            | "його"
+            | "її"
+            | "їх"
+            | "мій"
+            | "моя"
+            | "моє"
+            | "наш"
+            | "наша"
+            | "наше"
+            | "твій"
+            | "твоя"
+            | "твоє"
+            | "ваш"
+            | "ваша"
+            | "ваше"
+            | "свій"
+            | "своя"
+            | "своє"
+            | "цей"
+            | "ця"
+            | "це"
+            | "ці"
+            | "той"
+            | "та"
+            | "те"
+            | "ті"
+            | "хто"
+            | "що"
+            | "який"
+            | "яка"
+            | "яке"
+            | "які"
+            | "чий"
+            | "чия"
+            | "чиє"
+            | "і"
+            | "й"
+            | "або"
+            | "ані"
+            | "але"
+            | "однак"
+            | "щоб"
+            | "бо"
+            | "тому"
+            | "як"
+            | "коли"
+            | "де"
+            | "куди"
+            | "звідки"
+            | "чому"
+            | "зачем"
+            | "якщо"
+            | "б"
+            | "би"
+            | "ніби"
+            | "мов"
+            | "нібито"
+            | "в"
+            | "у"
+            | "на"
+            | "з"
+            | "із"
+            | "зі"
+            | "від"
+            | "до"
+            | "к"
+            | "по"
+            | "за"
+            | "під"
+            | "над"
+            | "перед"
+            | "при"
+            | "про"
+            | "без"
+            | "для"
+            | "через"
+            | "між"
+            | "серед"
+            | "поруч"
+            | "біля"
+            | "навколо"
+            | "крізь"
+            | "крім"
+            | "замість"
+            | "не"
+            | "ні"
+            | "так"
+            | "аж"
+            | "навіть"
+            | "хай"
+            | "нехай"
+            | "ось"
+            | "от"
+            | "тож"
+            | "отже"
+            | "значить"
+            | "хіба"
+            | "невже"
+            | "чи"
+            | "бути"
+            | "був"
+            | "була"
+            | "було"
+            | "були"
+            | "буде"
+            | "будуть"
+            | "будемо"
+            | "є"
+            | "сть"
+            | "весь"
+            | "вся"
+            | "все"
+            | "всі"
+            | "всего"
+            | "всім"
+            | "увесь"
+            | "уся"
+            | "усе"
+            | "сам"
+            | "сама"
+            | "саме"
+            | "самі"
+            | "самий"
+            | "інший"
+            | "інша"
+            | "інше"
+            | "інші"
+            | "кожен"
+            | "кожна"
+            | "кожне"
+            | "кожні"
+            | "жоден"
+            | "жодна"
+            | "жодне"
+            | "один"
+            | "одна"
+            | "одне"
+            | "одні"
+            | "два"
+            | "дві"
+            | "три"
+            | "четверо"
+            | "перший"
+            | "другий"
+            | "третій"
+            | "останній"
+            | "тут"
+            | "там"
+            | "туди"
+            | "сюди"
+            | "відти"
+            | "звідси"
+            | "тоді"
+            | "зараз"
+            | "нині"
+            | "сьогодні"
+            | "вчора"
+            | "завтра"
+            | "завжди"
+            | "ніколи"
+            | "часто"
+            | "рідко"
+            | "іноді"
+            | "ще"
+            | "вже"
     )
 }
 
@@ -2160,21 +2325,392 @@ pub fn russian_collocation_correct(text: &str) -> Option<&'static str> {
 }
 
 /// Ищет первое сработавшее русское LT-правило в тексте.
-pub fn find_russian_grammar_violation(text: &str) -> Option<&'static crate::languagetool_weights::LexicalRule> {
+pub fn find_russian_grammar_violation(
+    text: &str,
+) -> Option<&'static crate::languagetool_weights::LexicalRule> {
     crate::languagetool_weights::find_russian_lt_violation(text)
 }
 
 /// Ищет первое сработавшее украинское LT-правило в тексте.
-pub fn find_ukrainian_grammar_violation(text: &str) -> Option<&'static crate::languagetool_weights::LexicalRule> {
+pub fn find_ukrainian_grammar_violation(
+    text: &str,
+) -> Option<&'static crate::languagetool_weights::LexicalRule> {
     crate::languagetool_weights::find_ukrainian_lt_violation(text)
 }
 
-/// Дополнительные русские глаголы для расширения `verb_to_action`.
-/// Эти леммы добавлены на основе анализа LanguageTool grammar.xml
-/// (категория GRAMMAR) и дополнены вручную.
+// ─── Wrappers for crate::linguistic_entities (flat replacement tables) ──
+//
+// Эти wrappers открывают доступ к большим плоским таблицам замен
+// (~10000 RU+UK записей) и семантическим категориям (дни недели,
+// месяцы, профессии, цвета, национальности, вводные слова и т.д.),
+// извлечённым из DTD-сущностей `ru/grammar.xml` и из `replace*.txt`
+// файлов LanguageTool. См. `crate::linguistic_entities`.
+
+/// Ищет русскую замену для слова в плоской таблице LanguageTool
+/// `ru/replace.txt` (~288 записей: опечатки, стилистические замены).
+pub fn find_ru_replacement_in_lt(word: &str) -> Option<&'static [&'static str]> {
+    crate::linguistic_entities::find_ru_replacement(word)
+}
+
+/// Ищет украинскую замену для слова в плоской таблице LanguageTool
+/// `uk/replace.txt` (~7912 записей: варваризмы, стилистические замены).
+pub fn find_uk_replacement_in_lt(word: &str) -> Option<&'static [&'static str]> {
+    crate::linguistic_entities::find_uk_replacement(word)
+}
+
+/// Ищет мягкую украинскую замену (рекомендуемую, но не обязательную).
+pub fn find_uk_replacement_soft_in_lt(word: &str) -> Option<&'static [&'static str]> {
+    crate::linguistic_entities::find_uk_replacement_soft(word)
+}
+
+/// Ищет украинскую замену по реформе орфографии 2019 года.
+pub fn find_uk_replacement_2019_in_lt(word: &str) -> Option<&'static [&'static str]> {
+    crate::linguistic_entities::find_uk_replacement_2019(word)
+}
+
+/// Ищет тавтологию вида «корень родственное_слово» в тексте
+/// (упрощённая версия правила RussianWordRootRepeatRule).
+pub fn find_ru_word_root_tautology_in_text(text_lower: &str) -> Option<&'static str> {
+    crate::linguistic_entities::find_ru_word_root_tautology(text_lower)
+}
+
+/// Проверяет, является ли слово русским днём недели.
+pub fn is_ru_weekday_word(word: &str) -> bool {
+    crate::linguistic_entities::is_ru_weekday(word)
+}
+
+/// Проверяет, является ли слово русским названием месяца.
+pub fn is_ru_month_word(word: &str) -> bool {
+    crate::linguistic_entities::is_ru_month(word)
+}
+
+/// Проверяет, является ли слово русским прилагательным цвета.
+pub fn is_ru_color_word(word: &str) -> bool {
+    crate::linguistic_entities::is_ru_color(word)
+}
+
+/// Проверяет, является ли слово русской национальностью.
+pub fn is_ru_nation_word(word: &str) -> bool {
+    crate::linguistic_entities::is_ru_nation(word)
+}
+
+/// Проверяет, является ли слово русским временным словом
+/// (будущий, прошлый, текущий, следующий и т.д.).
+pub fn is_ru_time_word_token(word: &str) -> bool {
+    crate::linguistic_entities::is_ru_time_word(word)
+}
+
+/// Проверяет, является ли слово русским качеством человека
+/// (умный, глупый, храбрый, трусливый, молодой, старый и т.д.).
+pub fn is_ru_human_quality_word(word: &str) -> bool {
+    crate::linguistic_entities::is_ru_human_quality(word)
+}
+
+/// Проверяет, является ли слово русской профессией.
+pub fn is_ru_profession_word(word: &str) -> bool {
+    crate::linguistic_entities::is_ru_profession(word)
+}
+
+/// Проверяет, является ли слово русским вводным словом
+/// (по-видимому, итак, следовательно, конечно и т.д.).
+pub fn is_ru_vvodnoe_word_token(word: &str) -> bool {
+    crate::linguistic_entities::is_ru_vvodnoe(word)
+}
+
+/// Проверяет, требует ли слово предлога «в» (в институте, в кино).
+pub fn is_ru_prep_v_word_token(word: &str) -> bool {
+    crate::linguistic_entities::is_ru_prep_v_word(word)
+}
+
+/// Проверяет, требует ли слово предлога «на» (на заводе, на фабрике).
+pub fn is_ru_prep_na_word_token(word: &str) -> bool {
+    crate::linguistic_entities::is_ru_prep_na_word(word)
+}
+
+/// Проверяет, является ли слово заглавным объявлением
+/// (ГЛАВА, КНИГА, ВАЖНО, ВНИМАНИЕ, ПРИМЕЧАНИЕ).
+pub fn is_ru_zagl_word_token(word: &str) -> bool {
+    crate::linguistic_entities::is_ru_zagl_word(word)
+}
+
+/// Возвращает суммарное количество записей во всех таблицах замен
+/// (RU + UK + soft + renamed + 2019). Удобно для диагностики и тестов.
+pub fn total_replacement_entries_in_lt() -> usize {
+    crate::linguistic_entities::total_replacement_entries()
+}
+
+/// Возвращает количество корневых пар в таблице `RU_WORD_ROOTS`.
+pub fn total_word_root_entries_in_lt() -> usize {
+    crate::linguistic_entities::total_word_root_entries()
+}
+
+/// Возвращает суммарное количество токенов во всех семантических
+/// категориях, извлечённых из DTD-сущностей `ru/grammar.xml`.
+pub fn total_semantic_category_tokens_in_lt() -> usize {
+    crate::linguistic_entities::total_semantic_categories()
+}
+
+// ─── Расширенная таблица глагольных префиксов движения ─────────────
+//
+// В русском языке глаголы движения образуют видовые пары с помощью
+// префиксов, каждый из которых добавляет направленную семантику:
+//
+//   идти → прийти (прибытие), уйти (удаление), выйти (выход),
+//         войти (вход), дойти (достижение), зайти (заход),
+//         перейти (пересечение), обойти (обход), найти (нахождение),
+//         сойти (спуск), отойти (отдаление), взойти (подъём)
+//
+// Эта таблица используется функцией `motion_verb_semantic_role()`
+// для классификации глаголов движения по типу перемещения.
+
+/// Семантическая роль глагола движения (по префиксу).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum MotionRole {
+    /// Прибытие к цели: при-, прийти, прибежать.
+    Arrival,
+    /// Удаление от источника: у-, уйти, убежать.
+    Departure,
+    /// Вход внутрь: во-, войти, вбежать.
+    Entry,
+    /// Выход наружу: вы-, выйти, выбежать.
+    Exit,
+    /// Достижение цели: до-, дойти, добежать.
+    ArrivalAtGoal,
+    /// Пересечение: пере-, перейти, перебежать.
+    Crossing,
+    /// Обход: обо-, обойти, оббежать.
+    Bypass,
+    /// Подъём: взо-, взойти.
+    Ascent,
+    /// Спуск: с-, сойти, сбежать.
+    Descent,
+    /// Заход по пути: за-, зайти, забежать.
+    Stopover,
+    /// Отдаление на расстояние: ото-, отойти, отбежать.
+    MoveAway,
+    /// Нахождение: на-, найти (наткнуться).
+    Discovery,
+    /// Движение мимо: про-, пройти, пробежать.
+    Passage,
+    /// Движение вместе: с- (сойтись), сойтись, собраться.
+    Convergence,
+    /// Движение расходясь: разо-, разойтись, разбежаться.
+    Divergence,
+    /// Базовое движение без префикса: идти, бежать, ехать.
+    BaseMotion,
+}
+
+/// Таблица соответствия «префикс → MotionRole» для русских глаголов
+/// движения. Используется функцией `motion_verb_semantic_role()`.
+pub const RUSSIAN_MOTION_PREFIXES: &[(&str, MotionRole)] = &[
+    ("при", MotionRole::Arrival),
+    ("у", MotionRole::Departure),
+    ("во", MotionRole::Entry),
+    ("вы", MotionRole::Exit),
+    ("до", MotionRole::ArrivalAtGoal),
+    ("пере", MotionRole::Crossing),
+    ("обо", MotionRole::Bypass),
+    ("об", MotionRole::Bypass),
+    ("взо", MotionRole::Ascent),
+    ("вз", MotionRole::Ascent),
+    ("с", MotionRole::Descent),
+    ("за", MotionRole::Stopover),
+    ("ото", MotionRole::MoveAway),
+    ("от", MotionRole::MoveAway),
+    ("на", MotionRole::Discovery),
+    ("про", MotionRole::Passage),
+    ("разо", MotionRole::Divergence),
+    ("раз", MotionRole::Divergence),
+];
+
+/// Базовые русские глаголы движения (без приставок).
+pub const RUSSIAN_MOTION_BASE_VERBS: &[&str] = &[
+    "идти",
+    "ходить",
+    "бежать",
+    "бегать",
+    "ехать",
+    "ездить",
+    "лететь",
+    "летать",
+    "плыть",
+    "плавать",
+    "ползти",
+    "ползать",
+    "тащиться",
+    "брести",
+    "бродить",
+    "лезть",
+    "лазить",
+    "гнать",
+    "тащить",
+    "везти",
+    "возить",
+    "нести",
+    "носить",
+    "вести",
+    "водить",
+    "клатись",
+    "катить",
+    "катать",
+];
+
+/// Определяет семантическую роль глагола движения по его префиксу.
 ///
-/// Карта: лемма → (Action-вариант, описание). Используется в
-/// `verb_to_action_extended()` как дополнение к базовой таблице.
+/// # Примеры
+///
+/// ```rust,ignore
+/// assert_eq!(motion_verb_semantic_role("прийти"), Some(MotionRole::Arrival));
+/// assert_eq!(motion_verb_semantic_role("выйти"), Some(MotionRole::Exit));
+/// assert_eq!(motion_verb_semantic_role("перейти"), Some(MotionRole::Crossing));
+/// assert_eq!(motion_verb_semantic_role("идти"), Some(MotionRole::BaseMotion));
+/// assert_eq!(motion_verb_semantic_role("спать"), None);
+/// ```
+pub fn motion_verb_semantic_role(verb_lemma: &str) -> Option<MotionRole> {
+    let v = verb_lemma.trim().to_lowercase();
+    if v.is_empty() {
+        return None;
+    }
+    // Сначала проверяем базовые глаголы движения.
+    let is_motion_base = RUSSIAN_MOTION_BASE_VERBS
+        .iter()
+        .any(|base| v == *base || v.starts_with(base));
+    if !is_motion_base {
+        return None;
+    }
+    // Точное совпадение с базовым глаголом.
+    if RUSSIAN_MOTION_BASE_VERBS.iter().any(|base| *base == v) {
+        return Some(MotionRole::BaseMotion);
+    }
+    // Ищем самый длинный подходящий префикс.
+    let mut best: Option<(usize, MotionRole)> = None;
+    for (prefix, role) in RUSSIAN_MOTION_PREFIXES {
+        if v.starts_with(prefix) {
+            let len = prefix.chars().count();
+            match best {
+                None => best = Some((len, *role)),
+                Some((cur, _)) if len > cur => best = Some((len, *role)),
+                _ => {}
+            }
+        }
+    }
+    best.map(|(_, role)| role).or(Some(MotionRole::BaseMotion))
+}
+
+// ─── Русские союзы и их семантическая роль в логике ────────────────
+//
+// Союзы в русском языке соответствуют логическим операторам:
+//   «и» → конъюнкция (AND)
+//   «а» → контраст (BUT/AND-NOT)
+//   «но» → контраст (BUT)
+//   «или» → дизъюнкция (OR)
+//   «либо» → эксклюзивная дизъюнкция (XOR)
+//   «если» → импликация (IF)
+//   «то» → следствие (THEN)
+//   «потому что» → причина (BECAUSE)
+//   «поэтому» → следствие (THEREFORE)
+//   «хотя» → уступка (ALTHOUGH)
+//   «чтобы» → цель (IN-ORDER-TO)
+//
+// Эта таблица используется функцией `conjunction_to_logic_role()`.
+
+/// Логическая роль союза.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ConjunctionLogic {
+    /// Конъюнкция: и, да (в значении «и»), также.
+    And,
+    /// Слабый контраст: а.
+    AndNot,
+    /// Сильный контраст: но, однако, зато.
+    But,
+    /// Дизъюнкция: или, иль.
+    Or,
+    /// Исключающая дизъюнкция: либо.
+    Xor,
+    /// Импликация (условие): если, коли, ежели, раз.
+    If,
+    /// Следствие: то, следовательно, значит, поэтому.
+    Then,
+    /// Причина: потому что, ибо, так как, поскольку.
+    Because,
+    /// Уступка: хотя, хоть, несмотря на.
+    Although,
+    /// Цель: чтобы, дабы, с тем чтобы.
+    InOrderTo,
+    /// Время: когда, пока, как только, после того как.
+    When,
+    /// Место: где, куда, откуда.
+    Where,
+}
+
+/// Таблица соответствия «союз → логическая роль».
+pub const RUSSIAN_CONJUNCTIONS_LOGIC: &[(&str, ConjunctionLogic)] = &[
+    ("и", ConjunctionLogic::And),
+    ("да", ConjunctionLogic::And),
+    ("также", ConjunctionLogic::And),
+    ("тоже", ConjunctionLogic::And),
+    ("а", ConjunctionLogic::AndNot),
+    ("но", ConjunctionLogic::But),
+    ("однако", ConjunctionLogic::But),
+    ("зато", ConjunctionLogic::But),
+    ("впрочем", ConjunctionLogic::But),
+    ("или", ConjunctionLogic::Or),
+    ("иль", ConjunctionLogic::Or),
+    ("либо", ConjunctionLogic::Xor),
+    ("если", ConjunctionLogic::If),
+    ("коли", ConjunctionLogic::If),
+    ("ежели", ConjunctionLogic::If),
+    ("раз", ConjunctionLogic::If),
+    ("кабы", ConjunctionLogic::If),
+    ("то", ConjunctionLogic::Then),
+    ("следовательно", ConjunctionLogic::Then),
+    ("значит", ConjunctionLogic::Then),
+    ("поэтому", ConjunctionLogic::Then),
+    ("стало быть", ConjunctionLogic::Then),
+    ("потому что", ConjunctionLogic::Because),
+    ("ибо", ConjunctionLogic::Because),
+    ("так как", ConjunctionLogic::Because),
+    ("поскольку", ConjunctionLogic::Because),
+    ("оттого что", ConjunctionLogic::Because),
+    ("хотя", ConjunctionLogic::Although),
+    ("хоть", ConjunctionLogic::Although),
+    ("несмотря на то что", ConjunctionLogic::Although),
+    (" невзирая на то что", ConjunctionLogic::Although),
+    ("чтобы", ConjunctionLogic::InOrderTo),
+    ("дабы", ConjunctionLogic::InOrderTo),
+    ("с тем чтобы", ConjunctionLogic::InOrderTo),
+    ("для того чтобы", ConjunctionLogic::InOrderTo),
+    ("когда", ConjunctionLogic::When),
+    ("пока", ConjunctionLogic::When),
+    ("как только", ConjunctionLogic::When),
+    ("после того как", ConjunctionLogic::When),
+    ("едва", ConjunctionLogic::When),
+    ("где", ConjunctionLogic::Where),
+    ("куда", ConjunctionLogic::Where),
+    ("откуда", ConjunctionLogic::Where),
+];
+
+/// Возвращает логическую роль для русского союза, или `None`.
+///
+/// Поиск — точный, case-sensitive. Caller должен нормализовать
+/// регистр (обычно `to_lowercase()`) и убрать пунктуацию вокруг слова.
+pub fn conjunction_to_logic_role(conj: &str) -> Option<ConjunctionLogic> {
+    let c = conj.trim().to_lowercase();
+    if c.is_empty() {
+        return None;
+    }
+    RUSSIAN_CONJUNCTIONS_LOGIC
+        .iter()
+        .find(|(w, _)| *w == c)
+        .map(|(_, role)| *role)
+}
+
+// ─── Дополнительные русские глаголы для расширения `verb_to_action`.
+// Эти леммы добавлены на основе анализа LanguageTool grammar.xml
+// (категория GRAMMAR) и дополнены вручную.
+//
+// Карта: лемма → (Action-вариант, описание). Используется в
+// `verb_to_action_extended()` как дополнение к базовой таблице.
 pub fn verb_to_action_extended(verb_lemma: &str) -> Option<Action> {
     let v = verb_lemma.trim().to_lowercase();
     match v.as_str() {
@@ -2201,22 +2737,1115 @@ pub fn verb_to_action_extended(verb_lemma: &str) -> Option<Action> {
         "схватить" => return Some(Action::Capture),
         "взять в плен" => return Some(Action::Capture),
         "пленить" => return Some(Action::Capture),
-        "обручиться" => return Some(Action::Marry { partner: String::new() }),
-        "повенчаться" => return Some(Action::Marry { partner: String::new() }),
-        "влюбиться" => return Some(Action::FallInLove { partner: String::new() }),
-        "привязаться" => return Some(Action::FallInLove { partner: String::new() }),
+        "обручиться" => {
+            return Some(Action::Marry {
+                partner: String::new(),
+            })
+        }
+        "повенчаться" => {
+            return Some(Action::Marry {
+                partner: String::new(),
+            })
+        }
+        "влюбиться" => {
+            return Some(Action::FallInLove {
+                partner: String::new(),
+            })
+        }
+        "привязаться" => {
+            return Some(Action::FallInLove {
+                partner: String::new(),
+            })
+        }
         "погибнуть" => return Some(Action::Die),
         "скончаться" => return Some(Action::Die),
         "умереть" => return Some(Action::Die),
         "преставиться" => return Some(Action::Die),
         "ожить" => return Some(Action::Resurrect),
         "восстать" => return Some(Action::Resurrect),
-        "родиться" => return Some(Action::Custom { verb_lemma: v.clone(), polarity: VerbPolarity::Positive }),
-        "создать" => return Some(Action::Custom { verb_lemma: v.clone(), polarity: VerbPolarity::Positive }),
-        "построить" => return Some(Action::Custom { verb_lemma: v.clone(), polarity: VerbPolarity::Positive }),
-        "написать" => return Some(Action::Custom { verb_lemma: v.clone(), polarity: VerbPolarity::Neutral }),
-        "нарисовать" => return Some(Action::Custom { verb_lemma: v.clone(), polarity: VerbPolarity::Neutral }),
-        "сочинить" => return Some(Action::Custom { verb_lemma: v.clone(), polarity: VerbPolarity::Neutral }),
+        "родиться" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "создать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "построить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "написать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "нарисовать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "сочинить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        // ─── Глаголы эмоционального состояния ───────────────────────
+        "возненавидеть" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "полюбить" => {
+            return Some(Action::FallInLove {
+                partner: String::new(),
+            })
+        }
+        "разлюбить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "обидеть" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "оскорбить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "унизить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "опозорить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "разозлить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "рассердить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "испугать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "напугать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "ужаснуть" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "опечалить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "расстроить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "обрадовать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "веселить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "развеселить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "утешить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "успокоить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "вдохновить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "воодушевить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "разочаровать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "поразить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "удивить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "изумить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "порадовать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        // ─── Глаголы коммуникации ───────────────────────────────────
+        "сказать" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "молвить" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "промолвить" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "изречь" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "проговорить" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "пробормотать" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "прошептать" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "крикнуть" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "воскликнуть" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "заявить" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "объявить" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "сообщить" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "поведать" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "рассказать" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "признаться" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "покаяться" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "спросить" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "поинтересоваться" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "ответить" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "возразить" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "оспорить" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "опровергнуть" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "подтвердить" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "пообещать" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "поклясться" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "упрекнуть" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "похвалить" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "благодарить" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "поздравить" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "извиниться" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "попросить" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "умолять" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "приказать" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "распорядиться" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "поручить" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "запретить" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "разрешить" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "посоветовать" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "рекомендовать" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "предложить" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "назвать" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        "окрестить" => {
+            return Some(Action::Speak {
+                text: String::new(),
+            })
+        }
+        // ─── Глаголы восприятия ─────────────────────────────────────
+        "увидеть" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "заметить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "обнаружить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "разглядеть" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "увидаться" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "услышать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "прислушаться" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "почувствовать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "ощутить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "понюхать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "попробовать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "погладить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "пощупать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        // ─── Глаголы мышления и познания ────────────────────────────
+        "понять" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "осознать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "постичь" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "усвоить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "изучить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "исследовать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "узнать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "выяснить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "обнаружить факт" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "догадаться" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "сообразить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "вспомнить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "запомнить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "забыть" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "припомнить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "размышлять" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "обдумать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "взвесить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "решить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "выбрать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "подобрать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        // ─── Глаголы владения и передачи ────────────────────────────
+        "взять" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "отдать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "передать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "подарить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "получить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "принять" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "купить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "продать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "обменять" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "украсть" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "присвоить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "отобрать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "конфисковать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "найти" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "потерять" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "сохранить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "спрятать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "упрятать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        // ─── Глаголы социальных отношений ───────────────────────────
+        "встретить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "познакомиться" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "подружиться" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "ссориться" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "поссориться" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "помириться" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "предать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "изменить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "обмануть" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "обвинить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "оправдать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "осудить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "простить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "наказать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "помочь" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "помогать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "поддержать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "защитить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "спасти" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "напасть" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "атаковать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        // ─── Глаголы изменения состояния ────────────────────────────
+        "стать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "сделаться" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "превратиться" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "преобразиться" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "измениться" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "вылечить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "исцелить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "выздороветь" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "заболеть" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "заразиться" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        // ─── Глаголы создания и разрушения ──────────────────────────
+        "основать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "учредить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "открыть" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "закрыть" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "уничтожить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "разрушить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "сломать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "разбить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "сжечь" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "взорвать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "растоптать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "стереть" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "выбросить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        // ─── Глаголы перемещения с семантикой ───────────────────────
+        "прибыть" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "отправиться" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "посетить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "навестить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Positive,
+            })
+        }
+        "покинуть" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "вернуться" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "сбежать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Negative,
+            })
+        }
+        "путешествовать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "переехать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        // ─── Фазовые глаголы (начало/продолжение/конец) ─────────────
+        "начать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "начинать" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "продолжить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "прекратить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "закончить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "завершить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
+        "кончить" => {
+            return Some(Action::Custom {
+                verb_lemma: v.clone(),
+                polarity: VerbPolarity::Neutral,
+            })
+        }
         _ => None,
     }
 }
@@ -2438,11 +4067,7 @@ mod tests {
             Some("char-petr-2".to_string()),
             "Другой персонаж"
         );
-        assert_eq!(
-            resolver.resolve("Замок"),
-            None,
-            "Локация не индексируется"
-        );
+        assert_eq!(resolver.resolve("Замок"), None, "Локация не индексируется");
         assert_eq!(resolver.lemma_count(), 2, "Два актанта в индексе");
         // Wave 6: автоматически сгенерированные падежи для «Иван» (5) и
         // «Пётр» (4) попадают в by_alias. Раньше было 0; теперь ≥ 9.
@@ -2565,11 +4190,7 @@ mod tests {
         let resolver = EntityResolver::from_nodes(&nodes);
 
         // Совсем неизвестное имя.
-        assert_eq!(
-            resolver.resolve("Николай"),
-            None,
-            "Николай не в индексе"
-        );
+        assert_eq!(resolver.resolve("Николай"), None, "Николай не в индексе");
         // Пустая строка.
         assert_eq!(resolver.resolve(""), None, "Пустая строка → None");
         // Только пробелы.
@@ -2606,33 +4227,16 @@ mod tests {
         let resolver = EntityResolver::from_nodes(&[]);
 
         // Триплет в середине главы 12 (position=1000).
-        let t1 = make_triplet(
-            "Иван",
-            "сказать",
-            "",
-            "Иван сказал.",
-            1000,
-            "neutral",
-        );
+        let t1 = make_triplet("Иван", "сказать", "", "Иван сказал.", 1000, "neutral");
         let events = triplets_to_events(&[t1], &resolver, &chapters);
         assert_eq!(events.len(), 1, "Один триплет → одно событие");
-        assert_eq!(
-            events[0].time.chapter_num, 12,
-            "position=1000 → глава 12"
-        );
+        assert_eq!(events[0].time.chapter_num, 12, "position=1000 → глава 12");
         assert_eq!(events[0].time.char_offset, 1000, "char_offset = position");
         assert_eq!(events[0].time.chapter_suffix, None, "suffix = None");
         assert_eq!(events[0].time.scene_index, None, "scene_index = None");
 
         // Триплет в начале главы 15 (position=1500 — граница, должна войти в 15).
-        let t2 = make_triplet(
-            "Пётр",
-            "сказать",
-            "",
-            "Пётр сказал.",
-            1500,
-            "neutral",
-        );
+        let t2 = make_triplet("Пётр", "сказать", "", "Пётр сказал.", 1500, "neutral");
         let events2 = triplets_to_events(&[t2], &resolver, &chapters);
         assert_eq!(
             events2[0].time.chapter_num, 15,
@@ -2641,14 +4245,7 @@ mod tests {
 
         // Триплет ДО первой главы (position=0, но первая глава начинается в 0).
         // Граница [0, 500) — входит в главу 10.
-        let t3 = make_triplet(
-            "Николай",
-            "сказать",
-            "",
-            "Николай сказал.",
-            0,
-            "neutral",
-        );
+        let t3 = make_triplet("Николай", "сказать", "", "Николай сказал.", 0, "neutral");
         let events3 = triplets_to_events(&[t3], &resolver, &chapters);
         assert_eq!(
             events3[0].time.chapter_num, 10,
@@ -2659,14 +4256,7 @@ mod tests {
         // Здесь первая глава начинается в 0, так что этот случай не воспроизводим.
         // Сделаем главы с offset'ом:
         let chapters_offset = vec![make_chapter(5, 100, 500)];
-        let t4 = make_triplet(
-            "Алексей",
-            "сказать",
-            "",
-            "Алексей сказал.",
-            50,
-            "neutral",
-        );
+        let t4 = make_triplet("Алексей", "сказать", "", "Алексей сказал.", 50, "neutral");
         let events4 = triplets_to_events(&[t4], &resolver, &chapters_offset);
         assert_eq!(
             events4[0].time.chapter_num, 0,
@@ -2675,19 +4265,9 @@ mod tests {
         assert_eq!(events4[0].time.char_offset, 50, "char_offset сохранён");
 
         // Пустой список глав → глава 0 для любой позиции.
-        let t5 = make_triplet(
-            "Борис",
-            "сказать",
-            "",
-            "Борис сказал.",
-            9999,
-            "neutral",
-        );
+        let t5 = make_triplet("Борис", "сказать", "", "Борис сказал.", 9999, "neutral");
         let events5 = triplets_to_events(&[t5], &resolver, &[]);
-        assert_eq!(
-            events5[0].time.chapter_num, 0,
-            "Пустой chapters → глава 0"
-        );
+        assert_eq!(events5[0].time.chapter_num, 0, "Пустой chapters → глава 0");
     }
 
     #[test]
@@ -2776,14 +4356,7 @@ mod tests {
         );
 
         // Проверим Speak — нет target.
-        let t3 = make_triplet(
-            "Иван",
-            "сказать",
-            "",
-            "Иван сказал.",
-            200,
-            "neutral",
-        );
+        let t3 = make_triplet("Иван", "сказать", "", "Иван сказал.", 200, "neutral");
         let events3 = triplets_to_events(&[t3], &resolver2, &chapters);
         assert_eq!(events3[0].target, None, "Speak → target = None");
         match &events3[0].action {
@@ -2800,14 +4373,7 @@ mod tests {
         assert_eq!(events4[0].action, Action::Die, "verb «умереть» → Die");
 
         // Проверим фантомную сущность — неизвестное имя сохраняется как есть.
-        let t5 = make_triplet(
-            "Призрак",
-            "сказать",
-            "",
-            "Призрак сказал.",
-            400,
-            "neutral",
-        );
+        let t5 = make_triplet("Призрак", "сказать", "", "Призрак сказал.", 400, "neutral");
         let events5 = triplets_to_events(&[t5], &resolver2, &chapters);
         assert_eq!(
             events5[0].actor, "Призрак",
@@ -2863,12 +4429,19 @@ mod tests {
              берём второе cap_word, а это «Алёну», который резолвится через form)"
         );
         assert_eq!(kill.action, Action::Kill);
-        assert_eq!(kill.provenance, Provenance::RustParser, "RustParser provenance");
+        assert_eq!(
+            kill.provenance,
+            Provenance::RustParser,
+            "RustParser provenance"
+        );
         assert!(
             (kill.confidence - 0.5).abs() < 1e-6,
             "confidence = 0.5 для fallback"
         );
-        assert_eq!(kill.time.chapter_num, 5, "Глава 5 (вся глава покрывает текст)");
+        assert_eq!(
+            kill.time.chapter_num, 5,
+            "Глава 5 (вся глава покрывает текст)"
+        );
         assert!(
             kill.source_text.contains("Раскольников") && kill.source_text.contains("убил"),
             "source_text содержит исходное предложение: {:?}",
@@ -3106,16 +4679,14 @@ mod tests {
     fn test_entity_resolver_declension_from_alias() {
         // Если alias — каноническая форма (напр., «Пётр»), от него тоже
         // должны сгенерироваться падежи.
-        let nodes = vec![
-            make_node(
-                "char_petr",
-                "Пётр_Главный", // title — выдуманный, чтобы не пересекался
-                "character",
-                Some(json!({
-                    "aliases": ["Пётр"]
-                })),
-            ),
-        ];
+        let nodes = vec![make_node(
+            "char_petr",
+            "Пётр_Главный", // title — выдуманный, чтобы не пересекался
+            "character",
+            Some(json!({
+                "aliases": ["Пётр"]
+            })),
+        )];
         let resolver = EntityResolver::from_nodes(&nodes);
 
         // «Петра» должно резолвиться через alias «Пётр» → declension «петра».
@@ -3185,8 +4756,7 @@ mod tests {
             events2
         );
         assert_eq!(
-            kill2[0].actor,
-            "char_grigory",
+            kill2[0].actor, "char_grigory",
             "Случай 2: actor = Григорий (резолвится)"
         );
         assert_eq!(
@@ -3211,8 +4781,7 @@ mod tests {
             events3
         );
         assert_eq!(
-            kill3[0].actor,
-            "char_anton",
+            kill3[0].actor, "char_anton",
             "Случай 3: actor = Антон (первое заглавное)"
         );
         assert_eq!(
@@ -3236,8 +4805,7 @@ mod tests {
             events4
         );
         assert_eq!(
-            kill4[0].target,
-            None,
+            kill4[0].target, None,
             "Случай 4: lowercase «чиновника» не резолвится и не заглавное → target = None"
         );
 
@@ -3255,11 +4823,7 @@ mod tests {
             "Случай 5: должно быть 1 Kill-событие, got {:?}",
             events5
         );
-        assert_eq!(
-            kill5[0].actor,
-            "char_anton",
-            "Случай 5: actor = Антон"
-        );
+        assert_eq!(kill5[0].actor, "char_anton", "Случай 5: actor = Антон");
         assert_eq!(
             kill5[0].target,
             Some("char_alex".to_string()),
@@ -3282,7 +4846,10 @@ mod tests {
         assert!(is_russian_stop_word("Ты"), "«Ты» — стоп-слово");
         // Case-insensitive.
         assert!(is_russian_stop_word("он"), "«он» (lowercase) — стоп-слово");
-        assert!(is_russian_stop_word("ОНА"), "«ОНА» (uppercase) — стоп-слово");
+        assert!(
+            is_russian_stop_word("ОНА"),
+            "«ОНА» (uppercase) — стоп-слово"
+        );
     }
 
     #[test]
@@ -3323,8 +4890,14 @@ mod tests {
         assert!(!is_russian_stop_word("Грак"), "«Грак» — НЕ стоп-слово");
         assert!(!is_russian_stop_word("Веня"), "«Веня» — НЕ стоп-слово");
         assert!(!is_russian_stop_word("Паша"), "«Паша» — НЕ стоп-слово");
-        assert!(!is_russian_stop_word("Архитектор"), "«Архитектор» — НЕ стоп-слово");
-        assert!(!is_russian_stop_word("Раскольников"), "«Раскольников» — НЕ стоп-слово");
+        assert!(
+            !is_russian_stop_word("Архитектор"),
+            "«Архитектор» — НЕ стоп-слово"
+        );
+        assert!(
+            !is_russian_stop_word("Раскольников"),
+            "«Раскольников» — НЕ стоп-слово"
+        );
     }
 
     #[test]
@@ -3332,9 +4905,15 @@ mod tests {
         // Пустая строка — не стоп-слово (нет смысла).
         assert!(!is_russian_stop_word(""), "Пустая строка — не стоп-слово");
         // Только пробелы — тримятся, пустая строка → не стоп.
-        assert!(!is_russian_stop_word("   "), "Только пробелы — не стоп-слово");
+        assert!(
+            !is_russian_stop_word("   "),
+            "Только пробелы — не стоп-слово"
+        );
         // Пробелы вокруг реального стоп-слова — тримятся.
-        assert!(is_russian_stop_word("  Он  "), "«  Он  » → «Он» — стоп-слово");
+        assert!(
+            is_russian_stop_word("  Он  "),
+            "«  Он  » → «Он» — стоп-слово"
+        );
     }
 
     #[test]
@@ -3396,10 +4975,7 @@ mod tests {
             "Берётся текст после последнего тире (авторская атрибуция), got: {:?}",
             cleaned
         );
-        assert!(
-            !cleaned.contains("Привет"),
-            "Содержимое реплики удалено"
-        );
+        assert!(!cleaned.contains("Привет"), "Содержимое реплики удалено");
     }
 
     #[test]
@@ -3421,10 +4997,7 @@ mod tests {
         // Обычное предложение без кавычек и тире — проходит как есть.
         let s = "Грак убил Ревуна.";
         let cleaned = strip_dialogue_content(s);
-        assert_eq!(
-            cleaned, s,
-            "Без кавычек/тире — строка не меняется"
-        );
+        assert_eq!(cleaned, s, "Без кавычек/тире — строка не меняется");
     }
 
     #[test]
@@ -3646,7 +5219,12 @@ mod tests {
         // «Или они убивают Ревуна.» — стоп-слова «Или», «они».
         let text3 = "Или они убивают Ревуна.";
         let events3 = parse_text_fallback(text3, &resolver, &chapters);
-        assert_eq!(events3.len(), 0, "«Или/они» — стоп-слова, got: {:?}", events3);
+        assert_eq!(
+            events3.len(),
+            0,
+            "«Или/они» — стоп-слова, got: {:?}",
+            events3
+        );
     }
 
     #[test]
@@ -3668,7 +5246,12 @@ mod tests {
             .iter()
             .filter(|e| matches!(e.action, Action::Speak { .. }))
             .collect();
-        assert_eq!(speak.len(), 1, "Должно быть 1 Speak (Анна), got: {:?}", events);
+        assert_eq!(
+            speak.len(),
+            1,
+            "Должно быть 1 Speak (Анна), got: {:?}",
+            events
+        );
         assert_eq!(speak[0].actor, "char_anna");
     }
 

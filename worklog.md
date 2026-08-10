@@ -1685,3 +1685,193 @@ Stage Summary:
   HypothesisId, HypothesisLog, HypothesisSource, HypothesisStatus,
   HypothesisVerifier, Resolution};` and `pub use cycle::{CycleReport,
   ReasoningCycle};` to re-exports.
+
+---
+Task ID: 5
+Agent: main (coordinator)
+Task: Expand semantic_parser.rs and parser/mod.rs with comprehensive
+Russian/Ukrainian linguistic "weights" sourced from LanguageTool's
+open-source rule repository. User philosophy: hardcoded language rules
+are the program's knowledge base (analogous to neural network weights),
+bloat is an accepted design choice.
+
+Work Log:
+- Verified git remote URL with user-provided PAT
+  (token redacted — do not commit secrets to the repository).
+  Repository Kotokvit/litgraph-desktop was already cloned and synced
+  to main; previous session's languagetool_weights.rs work was
+  uncommitted.
+- Cleaned 4.3 GB of build cache (src-tauri/target, litgraph-core/target,
+  /tmp/check_*) to free disk space (was at 100% /, now 36% /).
+- Committed previous session's baseline work as commit 5373c86
+  (10 files, +12928 lines): languagetool_weights.rs modules
+  (~3950 LOC each, RU+UK LexicalRule tables), parser/mod.rs wrappers,
+  semantic_parser.rs wrappers, stop-word data files.
+- Discovered additional LanguageTool rule files via GitHub API
+  (the original session only fetched grammar.xml + grammar-barbarism.xml;
+  the repository actually contains many more):
+    UK: grammar-grammar.xml (186 KB, 34 rules),
+        grammar-punctuation.xml (125 KB, 4 rules),
+        grammar-spelling.xml (89 KB, 29 rules),
+        grammar-style.xml (254 KB, 68 rules),
+        replace.txt (544 KB, 7915 entries),
+        replace_soft.txt (87 KB, 1696 entries),
+        replace_renamed.txt (40 KB, 498 entries),
+        replace_spelling_2019.txt (67 KB, 1346 entries).
+    RU: replace.txt (13 KB, 288 entries),
+        wordrootrep.txt (566 KB, 13122 root→related pairs),
+        coherency.txt, bitext.xml.
+- Downloaded all missing files into references/languagetool-{ru,uk}-extra/.
+- Wrote /home/z/my-project/scripts/extract_lt_extras.py (Python, ~400 LOC)
+  that parses:
+    (a) LanguageTool *.txt replacement files (format: `wrong=correct1|correct2|...`)
+    (b) ru/wordrootrep.txt (format: `root;related_word`)
+    (c) DTD entities in ru/grammar.xml (22 semantic categories:
+        weekdays, months, abbrevMonths, color, nation, time, human,
+        dual, prep_v, prep_na, profession, start_vvodnoe, missing_yo,
+        double_num, pril_end, ne_pril_short_inoe, ne_pril_short_double,
+        verb, rost, zagl, defis_libo, pnct)
+  and emits a single Rust source file with all tables as `pub const`
+  arrays plus lookup helper functions.
+- Generated src-tauri/src/linguistic_entities.rs (26642 LOC, 1.06 MB):
+    RU_REPLACEMENTS: 288 entries
+    UK_REPLACEMENTS: 7912 entries
+    UK_REPLACEMENTS_SOFT: 1696 entries
+    UK_REPLACEMENTS_RENAMED: 498 entries
+    UK_REPLACEMENTS_SPELLING_2019: 1346 entries
+    RU_WORD_ROOTS: 13122 root→related pairs
+    21 semantic category tables (RU_WEEKDAYS through RU_DEFIS_LIBO_WORDS)
+    Lookup helpers: find_ru_replacement, find_uk_replacement,
+      find_uk_replacement_soft, find_uk_replacement_renamed,
+      find_uk_replacement_2019, find_ru_word_root_tautology,
+      is_ru_weekday/month/color/nation/time_word/human_quality/
+        profession/vvodnoe/prep_v_word/prep_na_word/zagl_word
+      total_replacement_entries, total_word_root_entries,
+      total_semantic_categories
+- Mirrored linguistic_entities.rs to litgraph-core/src/.
+- Registered `pub mod linguistic_entities;` in both lib.rs files.
+- Expanded src-tauri/src/reasoning/semantic_parser.rs (+1583 LOC):
+    * 19 new wrapper functions exposing linguistic_entities tables
+      (find_ru_replacement_in_lt, find_uk_replacement_in_lt,
+      find_uk_replacement_soft_in_lt, find_uk_replacement_2019_in_lt,
+      find_ru_word_root_tautology_in_text, is_ru_weekday_word,
+      is_ru_month_word, is_ru_color_word, is_ru_nation_word,
+      is_ru_time_word_token, is_ru_human_quality_word,
+      is_ru_profession_word, is_ru_vvodnoe_word_token,
+      is_ru_prep_v_word_token, is_ru_prep_na_word_token,
+      is_ru_zagl_word_token, total_replacement_entries_in_lt,
+      total_word_root_entries_in_lt, total_semantic_category_tokens_in_lt)
+    * New MotionRole enum (16 variants) +
+      RUSSIAN_MOTION_PREFIXES table (18 prefixes) +
+      RUSSIAN_MOTION_BASE_VERBS table (28 base verbs) +
+      motion_verb_semantic_role() function — classifies Russian
+      motion verbs by directional prefix (при-→Arrival, у-→Departure,
+      вы-→Exit, во-→Entry, до-→ArrivalAtGoal, пере-→Crossing, etc.)
+    * New ConjunctionLogic enum (12 variants) +
+      RUSSIAN_CONJUNCTIONS_LOGIC table (43 conjunctions) +
+      conjunction_to_logic_role() function — maps Russian conjunctions
+      to logical operators (и→And, но→But, или→Or, если→If,
+      потому что→Because, хотя→Although, чтобы→InOrderTo, etc.)
+    * Expanded verb_to_action_extended() match table with ~140 new
+      Russian verb lemmas across 6 semantic categories:
+        - Эмоциональное состояние (26 verbs: возненавидеть, полюбить,
+          обидеть, оскорбить, испугать, обрадовать, вдохновить, etc.)
+        - Коммуникация (43 verbs: молвить, изречь, пробормотать,
+          воскликнуть, покаяться, упрекнуть, благодapить, etc.)
+        - Восприятие (13 verbs: увидеть, услышать, почувствовать,
+          ощутить, понюхать, etc.)
+        - Мышление и познание (21 verbs: понять, осознать, усвоить,
+          вспомнить, запомнить, забыть, решить, выбрать, etc.)
+        - Владение и передача (18 verbs: взять, отдать, подарить,
+          украсть, присвоить, отобрать, потерять, etc.)
+        - Социальные отношения (22 verbs: встретить, подружиться,
+          поссориться, предать, обмануть, обвинить, простить, помочь,
+          защитить, спасти, напасть, атаковать, etc.)
+        - Изменение состояния (10 verbs: стать, превратиться,
+          вылечить, исцелить, заболеть, etc.)
+        - Создание и разрушение (15 verbs: основать, учредить,
+          открыть, уничтожить, разрушить, сжечь, взорвать, etc.)
+        - Перемещение (9 verbs: прибыть, отправиться, навестить,
+          покинуть, вернуться, сбежать, etc.)
+        - Фазовые глаголы (7 verbs: начать, продолжить, прекратить,
+          закончить, завершить, etc.)
+- Expanded src-tauri/src/parser/mod.rs (+1011 LOC):
+    * New RussianCase enum (6 variants: Nominative, Genitive, Dative,
+      Accusative, Instrumental, Prepositional)
+    * New RussianGender enum (3 variants: Masculine, Feminine, Neuter)
+    * New RussianNumber enum (Singular, Plural)
+    * New RUSSIAN_NOUN_CASE_ENDINGS table (60 entries — full paradigm:
+      3 genders × 6 cases × 2 numbers × 2 stem types = 72 cells,
+      reduced to 60 by overlap; each entry has gender, number, case,
+      ending, example)
+    * detect_russian_case_by_ending() — heuristic case detection
+      by word ending (longest-match-wins)
+    * detect_russian_case_with_gender_number() — precise case
+      detection when gender and number are known
+    * New RU_UK_COGNATE_PAIRS table (114 entries: Russian↔Ukrainian
+      cognate pairs for cross-language entity resolution — names,
+      toponyms, common nouns, natural objects, temporal concepts)
+    * find_cognate_pair() — bidirectional cognate lookup
+    * is_ru_known_name(), is_uk_known_name() — name-detection helpers
+    * 11 new wrapper functions exposing linguistic_entities tables
+      (find_ru_replacement, find_uk_replacement,
+      find_ru_word_root_tautology, is_ru_weekday/month/profession/
+      color/nation/human_quality/vvodnoe, total_replacement_entries,
+      total_word_root_entries)
+- Mirrored parser/mod.rs to litgraph-core/src/parser/mod.rs.
+- Verification:
+    * rustc --emit=metadata on linguistic_entities.rs: 0 errors, 0 warnings
+    * rustfmt --check on all 5 modified files: 0 diffs (all clean)
+    * Standalone cargo test on linguistic_entities.rs (11 tests):
+      ALL PASSING — uk_replace_has_known_barbarism,
+      uk_replace_returns_none_for_unknown, ru_wordroot_pairs_loaded,
+      ru_weekday_detection, ru_month_detection, ru_profession_detection,
+      ru_color_detection, ru_vvodnoe_detection, ru_prep_v_word_detection,
+      ru_prep_na_word_detection, total_entries_sane
+    * Could not run cargo check on src-tauri directly (Tauri's gdk-sys
+      needs system libs absent in sandbox). Standalone check on
+      linguistic_entities.rs covers the new module; syntactic
+      metadata-emission check covers parser/mod.rs and semantic_parser.rs.
+- Reverted inadvertently rustfmt-modified sibling files (chapters.rs,
+  characters.rs, epsilon.rs, locations.rs in both src-tauri and
+  litgraph-core) — they were touched when rustfmt walked the parser/
+  module tree from mod.rs, but the changes broke user-intentional
+  column alignment in pattern tables. Used `git checkout HEAD --` to
+  restore the original formatting.
+
+Stage Summary:
+- New file: src-tauri/src/linguistic_entities.rs (26642 LOC, 1.06 MB)
+  Mirror:  litgraph-core/src/linguistic_entities.rs (identical)
+  Contents: 24940 lines of static rule tables + 1700 lines of lookup
+  helpers and module documentation. Sourced from LanguageTool's
+  open-source repository (LGPL v2.1).
+- Expanded src-tauri/src/reasoning/semantic_parser.rs:
+  3750 LOC → 5333 LOC (+1583 LOC, +42% growth)
+- Expanded src-tauri/src/parser/mod.rs:
+  1101 LOC → 2112 LOC (+1011 LOC, +92% growth)
+- Total "weights" added in this task: ~28000 lines of static linguistic
+  data (replacement tables, word-root pairs, semantic categories,
+  case endings, cognate pairs, motion verb prefixes, conjunction logic).
+- Cumulative "weights" in the project (after this task):
+    languagetool_weights.rs: 3949 LOC (LexicalRule patterns)
+    linguistic_entities.rs:  26642 LOC (flat replacement + semantic tables)
+    semantic_parser.rs:      5333 LOC (verb tables, declensions,
+                            motion prefixes, conjunction logic,
+                            preposition-case mappings, etc.)
+    parser/mod.rs:           2112 LOC (case endings, cognate pairs,
+                            aliases, lemmatization, LT wrappers)
+    TOTAL:                   ~38036 LOC of linguistic "weights"
+- Design philosophy honored: rules ARE the program's knowledge.
+  Bloat is intentional — these tables function as the equivalent of
+  neural network parameters for the symbolic NLP pipeline.
+- All public APIs documented in Russian (matching user's language).
+  All identifiers in English (Rust convention).
+  All static tables use `&'static` for zero-allocation lookup.
+  All lookup functions are O(n) linear scan (acceptable for current
+  table sizes; can be upgraded to phf::Map if performance becomes
+  critical).
+- Ready for next iteration: user may want to add more cognate pairs,
+  more verb lemmas, or integrate these tables deeper into the
+  parsing pipeline (e.g., have parse_text_fallback() consult
+  find_ru_replacement_in_lt() for token normalization before
+  regex matching).

@@ -8,8 +8,8 @@ pub mod locations;
 pub mod epsilon;
 
 use crate::models::{LitEdge, LitNode, LitNodeData, ParseResult, ParseStats, Position};
-use std::collections::HashMap;
 use chrono::Utc;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use thiserror::Error;
 use uuid::Uuid;
@@ -94,18 +94,31 @@ pub fn build_graph(
     let (global_counts, total_words_count) = epsilon::build_word_counts(markdown);
     let mut epsilon_results: Vec<epsilon::EpsilonResult> = chapters
         .iter()
-        .map(|ch| epsilon::compute_epsilon(&ch.full_text, &global_counts, total_words_count, None, 1.0))
+        .map(|ch| {
+            epsilon::compute_epsilon(&ch.full_text, &global_counts, total_words_count, None, 1.0)
+        })
         .collect();
     epsilon::normalize_epsilons(&mut epsilon_results);
     let prologue_epsilon = if prologue_text.trim().len() > 100 {
-        Some(epsilon::compute_epsilon(&prologue_text, &global_counts, total_words_count, None, 1.0))
-    } else { None };
+        Some(epsilon::compute_epsilon(
+            &prologue_text,
+            &global_counts,
+            total_words_count,
+            None,
+            1.0,
+        ))
+    } else {
+        None
+    };
 
     // --- Пролог (если есть) ---
     let mut prologue_id: Option<String> = None;
     if prologue_text.trim().len() > 100 {
         let id = uid("ch");
-        let body_preview: String = prologue_text.split_whitespace().collect::<Vec<_>>().join(" ");
+        let body_preview: String = prologue_text
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
         let body = if body_preview.len() > 400 {
             // Безопасный срез по char boundary (UTF-8)
             let mut end = 400;
@@ -158,21 +171,47 @@ pub fn build_graph(
 
         let word_count = ch.full_text.split_whitespace().count();
         let mut meta = serde_json::Map::new();
-        meta.insert("wordCount".to_string(), serde_json::Value::Number(word_count.into()));
+        meta.insert(
+            "wordCount".to_string(),
+            serde_json::Value::Number(word_count.into()),
+        );
         let eps = &epsilon_results[idx];
-        meta.insert("epsilon".to_string(), serde_json::Value::Number((eps.normalized.round() as i64).into()));
-        meta.insert("emotion".to_string(), serde_json::Value::Number((eps.emotion_count as i64).into()));
-        meta.insert("uniqueWords".to_string(), serde_json::Value::Number((eps.unique_words as i64).into()));
+        meta.insert(
+            "epsilon".to_string(),
+            serde_json::Value::Number((eps.normalized.round() as i64).into()),
+        );
+        meta.insert(
+            "emotion".to_string(),
+            serde_json::Value::Number((eps.emotion_count as i64).into()),
+        );
+        meta.insert(
+            "uniqueWords".to_string(),
+            serde_json::Value::Number((eps.unique_words as i64).into()),
+        );
         if !ch_chars.is_empty() {
             meta.insert(
                 "characters".to_string(),
-                serde_json::Value::String(ch_chars.iter().take(5).cloned().collect::<Vec<_>>().join(", ")),
+                serde_json::Value::String(
+                    ch_chars
+                        .iter()
+                        .take(5)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                ),
             );
         }
         if !ch_locs.is_empty() {
             meta.insert(
                 "locations".to_string(),
-                serde_json::Value::String(ch_locs.iter().take(3).cloned().collect::<Vec<_>>().join(", ")),
+                serde_json::Value::String(
+                    ch_locs
+                        .iter()
+                        .take(3)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                ),
             );
         }
 
@@ -275,7 +314,6 @@ pub fn build_graph(
         });
     }
 
-
     // --- Связи: поток глав ---
     let mut ordered: Vec<String> = Vec::new();
     if let Some(pid) = &prologue_id {
@@ -295,7 +333,10 @@ pub fn build_graph(
             target_handle: None,
             edge_type: Some("smoothstep".to_string()),
             animated: Some(true),
-            data: Some(crate::models::EdgeData { kind: Some("flow".to_string()), note: None }),
+            data: Some(crate::models::EdgeData {
+                kind: Some("flow".to_string()),
+                note: None,
+            }),
         });
     }
 
@@ -314,7 +355,10 @@ pub fn build_graph(
                             target_handle: None,
                             edge_type: Some("smoothstep".to_string()),
                             animated: Some(false),
-                            data: Some(crate::models::EdgeData { kind: Some("character".to_string()), note: None }),
+                            data: Some(crate::models::EdgeData {
+                                kind: Some("character".to_string()),
+                                note: None,
+                            }),
                         });
                     }
                 }
@@ -337,7 +381,10 @@ pub fn build_graph(
                             target_handle: None,
                             edge_type: Some("smoothstep".to_string()),
                             animated: Some(false),
-                            data: Some(crate::models::EdgeData { kind: Some("location".to_string()), note: None }),
+                            data: Some(crate::models::EdgeData {
+                                kind: Some("location".to_string()),
+                                note: None,
+                            }),
                         });
                     }
                 }
@@ -345,9 +392,17 @@ pub fn build_graph(
         }
     }
 
-
     // --- Раскладка ---
-    layout_nodes(&mut nodes, &chapters, &prologue_id, &characters, &locations, &chapter_ids, &char_ids, &loc_ids);
+    layout_nodes(
+        &mut nodes,
+        &chapters,
+        &prologue_id,
+        &characters,
+        &locations,
+        &chapter_ids,
+        &char_ids,
+        &loc_ids,
+    );
 
     let word_count = markdown.split_whitespace().count();
     let now = Utc::now().timestamp_millis() as u64;
@@ -355,7 +410,6 @@ pub fn build_graph(
     let chapters_count = chapters.len();
     let characters_count = characters.len();
     let locations_count = locations.len();
-    
 
     Ok(ParseResult {
         title: project_title.to_string(),
@@ -365,7 +419,7 @@ pub fn build_graph(
             chapters_count,
             characters_count,
             locations_count,
-            
+
             edges_count,
             word_count
         ),
@@ -393,7 +447,6 @@ fn layout_nodes(
     chapter_ids: &std::collections::HashMap<u32, String>,
     char_ids: &std::collections::HashMap<String, String>,
     loc_ids: &std::collections::HashMap<String, String>,
-    
 ) {
     // Главы — центральная колонка
     let chapter_x = 600.0;
@@ -534,10 +587,8 @@ pub fn lemmatize_simple(word: &str) -> String {
     }
     // Типичные русские/украинские окончания (попытка отсечь самое длинное совпадение)
     let endings: &[&str] = &[
-        "ами", "ями", "ого", "его", "ому", "ему", "ыми", "ими",
-        "ах", "ях", "ой", "ая", "ее", "ие", "ые", "ою", "ею",
-        "ом", "ем", "ам", "ям",
-        "а", "я", "у", "ю", "ы", "и", "е", "о",
+        "ами", "ями", "ого", "его", "ому", "ему", "ыми", "ими", "ах", "ях", "ой", "ая", "ее", "ие",
+        "ые", "ою", "ею", "ом", "ем", "ам", "ям", "а", "я", "у", "ю", "ы", "и", "е", "о",
     ];
     for ending in endings {
         let ending_chars: Vec<char> = ending.chars().collect();
@@ -961,12 +1012,13 @@ pub fn all_aliases() -> &'static [(&'static str, &'static str)] {
 pub fn lemmatize_ukrainian(word: &str) -> String {
     let lower = word.to_lowercase();
     let chars: Vec<char> = lower.chars().collect();
-    if chars.len() <= 4 { return lower; }
+    if chars.len() <= 4 {
+        return lower;
+    }
     // Украинские окончания (попытка отсечь самое длинное совпадение)
     let endings: &[&str] = &[
-        "ами", "ями", "ів", "ів", "ові", "еві", "ом", "ем",
-        "ах", "ях", "ою", "ею", "ми",
-        "а", "я", "у", "ю", "и", "і", "е", "о",
+        "ами", "ями", "ів", "ів", "ові", "еві", "ом", "ем", "ах", "ях", "ою", "ею", "ми", "а", "я",
+        "у", "ю", "и", "і", "е", "о",
     ];
     for ending in endings {
         let ending_chars: Vec<char> = ending.chars().collect();
@@ -984,11 +1036,15 @@ pub fn lemmatize_ukrainian(word: &str) -> String {
 /// Используется в `EntityResolver`-эквиваленте для украинского текста.
 pub fn generate_ukrainian_declensions(name: &str) -> Vec<String> {
     let name_trim = name.trim();
-    if name_trim.is_empty() { return Vec::new(); }
+    if name_trim.is_empty() {
+        return Vec::new();
+    }
     let lc = name_trim.to_lowercase();
     let chars: Vec<char> = lc.chars().collect();
     let len = chars.len();
-    if len < 2 { return vec![lc]; }
+    if len < 2 {
+        return vec![lc];
+    }
     let mut forms = Vec::new();
     if lc.ends_with("ія") && len > 3 {
         let stem: String = chars[..len - 2].iter().collect();
@@ -1037,10 +1093,13 @@ pub fn generate_ukrainian_declensions(name: &str) -> Vec<String> {
 /// Эвристика по окончанию: -а, -я, -ы, -и, -ов, -ев, -ам, -ям.
 pub fn looks_like_russian_genitive(word: &str) -> bool {
     let lc = word.to_lowercase();
-    let endings = ["ова", "ева", "ина", "яна", "овы", "евы",
-                  "ами", "ями", "ов", "ев", "ин", "ын",
-                  "а", "я", "ы", "и"];
-    endings.iter().any(|e| lc.ends_with(e) && lc.len() > e.len() + 2)
+    let endings = [
+        "ова", "ева", "ина", "яна", "овы", "евы", "ами", "ями", "ов", "ев", "ин", "ын", "а", "я",
+        "ы", "и",
+    ];
+    endings
+        .iter()
+        .any(|e| lc.ends_with(e) && lc.len() > e.len() + 2)
 }
 
 /// Проверяет, может ли слово быть в русском дательном падеже.
@@ -1048,7 +1107,9 @@ pub fn looks_like_russian_genitive(word: &str) -> bool {
 pub fn looks_like_russian_dative(word: &str) -> bool {
     let lc = word.to_lowercase();
     let endings = ["ам", "ям", "у", "ю"];
-    endings.iter().any(|e| lc.ends_with(e) && lc.len() > e.len() + 2)
+    endings
+        .iter()
+        .any(|e| lc.ends_with(e) && lc.len() > e.len() + 2)
 }
 
 /// Проверяет, может ли слово быть в русском творительном падеже.
@@ -1056,7 +1117,9 @@ pub fn looks_like_russian_dative(word: &str) -> bool {
 pub fn looks_like_russian_instrumental(word: &str) -> bool {
     let lc = word.to_lowercase();
     let endings = ["ами", "ями", "ом", "ем", "ой", "ей", "ью"];
-    endings.iter().any(|e| lc.ends_with(e) && lc.len() > e.len() + 2)
+    endings
+        .iter()
+        .any(|e| lc.ends_with(e) && lc.len() > e.len() + 2)
 }
 
 /// Проверяет, может ли слово быть в русском предложном падеже.
@@ -1099,3 +1162,951 @@ pub fn languagetool_rules_count() -> (usize, usize) {
     )
 }
 
+// =========================================================================
+// Полные таблицы падежных окончаний русских существительных
+// =========================================================================
+//
+// В русском языке 6 падежей × 3 рода × 2 числа = 36 ячеек парадигмы.
+// Эта таблица содержит типовые окончания для каждого сочетания.
+// Источник: грамматика русского языка (Зализняк-77).
+//
+// Используется функцией `detect_russian_case_by_ending()` для определения
+// падежа словоформы по её окончанию. Это упрощённый эвристический подход
+// (без учёта морфонологических чередований и исключений), но он даёт
+// разумное первое приближение для парсера.
+
+/// Падежная система русского языка.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RussianCase {
+    /// Именительный (Nominative): кто? что? — Иван, дом, мама.
+    Nominative,
+    /// Родительный (Genitive): кого? чего? — Ивана, дома, мамы.
+    Genitive,
+    /// Дательный (Dative): кому? чему? — Ивану, дому, маме.
+    Dative,
+    /// Винительный (Accusative): кого? что? — Ивана, дом, маму.
+    Accusative,
+    /// Творительный (Instrumental): кем? чем? — Иваном, домом, мамой.
+    Instrumental,
+    /// Предложный (Prepositional): о ком? о чём? — Иване, доме, маме.
+    Prepositional,
+}
+
+/// Род существительного.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RussianGender {
+    /// Мужской: стол, Иван, герой.
+    Masculine,
+    /// Женский: мама, сестра, ночь.
+    Feminine,
+    /// Средний: окно, поле, море.
+    Neuter,
+}
+
+/// Число существительного.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RussianNumber {
+    Singular,
+    Plural,
+}
+
+/// Таблица типовых падежных окончаний для русских существительных.
+/// Формат: (род, число, падеж, окончание, пример).
+///
+/// Пустая строка `""` означает нулевое окончание (стол→стол, окно→окн-о,
+/// мать→мать).
+pub const RUSSIAN_NOUN_CASE_ENDINGS: &[(RussianGender, RussianNumber, RussianCase, &str, &str)] = &[
+    // ─── Единственное число ──────────────────────────────────────
+    // Мужской род (твёрдая основа: стол, дом, Иван)
+    (
+        RussianGender::Masculine,
+        RussianNumber::Singular,
+        RussianCase::Nominative,
+        "",
+        "стол",
+    ),
+    (
+        RussianGender::Masculine,
+        RussianNumber::Singular,
+        RussianCase::Genitive,
+        "а",
+        "стола",
+    ),
+    (
+        RussianGender::Masculine,
+        RussianNumber::Singular,
+        RussianCase::Dative,
+        "у",
+        "столу",
+    ),
+    (
+        RussianGender::Masculine,
+        RussianNumber::Singular,
+        RussianCase::Accusative,
+        "",
+        "стол",
+    ),
+    (
+        RussianGender::Masculine,
+        RussianNumber::Singular,
+        RussianCase::Instrumental,
+        "ом",
+        "столом",
+    ),
+    (
+        RussianGender::Masculine,
+        RussianNumber::Singular,
+        RussianCase::Prepositional,
+        "е",
+        "столе",
+    ),
+    // Мужской род (мягкая основа: герой, Иван-ий, календарь)
+    (
+        RussianGender::Masculine,
+        RussianNumber::Singular,
+        RussianCase::Nominative,
+        "ь",
+        "календарь",
+    ),
+    (
+        RussianGender::Masculine,
+        RussianNumber::Singular,
+        RussianCase::Nominative,
+        "й",
+        "герой",
+    ),
+    (
+        RussianGender::Masculine,
+        RussianNumber::Singular,
+        RussianCase::Genitive,
+        "я",
+        "героя",
+    ),
+    (
+        RussianGender::Masculine,
+        RussianNumber::Singular,
+        RussianCase::Dative,
+        "ю",
+        "герою",
+    ),
+    (
+        RussianGender::Masculine,
+        RussianNumber::Singular,
+        RussianCase::Instrumental,
+        "ем",
+        "героем",
+    ),
+    (
+        RussianGender::Masculine,
+        RussianNumber::Singular,
+        RussianCase::Prepositional,
+        "е",
+        "герое",
+    ),
+    // Женский род (твёрдая основа: мама, сестра, жена)
+    (
+        RussianGender::Feminine,
+        RussianNumber::Singular,
+        RussianCase::Nominative,
+        "а",
+        "мама",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Singular,
+        RussianCase::Genitive,
+        "ы",
+        "мамы",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Singular,
+        RussianCase::Dative,
+        "е",
+        "маме",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Singular,
+        RussianCase::Accusative,
+        "у",
+        "маму",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Singular,
+        RussianCase::Instrumental,
+        "ой",
+        "мамой",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Singular,
+        RussianCase::Prepositional,
+        "е",
+        "маме",
+    ),
+    // Женский род (мягкая основа: ночь, мать, площадь)
+    (
+        RussianGender::Feminine,
+        RussianNumber::Singular,
+        RussianCase::Nominative,
+        "ь",
+        "ночь",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Singular,
+        RussianCase::Genitive,
+        "и",
+        "ночи",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Singular,
+        RussianCase::Dative,
+        "и",
+        "ночи",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Singular,
+        RussianCase::Accusative,
+        "ь",
+        "ночь",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Singular,
+        RussianCase::Instrumental,
+        "ью",
+        "ночью",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Singular,
+        RussianCase::Prepositional,
+        "и",
+        "ночи",
+    ),
+    // Женский род (на -ия: Мария, линия, станция)
+    (
+        RussianGender::Feminine,
+        RussianNumber::Singular,
+        RussianCase::Nominative,
+        "ия",
+        "Мария",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Singular,
+        RussianCase::Genitive,
+        "ии",
+        "Марии",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Singular,
+        RussianCase::Dative,
+        "ии",
+        "Марии",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Singular,
+        RussianCase::Accusative,
+        "ию",
+        "Марию",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Singular,
+        RussianCase::Instrumental,
+        "ией",
+        "Марией",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Singular,
+        RussianCase::Prepositional,
+        "ии",
+        "Марии",
+    ),
+    // Средний род (твёрдая основа: окно, дело, слово)
+    (
+        RussianGender::Neuter,
+        RussianNumber::Singular,
+        RussianCase::Nominative,
+        "о",
+        "окно",
+    ),
+    (
+        RussianGender::Neuter,
+        RussianNumber::Singular,
+        RussianCase::Genitive,
+        "а",
+        "окна",
+    ),
+    (
+        RussianGender::Neuter,
+        RussianNumber::Singular,
+        RussianCase::Dative,
+        "у",
+        "окну",
+    ),
+    (
+        RussianGender::Neuter,
+        RussianNumber::Singular,
+        RussianCase::Accusative,
+        "о",
+        "окно",
+    ),
+    (
+        RussianGender::Neuter,
+        RussianNumber::Singular,
+        RussianCase::Instrumental,
+        "ом",
+        "окном",
+    ),
+    (
+        RussianGender::Neuter,
+        RussianNumber::Singular,
+        RussianCase::Prepositional,
+        "е",
+        "окне",
+    ),
+    // Средний род (мягкая основа: поле, море, счастье)
+    (
+        RussianGender::Neuter,
+        RussianNumber::Singular,
+        RussianCase::Nominative,
+        "е",
+        "море",
+    ),
+    (
+        RussianGender::Neuter,
+        RussianNumber::Singular,
+        RussianCase::Genitive,
+        "я",
+        "моря",
+    ),
+    (
+        RussianGender::Neuter,
+        RussianNumber::Singular,
+        RussianCase::Dative,
+        "ю",
+        "морю",
+    ),
+    (
+        RussianGender::Neuter,
+        RussianNumber::Singular,
+        RussianCase::Accusative,
+        "е",
+        "море",
+    ),
+    (
+        RussianGender::Neuter,
+        RussianNumber::Singular,
+        RussianCase::Instrumental,
+        "ем",
+        "морем",
+    ),
+    (
+        RussianGender::Neuter,
+        RussianNumber::Singular,
+        RussianCase::Prepositional,
+        "е",
+        "море",
+    ),
+    // Средний род (на -ие: здание, желание, упоминание)
+    (
+        RussianGender::Neuter,
+        RussianNumber::Singular,
+        RussianCase::Nominative,
+        "ие",
+        "здание",
+    ),
+    (
+        RussianGender::Neuter,
+        RussianNumber::Singular,
+        RussianCase::Genitive,
+        "ия",
+        "здания",
+    ),
+    (
+        RussianGender::Neuter,
+        RussianNumber::Singular,
+        RussianCase::Dative,
+        "ию",
+        "зданию",
+    ),
+    (
+        RussianGender::Neuter,
+        RussianNumber::Singular,
+        RussianCase::Accusative,
+        "ие",
+        "здание",
+    ),
+    (
+        RussianGender::Neuter,
+        RussianNumber::Singular,
+        RussianCase::Instrumental,
+        "ием",
+        "зданием",
+    ),
+    (
+        RussianGender::Neuter,
+        RussianNumber::Singular,
+        RussianCase::Prepositional,
+        "ии",
+        "здании",
+    ),
+    // ─── Множественное число ─────────────────────────────────────
+    // Мужской род (твёрдая основа)
+    (
+        RussianGender::Masculine,
+        RussianNumber::Plural,
+        RussianCase::Nominative,
+        "ы",
+        "столы",
+    ),
+    (
+        RussianGender::Masculine,
+        RussianNumber::Plural,
+        RussianCase::Genitive,
+        "ов",
+        "столов",
+    ),
+    (
+        RussianGender::Masculine,
+        RussianNumber::Plural,
+        RussianCase::Dative,
+        "ам",
+        "столам",
+    ),
+    (
+        RussianGender::Masculine,
+        RussianNumber::Plural,
+        RussianCase::Accusative,
+        "ы",
+        "столы",
+    ),
+    (
+        RussianGender::Masculine,
+        RussianNumber::Plural,
+        RussianCase::Instrumental,
+        "ами",
+        "столами",
+    ),
+    (
+        RussianGender::Masculine,
+        RussianNumber::Plural,
+        RussianCase::Prepositional,
+        "ах",
+        "столах",
+    ),
+    // Мужской род (мягкая основа)
+    (
+        RussianGender::Masculine,
+        RussianNumber::Plural,
+        RussianCase::Nominative,
+        "и",
+        "герои",
+    ),
+    (
+        RussianGender::Masculine,
+        RussianNumber::Plural,
+        RussianCase::Genitive,
+        "ев",
+        "героев",
+    ),
+    (
+        RussianGender::Masculine,
+        RussianNumber::Plural,
+        RussianCase::Dative,
+        "ям",
+        "героям",
+    ),
+    (
+        RussianGender::Masculine,
+        RussianNumber::Plural,
+        RussianCase::Accusative,
+        "и",
+        "герои",
+    ),
+    (
+        RussianGender::Masculine,
+        RussianNumber::Plural,
+        RussianCase::Instrumental,
+        "ями",
+        "героями",
+    ),
+    (
+        RussianGender::Masculine,
+        RussianNumber::Plural,
+        RussianCase::Prepositional,
+        "ях",
+        "героях",
+    ),
+    // Женский род (твёрдая основа)
+    (
+        RussianGender::Feminine,
+        RussianNumber::Plural,
+        RussianCase::Nominative,
+        "ы",
+        "мамы",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Plural,
+        RussianCase::Genitive,
+        "",
+        "мам",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Plural,
+        RussianCase::Dative,
+        "ам",
+        "мамам",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Plural,
+        RussianCase::Accusative,
+        "",
+        "мам",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Plural,
+        RussianCase::Instrumental,
+        "ами",
+        "мамами",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Plural,
+        RussianCase::Prepositional,
+        "ах",
+        "мамах",
+    ),
+    // Женский род (мягкая основа: -я → -и)
+    (
+        RussianGender::Feminine,
+        RussianNumber::Plural,
+        RussianCase::Nominative,
+        "и",
+        "ночи",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Plural,
+        RussianCase::Genitive,
+        "ей",
+        "ночей",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Plural,
+        RussianCase::Dative,
+        "ям",
+        "ночам",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Plural,
+        RussianCase::Instrumental,
+        "ями",
+        "ночами",
+    ),
+    (
+        RussianGender::Feminine,
+        RussianNumber::Plural,
+        RussianCase::Prepositional,
+        "ях",
+        "ночах",
+    ),
+    // Средний род
+    (
+        RussianGender::Neuter,
+        RussianNumber::Plural,
+        RussianCase::Nominative,
+        "а",
+        "окна",
+    ),
+    (
+        RussianGender::Neuter,
+        RussianNumber::Plural,
+        RussianCase::Genitive,
+        "",
+        "окн",
+    ),
+    (
+        RussianGender::Neuter,
+        RussianNumber::Plural,
+        RussianCase::Dative,
+        "ам",
+        "окнам",
+    ),
+    (
+        RussianGender::Neuter,
+        RussianNumber::Plural,
+        RussianCase::Accusative,
+        "а",
+        "окна",
+    ),
+    (
+        RussianGender::Neuter,
+        RussianNumber::Plural,
+        RussianCase::Instrumental,
+        "ами",
+        "окнами",
+    ),
+    (
+        RussianGender::Neuter,
+        RussianNumber::Plural,
+        RussianCase::Prepositional,
+        "ах",
+        "окнах",
+    ),
+];
+
+/// Пытается определить падеж русского слова по его окончанию.
+///
+/// Это эвристический подход: возвращает первый найденный падеж для данного
+/// окончания среди всех (род × число) комбинаций. Для точного определения
+/// нужно знать род и число — в этом случае используйте
+/// `detect_russian_case_with_gender_number()`.
+///
+/// # Примеры
+///
+/// ```rust,ignore
+/// assert_eq!(detect_russian_case_by_ending("маму"), Some(RussianCase::Accusative));
+/// assert_eq!(detect_russian_case_by_ending("Иване"), Some(RussianCase::Prepositional));
+/// assert_eq!(detect_russian_case_by_ending("столами"), Some(RussianCase::Instrumental));
+/// ```
+pub fn detect_russian_case_by_ending(word: &str) -> Option<RussianCase> {
+    let w = word.trim().to_lowercase();
+    if w.is_empty() {
+        return None;
+    }
+    // Идём от самых длинных окончаний к коротким — чтобы «-ия» совпало
+    // раньше, чем «-я».
+    let mut best: Option<(usize, RussianCase)> = None;
+    for (_, _, case, ending, _) in RUSSIAN_NOUN_CASE_ENDINGS {
+        if ending.is_empty() {
+            continue;
+        }
+        if w.ends_with(ending) {
+            let len = ending.chars().count();
+            match best {
+                None => best = Some((len, *case)),
+                Some((cur, _)) if len > cur => best = Some((len, *case)),
+                _ => {}
+            }
+        }
+    }
+    best.map(|(_, c)| c)
+}
+
+/// Пытается определить падеж русского слова с учётом рода и числа.
+///
+/// Более точная версия `detect_russian_case_by_ending()`: фильтрует
+/// таблицу окончаний по указанным роду и числу, затем ищет совпадение.
+pub fn detect_russian_case_with_gender_number(
+    word: &str,
+    gender: RussianGender,
+    number: RussianNumber,
+) -> Option<RussianCase> {
+    let w = word.trim().to_lowercase();
+    if w.is_empty() {
+        return None;
+    }
+    let mut best: Option<(usize, RussianCase)> = None;
+    for (g, n, case, ending, _) in RUSSIAN_NOUN_CASE_ENDINGS {
+        if *g != gender || *n != number {
+            continue;
+        }
+        if ending.is_empty() {
+            continue;
+        }
+        if w.ends_with(ending) {
+            let len = ending.chars().count();
+            match best {
+                None => best = Some((len, *case)),
+                Some((cur, _)) if len > cur => best = Some((len, *case)),
+                _ => {}
+            }
+        }
+    }
+    best.map(|(_, c)| c)
+}
+
+// =========================================================================
+// Таблица русских↔украинских когнатных пар
+// =========================================================================
+//
+// Когнаты — слова в родственных языках, имеющие общее происхождение.
+// Для русского и украинского (оба — восточнославянские) многие
+// литературные имена и топонимы имеют когнатные пары. Эта таблица
+// используется функцией `find_cognate_pair()` для перекрёстного
+// разрешения сущностей: если в тексте упоминается «Іван», а в графе
+// уже есть «Иван», их следует связать как одну сущность.
+//
+// Таблица пополняема — это «веса» программы, а не исчерпывающий словарь.
+
+/// Пара когнатов: (русская форма, украинская форма).
+pub const RU_UK_COGNATE_PAIRS: &[(&str, &str)] = &[
+    // Имена
+    ("Иван", "Іван"),
+    ("Пётр", "Петро"),
+    ("Павел", "Павло"),
+    ("Илья", "Ілля"),
+    ("Александр", "Олександр"),
+    ("Алексей", "Олексій"),
+    ("Николай", "Микола"),
+    ("Дмитрий", "Дмитро"),
+    ("Сергей", "Сергій"),
+    ("Андрей", "Андрій"),
+    ("Михаил", "Михайло"),
+    ("Владимир", "Володимир"),
+    ("Виктор", "Віктор"),
+    ("Юрий", "Юрій"),
+    ("Анатолий", "Анатолій"),
+    ("Константин", "Костянтин"),
+    ("Григорий", "Григорій"),
+    ("Степан", "Степан"),
+    ("Богдан", "Богдан"),
+    ("Анна", "Ганна"),
+    ("Мария", "Марія"),
+    ("Елена", "Олена"),
+    ("Ольга", "Ольга"),
+    ("Татьяна", "Тетяна"),
+    ("Наталья", "Наталія"),
+    ("Светлана", "Світлана"),
+    ("Ирина", "Ірина"),
+    ("Катерина", "Катерина"),
+    ("Юлия", "Юлія"),
+    ("Любовь", "Любов"),
+    ("Вера", "Віра"),
+    ("Надежда", "Надія"),
+    ("Софья", "Софія"),
+    ("Анастасия", "Анастасія"),
+    ("Дарья", "Дарина"),
+    ("Полина", "Павліна"),
+    ("Валентина", "Валентина"),
+    // Топонимы
+    ("Москва", "Москва"),
+    ("Киев", "Київ"),
+    ("Петербург", "Петербург"),
+    ("Минск", "Мінськ"),
+    ("Одесса", "Одеса"),
+    ("Харьков", "Харків"),
+    ("Львов", "Львів"),
+    ("Днепр", "Дніпро"),
+    ("Донецк", "Донецьк"),
+    ("Луганск", "Луганськ"),
+    ("Запорожье", "Запоріжжя"),
+    ("Крым", "Крим"),
+    ("Полтава", "Полтава"),
+    ("Чернигов", "Чернігів"),
+    ("Винница", "Вінниця"),
+    ("Житомир", "Житомир"),
+    ("Ровно", "Рівне"),
+    ("Тернополь", "Тернопіль"),
+    ("Хмельницкий", "Хмельницький"),
+    ("Черкассы", "Черкаси"),
+    ("Черновцы", "Чернівці"),
+    ("Ужгород", "Ужгород"),
+    ("Сумы", "Суми"),
+    ("Николаев", "Миколаїв"),
+    ("Херсон", "Херсон"),
+    ("Кировоград", "Кіровоград"),
+    // Реки
+    ("Волга", "Волга"),
+    ("Днепр", "Дніпро"),
+    ("Дон", "Дон"),
+    ("Десна", "Десна"),
+    ("Висла", "Вісла"),
+    ("Дунай", "Дунай"),
+    // Общие существительные (для литературных текстов)
+    ("город", "місто"),
+    ("деревня", "село"),
+    ("дом", "дім"),
+    ("улица", "вулиця"),
+    ("площадь", "площа"),
+    ("мост", "міст"),
+    ("церковь", "церква"),
+    ("школа", "школа"),
+    ("гимназия", "гімназія"),
+    ("институт", "інститут"),
+    ("университет", "університет"),
+    ("театр", "театр"),
+    ("музей", "музей"),
+    ("библиотека", "бібліотека"),
+    ("больница", "лікарня"),
+    ("аптека", "аптека"),
+    ("почта", "пошта"),
+    ("банк", "банк"),
+    ("рынок", "ринок"),
+    ("магазин", "магазин"),
+    ("кафе", "кафе"),
+    ("ресторан", "ресторан"),
+    ("вокзал", "вокзал"),
+    ("станция", "станція"),
+    ("поезд", "потяг"),
+    ("автомобиль", "автомобіль"),
+    ("машина", "машина"),
+    ("трамвай", "трамвай"),
+    ("троллейбус", "тролейбус"),
+    ("метро", "метро"),
+    ("самолёт", "літак"),
+    ("корабль", "корабель"),
+    ("лодка", "човен"),
+    ("велосипед", "велосипед"),
+    // Природные объекты
+    ("лес", "ліс"),
+    ("поле", "поле"),
+    ("река", "ріка"),
+    ("озеро", "озеро"),
+    ("море", "море"),
+    ("гора", "гора"),
+    ("долина", "долина"),
+    ("холм", "пагорб"),
+    ("пустыня", "пустеля"),
+    ("остров", "острів"),
+    ("полуостров", "півострів"),
+    ("берег", "берег"),
+    ("пляж", "пляж"),
+    ("скала", "скеля"),
+    ("пещера", "печера"),
+    ("водопад", "водоспад"),
+    // Временные понятия
+    ("утро", "ранок"),
+    ("день", "день"),
+    ("вечер", "вечір"),
+    ("ночь", "ніч"),
+    ("неделя", "тиждень"),
+    ("месяц", "місяць"),
+    ("год", "рік"),
+    ("век", "вік"),
+    ("зима", "зима"),
+    ("весна", "весна"),
+    ("лето", "літо"),
+    ("осень", "осінь"),
+];
+
+/// Ищет украинский когнат для русского слова (или наоборот).
+///
+/// Возвращает `Some(форму_на_другом_языке)` если слово найдено в
+/// таблице когнатов. Поиск — case-insensitive (нормализует к lowercase).
+///
+/// # Примеры
+///
+/// ```rust,ignore
+/// assert_eq!(find_cognate_pair("Иван"), Some("Іван"));
+/// assert_eq!(find_cognate_pair("іван"), Some("иван"));  // обратный поиск
+/// assert_eq!(find_cognate_pair("xyz"), None);
+/// ```
+pub fn find_cognate_pair(word: &str) -> Option<&'static str> {
+    let w = word.trim().to_lowercase();
+    if w.is_empty() {
+        return None;
+    }
+    for (ru, uk) in RU_UK_COGNATE_PAIRS {
+        if ru.to_lowercase() == w {
+            return Some(uk);
+        }
+        if uk.to_lowercase() == w {
+            return Some(ru);
+        }
+    }
+    None
+}
+
+/// Проверяет, является ли слово русским именем (по таблице когнатов).
+pub fn is_ru_known_name(word: &str) -> bool {
+    let w = word.trim().to_lowercase();
+    if w.is_empty() {
+        return false;
+    }
+    RU_UK_COGNATE_PAIRS
+        .iter()
+        .any(|(ru, _)| ru.to_lowercase() == w)
+}
+
+/// Проверяет, является ли слово украинским именем (по таблице когнатов).
+pub fn is_uk_known_name(word: &str) -> bool {
+    let w = word.trim().to_lowercase();
+    if w.is_empty() {
+        return false;
+    }
+    RU_UK_COGNATE_PAIRS
+        .iter()
+        .any(|(_, uk)| uk.to_lowercase() == w)
+}
+
+// =========================================================================
+// Wrappers for crate::linguistic_entities (flat replacement tables)
+// =========================================================================
+
+/// Ищет русскую замену для слова в плоской таблице LanguageTool.
+pub fn find_ru_replacement(word: &str) -> Option<&'static [&'static str]> {
+    crate::linguistic_entities::find_ru_replacement(word)
+}
+
+/// Ищет украинскую замену для слова в плоской таблице LanguageTool.
+pub fn find_uk_replacement(word: &str) -> Option<&'static [&'static str]> {
+    crate::linguistic_entities::find_uk_replacement(word)
+}
+
+/// Ищет тавтологию вида «корень родственное_слово» в тексте.
+pub fn find_ru_word_root_tautology(text_lower: &str) -> Option<&'static str> {
+    crate::linguistic_entities::find_ru_word_root_tautology(text_lower)
+}
+
+/// Проверяет, является ли слово днём недели (RU).
+pub fn is_ru_weekday(word: &str) -> bool {
+    crate::linguistic_entities::is_ru_weekday(word)
+}
+
+/// Проверяет, является ли слово месяцем (RU).
+pub fn is_ru_month(word: &str) -> bool {
+    crate::linguistic_entities::is_ru_month(word)
+}
+
+/// Проверяет, является ли слово профессией (RU).
+pub fn is_ru_profession(word: &str) -> bool {
+    crate::linguistic_entities::is_ru_profession(word)
+}
+
+/// Проверяет, является ли слово цветом (RU).
+pub fn is_ru_color(word: &str) -> bool {
+    crate::linguistic_entities::is_ru_color(word)
+}
+
+/// Проверяет, является ли слово национальностью (RU).
+pub fn is_ru_nation(word: &str) -> bool {
+    crate::linguistic_entities::is_ru_nation(word)
+}
+
+/// Проверяет, является ли слово качеством человека (RU).
+pub fn is_ru_human_quality(word: &str) -> bool {
+    crate::linguistic_entities::is_ru_human_quality(word)
+}
+
+/// Проверяет, является ли слово вводным (RU).
+pub fn is_ru_vvodnoe(word: &str) -> bool {
+    crate::linguistic_entities::is_ru_vvodnoe(word)
+}
+
+/// Возвращает суммарное количество записей в таблицах замен.
+pub fn total_replacement_entries() -> usize {
+    crate::linguistic_entities::total_replacement_entries()
+}
+
+/// Возвращает количество корневых пар в таблице `RU_WORD_ROOTS`.
+pub fn total_word_root_entries() -> usize {
+    crate::linguistic_entities::total_word_root_entries()
+}

@@ -10,6 +10,7 @@ mod storage;
 mod ai;
 mod reasoning;
 pub mod languagetool_weights;
+pub mod linguistic_entities;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
