@@ -42,6 +42,10 @@ fn safe_slice(s: &str, max_bytes: usize) -> &str {
 #[derive(Debug, Clone)]
 pub struct ParsedChapter {
     pub num: u32,
+    /// Суффикс суб-главы: «б» для «Глава 28б», «в» для «28в».
+    /// `None` для обычных глав без буквенного суффикса.
+    /// P2.1: добавлен для корректной сортировки TemporalAnchor.
+    pub suffix: Option<String>,
     pub title: String,
     pub body: String,
     pub full_text: String,
@@ -147,6 +151,7 @@ pub fn detect(text: &str) -> (Vec<ParsedChapter>, String) {
         return (
             vec![ParsedChapter {
                 num: 1,
+                suffix: None,
                 title: "Текст целиком".to_string(),
                 body: body_preview,
                 full_text: text.to_string(),
@@ -217,21 +222,25 @@ pub fn detect(text: &str) -> (Vec<ParsedChapter>, String) {
 
         // v0.4.0: если num_str содержит букву (напр. «28б»), добавляем
         // её в заголовок, чтобы пользователь видел «Глава 28б» а не «Глава 28».
-        let display_title = if num_str.chars().any(|c| c.is_alphabetic()) {
+        // P2.1: та же буква-суффикс сохраняется в поле `suffix` для
+        // корректной сортировки TemporalAnchor.
+        let (display_title, suffix_field): (String, Option<String>) = if num_str.chars().any(|c| c.is_alphabetic()) {
             // Извлекаем букву-суффикс
             let suffix: String = num_str.chars().filter(|c| c.is_alphabetic()).collect();
             // Если title уже начинается с цифры+буквы — не дублируем
-            if title.starts_with(&format!("{}{}", num, suffix)) {
+            let dt = if title.starts_with(&format!("{}{}", num, suffix)) {
                 title.clone()
             } else {
                 format!("{}{} {}", num, suffix, title)
-            }
+            };
+            (dt, Some(suffix))
         } else {
-            title.clone()
+            (title.clone(), None)
         };
 
         chapters.push(ParsedChapter {
             num,
+            suffix: suffix_field,
             title: display_title,
             body: body_preview,
             full_text: body_text.trim().to_string(),

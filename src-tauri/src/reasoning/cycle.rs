@@ -66,6 +66,7 @@ use crate::reasoning::hypotheses::{
 use crate::reasoning::inference::{InferenceEngine, InferredFact};
 use crate::reasoning::memory::KnowledgeBase;
 use crate::reasoning::rules::RuleSet;
+use crate::reasoning::semantic_parser::SemanticInstruction;
 use crate::reasoning::state::{StateTransition, WorldSnapshot, WorldState};
 
 // ============================================================================
@@ -96,6 +97,61 @@ pub struct CycleReport {
     /// Количество принятых гипотез (статус `Accepted`).
     pub hypotheses_accepted: usize,
     /// Снимок `WorldState` на момент завершения цикла.
+    pub final_state_snapshot: WorldSnapshot,
+}
+
+// ============================================================================
+// ObserveInstructionsReport (P0.2)
+// ============================================================================
+
+/// Отчёт о результате `ReasoningCycle::observe_instructions`.
+///
+/// Содержит счётчики и списки ошибок/конфликтов для UI explainability.
+/// В отличие от `CycleReport`, это отчёт только о фазе observe — без
+/// inference, constraint check, hypotheses. Полный цикл через
+/// `run_cycle` по-прежнему возвращает `CycleReport`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ObserveInstructionsReport {
+    /// Сколько IR-инструкций было передано в `observe_instructions`.
+    pub total_instructions: usize,
+    /// Сколько из них прошло валидацию и превратилось в `Event`.
+    pub valid_instructions: usize,
+    /// Сколько инструкций провалили `validate()`.
+    pub validation_failed: usize,
+    /// Список сообщений об ошибках валидации (для UI панели «Problems»).
+    pub validation_errors: Vec<String>,
+    /// Сколько пар конфликтов обнаружено через `conflicts_with()`.
+    pub conflicts_detected: usize,
+    /// Список пар конфликтующих инструкций (summary строк).
+    /// Каждая пара: (instruction_a_summary, instruction_b_summary).
+    pub conflicts: Vec<(String, String)>,
+}
+
+/// **P0.2:** Расширенный `CycleReport` для IR-aware пайплайна.
+///
+/// Содержит полный `ObserveInstructionsReport` (фаза IR: validation,
+/// conflicts, importance sort) + стандартные поля `CycleReport` (фаза
+/// reasoning: violations, paradoxes, hypotheses).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CycleWithIrReport {
+    /// Подотчёт фазы IR (validate + conflicts + sort).
+    pub ir_report: ObserveInstructionsReport,
+    /// Сколько событий (из valid_instructions) реально добавлено в FactLog.
+    /// Может быть меньше, если часть была дедуплицирована.
+    pub events_processed: usize,
+    /// Количество выведенных фактов через inference.
+    pub facts_asserted: usize,
+    /// Нарушения ограничений.
+    pub violations: Vec<ConstraintViolation>,
+    /// Временные парадоксы.
+    pub temporal_paradoxes: Vec<crate::reasoning::contradictions::TemporalParadox>,
+    /// Количество сгенерированных гипотез.
+    pub hypotheses_generated: usize,
+    /// Количество принятых гипотез.
+    pub hypotheses_accepted: usize,
+    /// Снимок WorldState на момент завершения цикла.
     pub final_state_snapshot: WorldSnapshot,
 }
 
@@ -228,6 +284,75 @@ impl ReasoningCycle {
         // Сдвигаем world.now только вперёд (advance_to паникует при откате).
         if max_time.after(self.world.now()) {
             self.world.advance_to(&max_time);
+        }
+    }
+
+    /// **P0.2: IR-aware observe.**
+    ///
+    /// Принимает `Vec<SemanticInstruction>` (L1.5 IR) вместо готовых `Event`.
+    /// Pipeline:
+    ///   1. `validate()` каждой инструкции — невалидные логируются и skip.
+    ///   2. Pairwise `conflicts_with()` — конфликты логируются (но не
+    ///      блокируют, чтобы разрешить downstream hypotheses обнаружить
+    ///      парадокс через ConstraintEngine).
+    ///   3. Сортировка по `importance_weight()` (по убыванию) — высоко-
+    ///      приоритетные события (смерть, убийство, предательство) попадают
+    ///      в FactLog раньше, что может повлиять на порядок обработки
+    ///      inference rules.
+    ///   4. `lower_to_event()` для каждой инструкции.
+    ///   5. Передача `Vec<Event>` в существующий `observe()`.
+    ///
+    /// Возвращает `ObserveInstructionsReport` со счётчиками и списком
+    /// обнаруженных конфликтов для UI explainability.
+    pub fn observe_instructions(&mut self, instructions: Vec<SemanticInstruction>) -> ObserveInstructionsReport {
+        let total = instructions.len();
+        let mut valid: Vec<SemanticInstruction> = Vec::with_capacity(total);
+        let mut validation_errors: Vec<String> = Vec::new();
+
+        // 1. Валидация.
+        for ir in instructions {
+            match ir.validate() {
+                Ok(()) => valid.push(ir),
+                Err(e) => validation_errors.push(e),
+            }
+        }
+        let validation_failed = validation_errors.len();
+
+        // 2. Pairwise conflicts (O(n²), но для разумных n < 1000 — OK).
+        let mut conflicts: Vec<(String, String)> = Vec::new();
+        for i in 0..valid.len() {
+            for j in (i + 1)..valid.len() {
+                if valid[i].conflicts_with(&valid[j]) {
+                    conflicts.push((
+                        valid[i].summary(),
+                        valid[j].summary(),
+                    ));
+                }
+            }
+        }
+
+        // 3. Сортировка по importance_weight (по убыванию).
+        // stable_sort сохраняет исходный порядок для равных весов.
+        valid.sort_by(|a, b| {
+            b.importance_weight()
+                .partial_cmp(&a.importance_weight())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // 4. Lowering IR → Event.
+        let events: Vec<Event> = valid.into_iter().map(|ir| ir.lower_to_event()).collect();
+
+        // 5. Передача в observe.
+        let events_count = events.len();
+        self.observe(events);
+
+        ObserveInstructionsReport {
+            total_instructions: total,
+            valid_instructions: events_count,
+            validation_failed,
+            validation_errors,
+            conflicts_detected: conflicts.len(),
+            conflicts,
         }
     }
 
@@ -439,6 +564,59 @@ impl ReasoningCycle {
 
         CycleReport {
             events_processed,
+            facts_asserted,
+            violations: report.violations.clone(),
+            temporal_paradoxes: report.temporal_paradoxes.clone(),
+            hypotheses_generated,
+            hypotheses_accepted,
+            final_state_snapshot: self.world.snapshot(),
+        }
+    }
+
+    /// **P0.2: IR-aware run_cycle.**
+    ///
+    /// Принимает `Vec<SemanticInstruction>` (L1.5 IR) и выполняет полный
+    /// pipeline:
+    ///   1. `observe_instructions(irs)` — validate, conflicts, sort, lower.
+    ///   2. `build_state()` — применить inference rules.
+    ///   3. `reason()` — найти противоречия и парадоксы.
+    ///   4. `generate_hypotheses(report)` — 3 гипотезы на каждое нарушение.
+    ///   5. `verify_all_pending()` — проверить гипотезы.
+    ///   6. `update_state(accepted)` — применить Resolution.
+    ///
+    /// Возвращает `CycleWithIrReport` — объединение `ObserveInstructionsReport`
+    /// (фаза IR) и `CycleReport` (фаза reasoning).
+    pub fn run_cycle_with_instructions(
+        &mut self,
+        instructions: Vec<SemanticInstruction>,
+    ) -> CycleWithIrReport {
+        // 1. IR-aware observe (validate + conflicts + sort + lower).
+        let ir_report = self.observe_instructions(instructions);
+
+        // 2-6. Полный pipeline (логика идентична run_cycle, но без
+        // повторной дедупликации — observe_instructions уже отфильтровал
+        // невалидные инструкции).
+        let inferred = self.build_state();
+        let facts_asserted = inferred.len();
+
+        let report = self.reason();
+
+        let hyp_ids = self.generate_hypotheses(&report);
+        let hypotheses_generated = hyp_ids.len();
+
+        let verified = self.verify_all_pending();
+
+        let accepted: Vec<HypothesisId> = verified
+            .iter()
+            .filter(|(_, status)| matches!(status, HypothesisStatus::Accepted))
+            .map(|(id, _)| *id)
+            .collect();
+        let hypotheses_accepted = accepted.len();
+        self.update_state(&accepted);
+
+        CycleWithIrReport {
+            events_processed: ir_report.valid_instructions,
+            ir_report,
             facts_asserted,
             violations: report.violations.clone(),
             temporal_paradoxes: report.temporal_paradoxes.clone(),

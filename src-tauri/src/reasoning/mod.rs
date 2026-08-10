@@ -8,21 +8,16 @@
 //!
 //! См. docs/reasoning/SPEC.md для полного контракта.
 
-// Все public API reasoning engine вызываются из `commands/reasoning.rs`
-// через `#[tauri::command]` wrapper'ы. Однако proc-macro `#[tauri::command]`
-// в Tauri 2.11.x разворачивается в код, непрозрачный для dead-code analysis
-// (компилятор не трассирует вызовы из тела wrapper'а в исходную async fn).
-// В результате 142 «is never used» предупреждения появляются, хотя все
-// API фактически достигаются из Tauri invoke_handler.
+// P0.3: прежде здесь был module-wide `#![allow(dead_code)]` + `#![allow(unused_imports)]`,
+// который маскировал реальную мертвечину (нерабочий IR pipeline, неиспользуемые
+// функции). Теперь, когда IR pipeline подключён к production, эти allow
+// удалены на уровне модуля — компилятор снова сможет предупредить о
+// genuinely dead surface.
 //
-// Подавляем шум на уровне модуля — реальных dead-code здесь нет, проверено
-// ручным аудитом call-graph: commands/reasoning.rs → reasoning::*.
-//
-// `unused_imports` отдельно — pub use реэкспорты предназначены для внешнего
-// использования (фронтенд через Tauri commands), но компилятор внутри
-// crate'а не видит их использования и помечает как unused.
-#![allow(dead_code)]
-#![allow(unused_imports)]
+// Однако Tauri proc-macro `#[tauri::command]` всё ещё создаёт false-positive
+// dead-code предупреждения для wrapper-функций в `commands/reasoning.rs`.
+// Это решается scoped `#[allow(dead_code)]` на конкретных item'ах, а не
+// на всём reasoning-модуле.
 
 // === Wave 1: data layer (ready) ===
 pub mod facts;
@@ -59,11 +54,16 @@ pub use inference::{InferenceEngine, InferredFact};
 pub use causality::{CausalLink, CausalityEngine};
 pub use constraints::{Constraint, ConstraintCondition, ConstraintEngine, ConstraintViolation};
 pub use contradictions::{CausalLoop, ContradictionDetector, ContradictionReport, TemporalParadox};
-pub use semantic_parser::{EntityResolver, SvoTriplet};
+// P0.1: SemanticInstruction + parse_text_to_instructions теперь тоже part of public API.
+pub use semantic_parser::{
+    EntityResolver, SvoTriplet, SemanticInstruction, SemanticPredicate, SemanticModifiers,
+    EntityRef, PossessionDirection, PerceptionSense, EmotionKind, ObligationKind, AllianceKind,
+};
 pub use memory::{KnowledgeBase, Subgraph};
 pub use hypotheses::{Hypothesis, HypothesisId, HypothesisLog, HypothesisStatus, HypothesisSource, EventKind, Resolution};
 pub use planner::{ActionKind, ActionRequest, Operation, Planner, PlannerContext};
-pub use cycle::{CycleReport, ReasoningCycle};
+// P0.2: CycleWithIrReport + ObserveInstructionsReport добавлены.
+pub use cycle::{CycleReport, CycleWithIrReport, ObserveInstructionsReport, ReasoningCycle};
 pub use llm_bridge::{LlmBridge, ValidationResult};
 
 // === Integration entry point ===

@@ -21,11 +21,13 @@ use crate::models::Project;
 use crate::parser::chapters;
 use crate::reasoning::contradictions::TemporalParadox;
 use crate::reasoning::constraints::ConstraintViolation;
-use crate::reasoning::cycle::{CycleReport, ReasoningCycle};
+use crate::reasoning::cycle::{CycleReport, CycleWithIrReport, ReasoningCycle};
 use crate::reasoning::facts::{Event, FactValue};
 use crate::reasoning::llm_bridge::{LlmBridge, ValidationResult};
 use crate::reasoning::planner::{ActionKind, ActionRequest};
-use crate::reasoning::semantic_parser::{parse_text_fallback, EntityResolver};
+use crate::reasoning::semantic_parser::{
+    parse_text_fallback, parse_text_to_instructions, EntityResolver, SemanticInstruction,
+};
 use crate::reasoning::state::{StateTransition, WorldSnapshot};
 use crate::reasoning::timeline::TemporalAnchor;
 
@@ -135,19 +137,25 @@ impl From<ValidationResult> for ValidationResultDto {
 
 /// Извлечь события из текста БЕЗ LLM.
 ///
-/// Использует `semantic_parser::parse_text_fallback` — regex-based SVO-парсер
-/// на Rust. Алгоритм:
+/// **P0.1: теперь использует IR-aware пайплайн.** Алгоритм:
 ///   1. `chapters::detect(text)` → разбиение на главы (для TemporalAnchor).
 ///   2. `EntityResolver::from_nodes(&project.nodes)` — маппинг имён → node.id.
-///   3. `parse_text_fallback(&cleaned_text, &resolver, &chapters)` → события.
+///   3. `parse_text_to_instructions(&text, &resolver, &chapters)` → IR (L1.5).
+///   4. Каждая инструкция пропускается через `lower_to_event()` → `Event`.
+///
+/// Это подключает расширенный лексикон глаголов (`verb_to_action_extended` +
+/// `verb_to_action_ukrainian`) и прокачивает события через типизированный
+/// `SemanticPredicate` вместо прямого regex → Action маппинга.
+///
+/// Для обратной совместимости возвращается `Vec<Event>` (как раньше).
+/// Чтобы получить `Vec<SemanticInstruction>` напрямую (с валидацией и
+/// конфликтами), используйте `reasoning_extract_instructions`.
 ///
 /// Возвращает `Vec<Event>` с `id == 0` (ID назначается в FactLog::record_event).
 ///
 /// # Errors
 ///
-/// Возвращает `Err(String)` только при критической ошибке парсинга глав
-/// (что практически невозможно — `chapters::detect` всегда отдаёт хотя бы
-/// одну «суррогатную» главу на весь текст).
+/// Возвращает `Err(String)` только при критической ошибке парсинга глав.
 #[tauri::command]
 pub async fn reasoning_extract_events(
     text: String,
@@ -158,20 +166,66 @@ pub async fn reasoning_extract_events(
     }
 
     // 1. Разбиваем на главы (для TemporalAnchor событий).
-    //    ВАЖНО: chapters::detect возвращает (Vec<ParsedChapter>, prologue_text)
-    //    где prologue — текст ДО первой главы. Если текст начинается с «Глава 1»,
-    //    prologue пустой. Парсеру нужен исходный текст, а не prologue.
-    //    ParsedChapter.pos/end — byte offsets относительно исходного text.
     let (chapters, _prologue) = chapters::detect(&text);
 
     // 2. Строим resolver: title персонажа → node.id.
     let resolver = EntityResolver::from_nodes(&project.nodes);
 
-    // 3. Regex-based SVO-парсер (БЕЗ Python, БЕЗ LLM).
-    //    Передаём исходный text — byte offsets в chapters соответствуют text.
-    let events = parse_text_fallback(&text, &resolver, &chapters);
+    // 3. P0.1: IR-aware пайплайн — text → SemanticInstruction → Event.
+    //    Это подключает расширенный лексикон глаголов и типизированные
+    //    предикаты (PossessionTransfer, Emotion, Obligation, ...).
+    let instructions = parse_text_to_instructions(&text, &resolver, &chapters);
+    let events: Vec<Event> = instructions.into_iter().map(|ir| ir.lower_to_event()).collect();
 
     Ok(events)
+}
+
+/// **P0.1:** Извлечь семантические инструкции (L1.5 IR) из текста.
+///
+/// В отличие от `reasoning_extract_events`, возвращает `Vec<SemanticInstruction>`
+/// — сырой IR до lowering в Event. Это позволяет UI показать:
+///   - какой `SemanticPredicate` был назначен (LethalHarm, Emotion{Love}, ...);
+///   - `confidence` с учётом Barbarism/Spelling/M cognate;
+///   - `source_type` (Barbarism / Spelling / Grammar / Manual / None);
+///   - `actor_ref` / `target_ref` с `normalized_token` и `resolved_id`.
+///
+/// Может использоваться для отладки парсера и для explainability в UI.
+#[tauri::command]
+pub async fn reasoning_extract_instructions(
+    text: String,
+    project: Project,
+) -> Result<Vec<SemanticInstruction>, String> {
+    if text.trim().is_empty() {
+        return Err("Пустой текст — нечего парсить".to_string());
+    }
+
+    let (chapters, _prologue) = chapters::detect(&text);
+    let resolver = EntityResolver::from_nodes(&project.nodes);
+    let instructions = parse_text_to_instructions(&text, &resolver, &chapters);
+
+    Ok(instructions)
+}
+
+/// **P0.2:** Полный reasoning cycle с IR-aware пайплайном.
+///
+/// Принимает `instructions: Vec<SemanticInstruction>` (извлечённые через
+/// `reasoning_extract_instructions`) и прогоняет их через:
+///   1. `ReasoningCycle::observe_instructions` — validate, conflicts,
+///      importance-sort, lower.
+///   2. `build_state` — inference rules.
+///   3. `reason` — constraint check.
+///   4. `generate_hypotheses` + `verify_all_pending` + `update_state`.
+///
+/// Возвращает `CycleWithIrReport` — расширенный отчёт, включающий
+/// `ObserveInstructionsReport` (фаза IR) + стандартные поля `CycleReport`.
+#[tauri::command]
+pub async fn reasoning_run_cycle_with_ir(
+    project: Project,
+    instructions: Vec<SemanticInstruction>,
+) -> Result<CycleWithIrReport, String> {
+    let mut cycle = ReasoningCycle::from_project(&project);
+    let report = cycle.run_cycle_with_instructions(instructions);
+    Ok(report)
 }
 
 // ============================================================================

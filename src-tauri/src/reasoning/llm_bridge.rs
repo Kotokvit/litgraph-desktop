@@ -517,6 +517,7 @@ mod tests {
     fn make_chapter(num: u32, pos: usize, end: usize) -> ParsedChapter {
         ParsedChapter {
             num,
+            suffix: None,
             title: format!("Глава {}", num),
             body: String::new(),
             full_text: String::new(),

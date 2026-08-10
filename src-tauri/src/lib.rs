@@ -62,7 +62,9 @@ pub fn run() {
             commands::conflict::get_conflict_graph,
             // reasoning — Wave 5: интеллектуальный движок рассуждения
             commands::reasoning::reasoning_extract_events,
+            commands::reasoning::reasoning_extract_instructions,
             commands::reasoning::reasoning_run_cycle,
+            commands::reasoning::reasoning_run_cycle_with_ir,
             commands::reasoning::reasoning_get_world_state,
             commands::reasoning::reasoning_validate_text,
         ])

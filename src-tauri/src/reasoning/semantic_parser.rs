@@ -191,6 +191,17 @@ pub enum SemanticPredicate {
     Healing,
     /// Тактильный физический контакт.
     PhysicalContact,
+    /// Прибытие в локацию ("прийти", "приехать", "прибут").
+    Arrival { destination: String },
+    /// Покидание локации ("уйти", "выехать", "відійти").
+    Departure { source: String },
+    /// Желание или цель ("хотеть", "планировать", "бажати").
+    /// `is_plan = true` для планирования, `false` для желания.
+    GoalSetting { goal: String, is_plan: bool },
+    /// Запрос информации ("спросить", "питати").
+    Inquiry { topic: String, addressee: Option<String> },
+    /// Сообщение конкретному адресату ("сказать кому-то", "повідомити").
+    AddressedCommunication { topic: String, addressee: String },
 }
 
 /// Семантические модификаторы (отрицание, время, временной анкор).
@@ -408,6 +419,45 @@ impl SemanticInstruction {
                 },
                 None,
             ),
+            SemanticPredicate::Arrival { destination } => (
+                Action::Arrive {
+                    destination: destination.clone(),
+                },
+                None,
+            ),
+            SemanticPredicate::Departure { source } => (
+                Action::Leave {
+                    source: source.clone(),
+                },
+                None,
+            ),
+            SemanticPredicate::GoalSetting { goal, is_plan } => {
+                if *is_plan {
+                    (Action::Plan { goal: goal.clone() }, None)
+                } else {
+                    (Action::Want { goal: goal.clone() }, None)
+                }
+            }
+            SemanticPredicate::Inquiry { topic, addressee } => {
+                let target = addressee.as_ref().map(|a| {
+                    self.target_ref
+                        .as_ref()
+                        .and_then(|t| t.resolved_id.clone())
+                        .unwrap_or_else(|| EntityId::from(a.as_str()))
+                });
+                (Action::Ask { topic: topic.clone() }, target)
+            }
+            SemanticPredicate::AddressedCommunication { topic, addressee } => {
+                let target = self
+                    .target_ref
+                    .as_ref()
+                    .and_then(|t| t.resolved_id.clone())
+                    .unwrap_or_else(|| EntityId::from(addressee.as_str()));
+                (Action::Tell {
+                    topic: topic.clone(),
+                    to: target.clone(),
+                }, Some(target))
+            }
         };
 
         Event {
@@ -595,10 +645,19 @@ impl SemanticInstruction {
 
         // 4. Predicate-specific validation
         match &self.predicate {
-            SemanticPredicate::LethalHarm { .. } => {
+            SemanticPredicate::LethalHarm { instrument } => {
                 if self.target_ref.is_none() {
                     // Warning, not error — actor could kill abstract target
                     // (e.g., "убил надежду" — target is implicit).
+                }
+                // P2.3: validate instrument non-empty if Some.
+                if let Some(i) = instrument {
+                    if i.trim().is_empty() {
+                        return Err(format!(
+                            "SemanticInstruction::validate: LethalHarm with empty instrument for actor='{}'",
+                            self.actor_ref.normalized_token
+                        ));
+                    }
                 }
             }
             SemanticPredicate::SpatialTransition { destination, .. } => {
@@ -609,10 +668,12 @@ impl SemanticInstruction {
                     ));
                 }
             }
-            SemanticPredicate::CognitiveState { knowledge, is_forgotten: true } => {
+            SemanticPredicate::CognitiveState { knowledge, is_forgotten } => {
+                // P2.3: знание должно быть непустым в обоих случаях (know и forget).
                 if knowledge.trim().is_empty() {
                     return Err(format!(
-                        "SemanticInstruction::validate: CognitiveState(forgotten) with empty knowledge for actor='{}'",
+                        "SemanticInstruction::validate: CognitiveState({}) with empty knowledge for actor='{}'",
+                        if *is_forgotten { "forget" } else { "know" },
                         self.actor_ref.normalized_token
                     ));
                 }
@@ -625,10 +686,17 @@ impl SemanticInstruction {
                     ));
                 }
             }
-            SemanticPredicate::PossessionTransfer { item, .. } => {
+            SemanticPredicate::PossessionTransfer { direction, item } => {
                 if item.trim().is_empty() {
                     return Err(format!(
                         "SemanticInstruction::validate: PossessionTransfer with empty item for actor='{}'",
+                        self.actor_ref.normalized_token
+                    ));
+                }
+                // P2.3: nonsensical — Own с target_ref.
+                if matches!(direction, PossessionDirection::Own) && self.target_ref.is_some() {
+                    return Err(format!(
+                        "SemanticInstruction::validate: PossessionTransfer::Own should not have a target_ref for actor='{}'",
                         self.actor_ref.normalized_token
                     ));
                 }
@@ -661,6 +729,95 @@ impl SemanticInstruction {
                 if fact.trim().is_empty() {
                     return Err(format!(
                         "SemanticInstruction::validate: Discovery with empty fact for actor='{}'",
+                        self.actor_ref.normalized_token
+                    ));
+                }
+            }
+            // P2.3: дополнительные правила валидации.
+            SemanticPredicate::Arrival { destination } => {
+                if destination.trim().is_empty() {
+                    return Err(format!(
+                        "SemanticInstruction::validate: Arrival with empty destination for actor='{}'",
+                        self.actor_ref.normalized_token
+                    ));
+                }
+            }
+            SemanticPredicate::Departure { source } => {
+                if source.trim().is_empty() {
+                    return Err(format!(
+                        "SemanticInstruction::validate: Departure with empty source for actor='{}'",
+                        self.actor_ref.normalized_token
+                    ));
+                }
+            }
+            SemanticPredicate::GoalSetting { goal, .. } => {
+                if goal.trim().is_empty() {
+                    return Err(format!(
+                        "SemanticInstruction::validate: GoalSetting with empty goal for actor='{}'",
+                        self.actor_ref.normalized_token
+                    ));
+                }
+            }
+            SemanticPredicate::Inquiry { topic, .. } => {
+                if topic.trim().is_empty() {
+                    return Err(format!(
+                        "SemanticInstruction::validate: Inquiry with empty topic for actor='{}'",
+                        self.actor_ref.normalized_token
+                    ));
+                }
+            }
+            SemanticPredicate::AddressedCommunication { topic, addressee } => {
+                if topic.trim().is_empty() {
+                    return Err(format!(
+                        "SemanticInstruction::validate: AddressedCommunication with empty topic for actor='{}'",
+                        self.actor_ref.normalized_token
+                    ));
+                }
+                if addressee.trim().is_empty() {
+                    return Err(format!(
+                        "SemanticInstruction::validate: AddressedCommunication with empty addressee for actor='{}'",
+                        self.actor_ref.normalized_token
+                    ));
+                }
+            }
+            // P2.3: Option<String> payload checks — Wounding instrument.
+            // (LethalHarm, AllianceAction.partner, Emotion.target, PossessionTransfer::Own,
+            // SocialBind, CognitiveState — уже покрыты выше в основных правилах.)
+            SemanticPredicate::Wounding { instrument } => {
+                if let Some(i) = instrument {
+                    if i.trim().is_empty() {
+                        return Err(format!(
+                            "SemanticInstruction::validate: Wounding with empty instrument for actor='{}'",
+                            self.actor_ref.normalized_token
+                        ));
+                    }
+                }
+            }
+            SemanticPredicate::AllianceAction { partner, .. } => {
+                if let Some(p) = partner {
+                    if p.trim().is_empty() {
+                        return Err(format!(
+                            "SemanticInstruction::validate: AllianceAction with empty partner for actor='{}'",
+                            self.actor_ref.normalized_token
+                        ));
+                    }
+                }
+            }
+            SemanticPredicate::Emotion { target, .. } => {
+                if let Some(t) = target {
+                    if t.trim().is_empty() {
+                        return Err(format!(
+                            "SemanticInstruction::validate: Emotion with empty target for actor='{}'",
+                            self.actor_ref.normalized_token
+                        ));
+                    }
+                }
+            }
+            // P2.3: SocialBind с пустым relationship — нет смысла.
+            SemanticPredicate::SocialBind { relationship } => {
+                if relationship.trim().is_empty() {
+                    return Err(format!(
+                        "SemanticInstruction::validate: SocialBind with empty relationship for actor='{}'",
                         self.actor_ref.normalized_token
                     ));
                 }
@@ -775,87 +932,206 @@ impl SemanticInstruction {
             SemanticPredicate::Imprisonment => "Imprisonment".to_string(),
             SemanticPredicate::Healing => "Healing".to_string(),
             SemanticPredicate::PhysicalContact => "PhysicalContact".to_string(),
+            SemanticPredicate::Arrival { destination } => {
+                format!("Arrival{{→{}}}", destination)
+            }
+            SemanticPredicate::Departure { source } => {
+                format!("Departure{{{}→}}", source)
+            }
+            SemanticPredicate::GoalSetting { goal, is_plan } => {
+                if *is_plan {
+                    format!("Plan{{\"{}\"}}", goal)
+                } else {
+                    format!("Want{{\"{}\"}}", goal)
+                }
+            }
+            SemanticPredicate::Inquiry { topic, addressee: Some(a) } => {
+                format!("Inquiry{{topic=\"{}\",to=\"{}\"}}", topic, a)
+            }
+            SemanticPredicate::Inquiry { topic, addressee: None } => {
+                format!("Inquiry{{topic=\"{}\"}}", topic)
+            }
+            SemanticPredicate::AddressedCommunication { topic, addressee } => {
+                format!("Tell{{topic=\"{}\",to=\"{}\"}}", topic, addressee)
+            }
         }
     }
 
     /// Проверяет, конфликтует ли эта IR-инструкция с другой
     /// (потенциальный парадокс на уровне IR, до lowering в Event).
     ///
-    /// # Правила конфликта
+    /// # Правила конфликта (P2.2: расширено)
     ///
     /// 1. **Dead-cannot-act**: если `predicate == CessationOfLife` для actor A,
     ///    и другая инструкция имеет тот же actor с `temporal_anchor > self.anchor`
-    ///    и `predicate` требует активного actor (Communication, LethalHarm, Move),
-    ///    то это конфликт.
+    ///    и `predicate` требует активного actor (Communication, LethalHarm, Move,
+    ///    SpatialTransition, AllianceAction, Possession, ...), то это конфликт.
     /// 2. **Resurrect-after-alive**: если `predicate == Resurrection` для actor A,
     ///    и другая инструкция имеет тот же actor с `predicate == CessationOfLife`
     ///    И `temporal_anchor > self.anchor` — конфликт (resurrected then alive then dead again?).
-    /// 3. **Negation conflict**: если `predicate == CessationOfLife` и
+    /// 3. **Negation conflict (CessationOfLife)**: если `predicate == CessationOfLife` и
     ///    `is_negated == true` (т.е. "не умер"), другая инструкция с тем же actor
     ///    и `predicate == CessationOfLife` без negation — конфликт.
-    /// 4. **Contradictory emotions**: `Emotion{Love}` и `Emotion{Hate}` к тому же target —
-    ///    мягкий конфликт (возвращает true, но может быть false positive).
+    /// 4. **Contradictory emotions**: `Emotion{Love}` и `Emotion{Hate}` к тому же
+    ///    target — мягкий конфликт.
+    /// 5. **LethalHarm negation contradiction**: "не убил" (LethalHarm + is_negated)
+    ///    vs "убил" (LethalHarm без negation) того же target — конфликт.
+    /// 6. **Same-anchor CessationOfLife + Resurrection**: actor не может одновременно
+    ///    умереть и воскреснуть (char_offset равны).
+    /// 7. **Alliance Betrayal vs Ally**: actor не может одновременно предать и
+    ///    заключить союз с тем же партнёром.
+    /// 8. **Imprisonment then Free without Capture**: если self = CaptureRelease{false}
+    ///    (Free) и other = Imprisonment раньше — это OK. Но если other = Free раньше
+    ///    и нет Capture/Imprisonment между ними — конфликт (free дважды).
+    /// 9. **Transformation + CessationOfLife** на том же anchor — персонаж не может
+    ///    одновременно умереть и превратиться.
     ///
     /// Возвращает `true` если есть конфликт, `false` если инструкции совместимы.
     pub fn conflicts_with(&self, other: &SemanticInstruction) -> bool {
         // Должны быть про один и тот же actor.
         let same_actor = self.actor_ref.normalized_token == other.actor_ref.normalized_token;
         if !same_actor {
-            return false;
-        }
-
-        // Правило 1: Dead-cannot-act.
-        // Если self = CessationOfLife, то other (если позже) не может быть активным.
-        if matches!(self.predicate, SemanticPredicate::CessationOfLife)
-            && !self.modifiers.is_negated
-        {
-            let self_after_other = self.modifiers.temporal_anchor.char_offset
-                >= other.modifiers.temporal_anchor.char_offset
-                && self.modifiers.temporal_anchor.char_offset > 0;
-            if self_after_other {
-                // self случилось ПОСЛЕ other — other не мог быть выполнен мёртвым actor'ом.
-                // (если other тоже CessationOfLife — это повторная смерть, отдельно.)
-                let other_is_active = matches!(
-                    other.predicate,
-                    SemanticPredicate::Communication { .. }
-                        | SemanticPredicate::LethalHarm { .. }
-                        | SemanticPredicate::SpatialTransition { .. }
-                        | SemanticPredicate::CognitiveState { is_forgotten: false, .. }
-                        | SemanticPredicate::SocialBind { .. }
-                        | SemanticPredicate::Resurrection
-                );
-                if other_is_active {
-                    return true;
+            // Правило 4 всё ещё применимо cross-actor если target совпадает.
+            // Проверяем ниже.
+        } else {
+            // Правило 1: Dead-cannot-act.
+            if matches!(self.predicate, SemanticPredicate::CessationOfLife)
+                && !self.modifiers.is_negated
+            {
+                let self_after_other = self.modifiers.temporal_anchor.char_offset
+                    >= other.modifiers.temporal_anchor.char_offset
+                    && self.modifiers.temporal_anchor.char_offset > 0;
+                if self_after_other {
+                    let other_is_active = matches!(
+                        other.predicate,
+                        SemanticPredicate::Communication { .. }
+                            | SemanticPredicate::LethalHarm { .. }
+                            | SemanticPredicate::SpatialTransition { .. }
+                            | SemanticPredicate::CognitiveState { is_forgotten: false, .. }
+                            | SemanticPredicate::SocialBind { .. }
+                            | SemanticPredicate::Resurrection
+                            | SemanticPredicate::PossessionTransfer { .. }
+                            | SemanticPredicate::AllianceAction { .. }
+                            | SemanticPredicate::Arrival { .. }
+                            | SemanticPredicate::Departure { .. }
+                            | SemanticPredicate::GoalSetting { .. }
+                            | SemanticPredicate::Inquiry { .. }
+                            | SemanticPredicate::AddressedCommunication { .. }
+                            | SemanticPredicate::Wounding { .. }
+                            | SemanticPredicate::CaptureRelease { .. }
+                            | SemanticPredicate::Imprisonment
+                            | SemanticPredicate::Healing
+                            | SemanticPredicate::PhysicalContact
+                            | SemanticPredicate::Transformation { .. }
+                            | SemanticPredicate::Discovery { .. }
+                            | SemanticPredicate::Perception { .. }
+                            | SemanticPredicate::Obligation { .. }
+                            | SemanticPredicate::Emotion { .. }
+                    );
+                    if other_is_active {
+                        return true;
+                    }
                 }
             }
-        }
 
-        // Правило 2: Resurrect-after-alive (только если other = CessationOfLife И раньше).
-        if matches!(self.predicate, SemanticPredicate::Resurrection) {
-            if matches!(other.predicate, SemanticPredicate::CessationOfLife)
-                && !other.modifiers.is_negated
-                && other.modifiers.temporal_anchor.char_offset
-                    < self.modifiers.temporal_anchor.char_offset
-            {
-                // self (Resurrection) позже other (Death) — это OK, наоборот было бы конфликтом.
-                return false;
+            // Правило 2: Resurrect-after-alive (только если other = CessationOfLife И раньше).
+            if matches!(self.predicate, SemanticPredicate::Resurrection) {
+                if matches!(other.predicate, SemanticPredicate::CessationOfLife)
+                    && !other.modifiers.is_negated
+                    && other.modifiers.temporal_anchor.char_offset
+                        < self.modifiers.temporal_anchor.char_offset
+                {
+                    return false;
+                }
             }
-            // Resurrection без предшествующей смерти — не конфликт, но аномалия.
-            // Не возвращаем true, чтобы избежать false positives.
-        }
 
-        // Правило 3: Negation conflict (CessationOfLife).
-        if matches!(self.predicate, SemanticPredicate::CessationOfLife)
-            && matches!(other.predicate, SemanticPredicate::CessationOfLife)
-            && self.modifiers.is_negated != other.modifiers.is_negated
+            // Правило 3: Negation conflict (CessationOfLife).
+            if matches!(self.predicate, SemanticPredicate::CessationOfLife)
+                && matches!(other.predicate, SemanticPredicate::CessationOfLife)
+                && self.modifiers.is_negated != other.modifiers.is_negated
+            {
+                return true;
+            }
+
+            // Правило 5: LethalHarm negation contradiction.
+            // "не убил" vs "убил" того же target.
+            if let (SemanticPredicate::LethalHarm { .. }, SemanticPredicate::LethalHarm { .. }) =
+                (&self.predicate, &other.predicate)
+            {
+                if self.modifiers.is_negated != other.modifiers.is_negated {
+                    let same_target = self
+                        .target_ref
+                        .as_ref()
+                        .and_then(|t| Some(&t.normalized_token))
+                        == other
+                            .target_ref
+                            .as_ref()
+                            .and_then(|t| Some(&t.normalized_token));
+                    if same_target {
+                        return true;
+                    }
+                }
+            }
+
+            // Правило 6: Same-anchor CessationOfLife + Resurrection.
+            if matches!(self.predicate, SemanticPredicate::CessationOfLife)
+                && matches!(other.predicate, SemanticPredicate::Resurrection)
+                && !self.modifiers.is_negated
+                && self.modifiers.temporal_anchor.char_offset
+                    == other.modifiers.temporal_anchor.char_offset
+                && self.modifiers.temporal_anchor.char_offset > 0
+            {
+                return true;
+            }
+
+            // Правило 7: Alliance Betrayal vs Ally на том же anchor.
+            if let (
+                SemanticPredicate::AllianceAction { kind: self_kind, partner: self_p },
+                SemanticPredicate::AllianceAction { kind: other_kind, partner: other_p },
+            ) = (&self.predicate, &other.predicate)
+            {
+                let partners_match = self_p.as_deref() == other_p.as_deref();
+                if partners_match {
+                    let betrayal_vs_ally = matches!(
+                        (self_kind, other_kind),
+                        (AllianceKind::Betrayal, AllianceKind::Ally)
+                            | (AllianceKind::Ally, AllianceKind::Betrayal)
+                    );
+                    if betrayal_vs_ally {
+                        return true;
+                    }
+                }
+            }
+
+            // Правило 9: Transformation + CessationOfLife на том же anchor.
+            if matches!(self.predicate, SemanticPredicate::Transformation { .. })
+                && matches!(other.predicate, SemanticPredicate::CessationOfLife)
+                && !other.modifiers.is_negated
+                && self.modifiers.temporal_anchor.char_offset
+                    == other.modifiers.temporal_anchor.char_offset
+                && self.modifiers.temporal_anchor.char_offset > 0
+            {
+                return true;
+            }
+        } // end of same_actor branch
+
+        // Правило 4: Contradictory emotions (Love vs Hate к тому же target).
+        // Это cross-actor правило: один actor любит, другой ненавидит — но
+        // target должен совпадать.
+        if let (
+            SemanticPredicate::Emotion { emotion: self_em, target: self_t },
+            SemanticPredicate::Emotion { emotion: other_em, target: other_t },
+        ) = (&self.predicate, &other.predicate)
         {
-            return true;
+            let target_match = self_t.as_deref() == other_t.as_deref();
+            let contradiction = matches!(
+                (self_em, other_em),
+                (EmotionKind::Love, EmotionKind::Hate) | (EmotionKind::Hate, EmotionKind::Love)
+            );
+            if target_match && contradiction && self_t.is_some() {
+                return true;
+            }
         }
-
-        // Правило 4: Contradictory LethalHarm + CessationOfLife на том же actor.
-        // (actor убит другим actor'ом и сам умер — это OK; но если actor умер раньше,
-        // чем кого-то убил, — это dead-cannot-act, уже покрыто правилом 1.)
-        // Здесь не дублируем.
 
         false
     }
@@ -982,6 +1258,13 @@ impl SemanticInstruction {
             SemanticPredicate::PhysicalContact => 0.50,
             SemanticPredicate::Communication { .. } => 0.45,
             SemanticPredicate::Generic { .. } => 0.30,
+            // P1.2: новые предикаты — веса.
+            SemanticPredicate::Arrival { .. } => 0.55,
+            SemanticPredicate::Departure { .. } => 0.55,
+            SemanticPredicate::GoalSetting { is_plan: true, .. } => 0.60,
+            SemanticPredicate::GoalSetting { is_plan: false, .. } => 0.50,
+            SemanticPredicate::Inquiry { .. } => 0.40,
+            SemanticPredicate::AddressedCommunication { .. } => 0.50,
         };
         // Penalize negated instructions (they're often less actionable).
         let negation_penalty: f32 = if self.modifiers.is_negated { 0.10 } else { 0.0 };
@@ -1301,7 +1584,8 @@ pub fn verb_to_action(verb_lemma: &str, polarity: &str, negated: bool) -> Action
         }
 
         // ── Коммуникация ──
-        "сказать" | "ответить" | "молвить" | "спросить" => {
+        // P1.3: "спросить" перенесён ниже на Action::Ask (раньше был тут в Speak).
+        "сказать" | "ответить" | "молвить" => {
             return Action::Speak { topic: None };
         }
 
@@ -1375,6 +1659,93 @@ pub fn verb_to_action(verb_lemma: &str, polarity: &str, negated: bool) -> Action
             return Action::Hate {
                 target: String::new(),
             };
+        }
+
+        // ── P1.3: 6 мёртвых Action — лемм-маппинг ──
+        // Ask/Tell/Want/Plan/Ally + Reconciliation/Breakup
+        "спросить" => return Action::Ask { topic: String::new() },
+        "хотеть" | "желать" => return Action::Want { goal: String::new() },
+        "планировать" | "собираться" => return Action::Plan { goal: String::new() },
+        "объединиться" | "союз" | "союзничать" | "присоединиться" => {
+            return Action::Ally { partner: String::new() };
+        }
+
+        // ── P1.4: новые предикаты — лемм-маппинг ──
+        // PossessionTransfer (через Custom-маркеры, которые lower_svo_to_ir
+        // подхватит во второй проход)
+        // Для Possession мы не имеем отдельного Action-варианта в facts.rs,
+        // поэтому используем Custom с уникальным verb_lemma, который
+        // распознаётся в lower_svo_to_ir.
+        "дать" | "подарить" | "вручить" | "передать" => {
+            return Action::Custom {
+                verb_lemma: "__possession_give".to_string(),
+                polarity: VerbPolarity::Positive,
+            };
+        }
+        "забрать" | "отнять" => {
+            return Action::Custom {
+                verb_lemma: "__possession_take".to_string(),
+                polarity: VerbPolarity::Negative,
+            };
+        }
+        "получить" | "принять" => {
+            return Action::Custom {
+                verb_lemma: "__possession_receive".to_string(),
+                polarity: VerbPolarity::Positive,
+            };
+        }
+        // Perception
+        "увидеть" | "видеть" => {
+            return Action::Custom {
+                verb_lemma: "__perception_visual".to_string(),
+                polarity: VerbPolarity::Neutral,
+            };
+        }
+        "услышать" | "слышать" => {
+            return Action::Custom {
+                verb_lemma: "__perception_auditory".to_string(),
+                polarity: VerbPolarity::Neutral,
+            };
+        }
+        "почувствовать" | "чувствовать" | "ощутить" => {
+            return Action::Custom {
+                verb_lemma: "__perception_tactile".to_string(),
+                polarity: VerbPolarity::Neutral,
+            };
+        }
+        // Obligation
+        "пообещать" | "обещать" => {
+            return Action::Custom {
+                verb_lemma: "__obligation_promise".to_string(),
+                polarity: VerbPolarity::Positive,
+            };
+        }
+        "поклясться" | "клясться" => {
+            return Action::Custom {
+                verb_lemma: "__obligation_oath".to_string(),
+                polarity: VerbPolarity::Positive,
+            };
+        }
+        // Alliance (Reconciliation/Breakup)
+        "помириться" | "мириться" => {
+            return Action::Custom {
+                verb_lemma: "__alliance_reconciliation".to_string(),
+                polarity: VerbPolarity::Positive,
+            };
+        }
+        "разойтись" | "расстаться" => {
+            return Action::Custom {
+                verb_lemma: "__alliance_breakup".to_string(),
+                polarity: VerbPolarity::Negative,
+            };
+        }
+        // Discovery (дополнительно к существующим)
+        "обнаружить" | "открыть" | "найти" => {
+            return Action::Discover { fact: String::new() };
+        }
+        // Transformation (дополнительно к существующим)
+        "превратиться" | "обернуться" => {
+            return Action::Transform { new_form: String::new() };
         }
 
         // ── Fallback на множества / polarity ──
@@ -1999,13 +2370,31 @@ pub fn lower_svo_to_ir(
         source_type: actor_source,
     };
 
-    // Action & Predicate lowering
-    let raw_action = verb_to_action(&t.verb_lemma, &t.polarity, t.negated);
+    // Action & Predicate lowering.
+    //
+    // P1.1: сначала пробуем `verb_to_action_extended` (избыточная таблица
+    // синонимов: «задушить», «отравить», «расстрелять», «обручиться», ...),
+    // затем `verb_to_action_ukrainian` (если лемма украинская: «вбити»,
+    // «одружитися», «покохати», ...), и только потом базовый русский
+    // `verb_to_action`. Это исправляет D1 (verb_to_action_ukrainian и
+    // verb_to_action_extended были мёртвым кодом).
+    let raw_action = verb_to_action_extended(&t.verb_lemma)
+        .unwrap_or_else(|| verb_to_action_ukrainian(&t.verb_lemma, &t.polarity, t.negated));
+    // Если обе расширенные таблицы не сматчили — fallback на базовую
+    // русскую. Если сматчили — используем результат, polarity из триплета
+    // не нужна (она уже зашита в конкретный Action-вариант).
+    let raw_action = if matches!(raw_action, Action::Custom { ref verb_lemma, .. } if verb_lemma.as_str() == t.verb_lemma.trim().to_lowercase()) {
+        // verb_to_action_ukrainian возвращает Custom с verb_lemma == v, если
+        // не сматчила — это означает, что UK не нашла лемму. Пробуем RU.
+        verb_to_action(&t.verb_lemma, &t.polarity, t.negated)
+    } else {
+        raw_action
+    };
     let action = populate_action_payload(raw_action, t, resolver);
 
     let predicate = match &action {
-        Action::Kill => SemanticPredicate::LethalHarm { instrument: None },
-        Action::Wound | Action::Hit => SemanticPredicate::Wounding { instrument: None },
+        Action::Kill => SemanticPredicate::LethalHarm { instrument: extract_instrument(t) },
+        Action::Wound | Action::Hit => SemanticPredicate::Wounding { instrument: extract_instrument(t) },
         Action::Capture => SemanticPredicate::CaptureRelease { is_captive: true },
         Action::Imprison => SemanticPredicate::Imprisonment,
         Action::Free => SemanticPredicate::CaptureRelease { is_captive: false },
@@ -2042,6 +2431,12 @@ pub fn lower_svo_to_ir(
             destination: destination.clone(),
             origin: None,
         },
+        Action::Arrive { destination } => SemanticPredicate::Arrival {
+            destination: destination.clone(),
+        },
+        Action::Leave { source } => SemanticPredicate::Departure {
+            source: source.clone(),
+        },
         Action::Know { fact } => SemanticPredicate::CognitiveState {
             knowledge: fact.clone(),
             is_forgotten: false,
@@ -2050,13 +2445,83 @@ pub fn lower_svo_to_ir(
             knowledge: fact.clone(),
             is_forgotten: true,
         },
+        Action::Want { goal } => SemanticPredicate::GoalSetting {
+            goal: goal.clone(),
+            is_plan: false,
+        },
+        Action::Plan { goal } => SemanticPredicate::GoalSetting {
+            goal: goal.clone(),
+            is_plan: true,
+        },
+        Action::Ask { topic } => {
+            let addressee = if t.object_lemma.is_empty() { None } else { Some(t.object_lemma.clone()) };
+            SemanticPredicate::Inquiry {
+                topic: topic.clone(),
+                addressee,
+            }
+        }
+        Action::Tell { topic, to } => SemanticPredicate::AddressedCommunication {
+            topic: topic.clone(),
+            addressee: to.clone(),
+        },
         Action::Marry { partner } => SemanticPredicate::SocialBind {
             relationship: partner.clone(),
         },
-        Action::Custom { polarity, verb_lemma } => SemanticPredicate::Generic {
-            polarity: matches!(polarity, VerbPolarity::Positive),
-            raw_verb: verb_lemma.clone(),
-        },
+        Action::Custom { polarity, verb_lemma } => {
+            // P1.4: распознаём специальные маркерные verb_lemma, которые
+            // verb_to_action ставит для Possession/Perception/Obligation/
+            // Alliance-маркеров (когда нет прямого Action-варианта в facts.rs).
+            match verb_lemma.as_str() {
+                "__possession_give" => SemanticPredicate::PossessionTransfer {
+                    direction: PossessionDirection::Give,
+                    item: t.object_lemma.clone(),
+                },
+                "__possession_take" => SemanticPredicate::PossessionTransfer {
+                    direction: PossessionDirection::Take,
+                    item: t.object_lemma.clone(),
+                },
+                "__possession_receive" => SemanticPredicate::PossessionTransfer {
+                    direction: PossessionDirection::Receive,
+                    item: t.object_lemma.clone(),
+                },
+                "__perception_visual" => SemanticPredicate::Perception {
+                    sense: PerceptionSense::Visual,
+                    object: t.object_lemma.clone(),
+                },
+                "__perception_auditory" => SemanticPredicate::Perception {
+                    sense: PerceptionSense::Auditory,
+                    object: t.object_lemma.clone(),
+                },
+                "__perception_tactile" => SemanticPredicate::Perception {
+                    sense: PerceptionSense::Tactile,
+                    object: t.object_lemma.clone(),
+                },
+                "__obligation_promise" => SemanticPredicate::Obligation {
+                    kind: ObligationKind::Promise,
+                    content: t.object_lemma.clone(),
+                },
+                "__obligation_oath" => SemanticPredicate::Obligation {
+                    kind: ObligationKind::Oath,
+                    content: t.object_lemma.clone(),
+                },
+                "__alliance_reconciliation" => SemanticPredicate::AllianceAction {
+                    kind: AllianceKind::Reconciliation,
+                    partner: if t.object_lemma.is_empty() { None } else { Some(t.object_lemma.clone()) },
+                },
+                "__alliance_breakup" => SemanticPredicate::AllianceAction {
+                    kind: AllianceKind::Breakup,
+                    partner: if t.object_lemma.is_empty() { None } else { Some(t.object_lemma.clone()) },
+                },
+                _ => SemanticPredicate::Generic {
+                    polarity: matches!(polarity, VerbPolarity::Positive),
+                    raw_verb: verb_lemma.clone(),
+                },
+            }
+        }
+        // Все остальные варианты Action (если они есть) — Generic fallback.
+        // На данный момент все варианты Action покрыты выше, но оставляем
+        // защиту на случай расширения enum Action в будущем.
+        #[allow(unreachable_patterns)]
         _ => SemanticPredicate::Generic {
             polarity: t.polarity == "positive",
             raw_verb: t.verb_lemma.clone(),
@@ -2130,23 +2595,50 @@ pub fn triplets_to_events(
 
 /// Строит [`TemporalAnchor`] из byte offset в исходном тексте.
 ///
-/// Алгоритм: linear scan по `chapters` в поисках главы, у которой
-/// `pos <= position < end`. Если найдена — `chapter_num = chapter.num`,
-/// `chapter_suffix = None` (task brief явно указывает None — суффикс
-/// суб-главы хранится в `chapter.title`, но не извлекается здесь), и
-/// `char_offset = position`. Если позиция до первой главы —
+/// Алгоритм: binary search по `chapters` (которые отсортированы по `pos`)
+/// в поисках главы, у которой `pos <= position < end`. Если найдена —
+/// `chapter_num = chapter.num`, `chapter_suffix = chapter.suffix.clone()`
+/// (P2.1: теперь суффикс суб-главы «28б» хранится отдельно, не только в
+/// `title`), `char_offset = position`. Если позиция до первой главы —
 /// `chapter_num = 0` (пролог), `char_offset = position`.
+///
+/// P3.2: заменён linear scan на binary search — O(log n) вместо O(n) для
+/// текстов с большим числом глав (100+ глав × 10k+ triplets = 1M
+/// сравнений раньше, теперь ~7).
 ///
 /// Если список глав пуст — также возвращается глава 0 (пролог/sentinel).
 fn anchor_from_position(position: usize, chapters: &[ParsedChapter]) -> TemporalAnchor {
-    for ch in chapters {
-        if ch.pos <= position && position < ch.end {
-            return TemporalAnchor {
-                chapter_num: ch.num,
-                chapter_suffix: None,
-                scene_index: None,
-                char_offset: position,
-            };
+    // P3.2: binary search по chapters (отсортированы по `pos`).
+    // Используем `partition_point` — находит первый элемент, для которого
+    // предикат возвращает false. Мы хотим последний chapter, у которого
+    // `pos <= position` — это `partition_point - 1`.
+    if !chapters.is_empty() {
+        // Предикат: `ch.pos <= position` — все chapters, начинающиеся
+        // не позже `position`, идут первыми.
+        let idx = chapters.partition_point(|ch| ch.pos <= position);
+        if idx > 0 {
+            let ch = &chapters[idx - 1];
+            // Проверяем, что position находится внутри [pos, end).
+            if position < ch.end {
+                return TemporalAnchor {
+                    chapter_num: ch.num,
+                    chapter_suffix: ch.suffix.clone(),
+                    scene_index: None,
+                    char_offset: position,
+                };
+            }
+        }
+        // Если position >= end последней главы — это «эпилог» после нарратива.
+        // Возвращаем last chapter (лучше, чем 0-пролог).
+        if let Some(last) = chapters.last() {
+            if position >= last.end {
+                return TemporalAnchor {
+                    chapter_num: last.num,
+                    chapter_suffix: last.suffix.clone(),
+                    scene_index: None,
+                    char_offset: position,
+                };
+            }
         }
     }
     // Не нашли — позиция до первой главы (пролог) ИЛИ chapters пуст.
@@ -2219,9 +2711,103 @@ fn populate_action_payload(action: Action, t: &SvoTriplet, resolver: &EntityReso
         Action::Betray { .. } => Action::Betray {
             victim: object_resolved(),
         },
+        Action::Ally { .. } => Action::Ally {
+            partner: object_resolved(),
+        },
+        // Arrive/Leave уже обработаны выше (строки ~2686-2691).
+        Action::Ask { .. } => Action::Ask {
+            topic: if t.object_lemma.is_empty() {
+                t.sentence.clone()
+            } else {
+                t.object_lemma.clone()
+            },
+        },
+        Action::Tell { .. } => Action::Tell {
+            topic: if t.object_lemma.is_empty() {
+                t.sentence.clone()
+            } else {
+                t.object_lemma.clone()
+            },
+            to: resolver.resolve_or_keep(&t.object_lemma),
+        },
+        Action::Want { .. } => Action::Want {
+            goal: if t.object_lemma.is_empty() {
+                t.sentence.clone()
+            } else {
+                t.object_lemma.clone()
+            },
+        },
+        Action::Plan { .. } => Action::Plan {
+            goal: if t.object_lemma.is_empty() {
+                t.sentence.clone()
+            } else {
+                t.object_lemma.clone()
+            },
+        },
         // Остальные варианты — без inline-payload от триплета.
         other => other,
     }
+}
+
+/// Извлекает орудие действия из текста предложения.
+///
+/// Ищет творительный падёж (кем/чем) в исходном тексте. Поддерживаемые
+/// паттерны: «убил ножом», «ударил мечом», «застрелил из ружья»,
+/// «отравил ядом».
+///
+/// Возвращает `Some(lemma)` если паттерн найден, иначе `None`. `lemma`
+/// приводится к нижнему регистру и trimmed.
+fn extract_instrument(t: &SvoTriplet) -> Option<String> {
+    let text = t.sentence.as_str();
+    if text.is_empty() {
+        return None;
+    }
+
+    // Паттерн 1: ищем ЛЮБОЕ слово в предложении, оканчивающееся на типичное
+    // окончание творительного падежа (-ом/-ем/-ам/-ям/-ой/-ей/-ію/-ію).
+    // Не обязательно сразу после глагола — «убил Петра ножом» имеет между
+    // ними объект «Петра».
+    //
+    // Условия:
+    //   - слово состоит из кириллических букв (русских или украинских)
+    //   - длина >= 4 символа (чтобы не ловить «том», «сом» — короткие совпадения)
+    //   - НЕ начинается с заглавной буквы (отсекаем имена: «Иваном», «Петром»)
+    //   - оканчивается на одно из окончаний творительного падежа
+    let re_instr = Regex::new(
+        r"(?i)\b([а-яёїієґ][а-яёїієґ]{2,}(?:ом|ем|ам|ям|ой|ей|ою|ею|ім))\b"
+    ).ok()?;
+
+    for cap in re_instr.captures_iter(text) {
+        if let Ok(caps) = cap {
+            if let Some(g) = caps.get(1) {
+                let original = g.as_str();
+                // Пропускаем имена собственные (с заглавной).
+                if original.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                    continue;
+                }
+                // Пропускаем стоп-слова, которые часто встречаются в творительном.
+                let word_lc = original.to_lowercase();
+                let stop_words = ["потом", "потому", "тогда", "сегодня", "вечером", "утром", "ним", "ней", "собой"];
+                if stop_words.contains(&word_lc.as_str()) {
+                    continue;
+                }
+                return Some(word_lc);
+            }
+        }
+    }
+
+    // Паттерн 2: «из <genitive>» — «застрелил из ружья», «ударил из пистолета».
+    let re_from = Regex::new(
+        r"(?i)\bиз\s+([а-яёїієґ][а-яёїієґ\-]+)"
+    ).ok()?;
+
+    if let Ok(Some(m)) = re_from.captures(text) {
+        if let Some(g) = m.get(1) {
+            return Some(g.as_str().trim().to_lowercase());
+        }
+    }
+
+    None
 }
 
 /// Определяет, нужно ли для данного [`Action`] заполнять `Event.target`, и
@@ -2248,10 +2834,11 @@ fn target_for_action(
         | Action::Imprison
         | Action::Free
         | Action::Heal
-        | Action::Touch => Some(resolver.resolve_or_keep(object_lemma)),
+        | Action::Touch
+        | Action::Ask { .. }
+        | Action::Tell { .. } => Some(resolver.resolve_or_keep(object_lemma)),
         // Marry/Betray/Ally/FallInLove/Hate несут EntityId внутри — не дублируем.
-        // Move/Arrive/Leave/Speak/Ask/Tell(only if generated) — не target-variant.
-        // Know/Forget/Want/Plan/Discover/Transform/Die/Resurrect/Custom — не target.
+        // Move/Arrive/Leave/Speak/Know/Forget/Want/Plan/Discover/Transform/Die/Resurrect/Custom — не target.
         _ => None,
     }
 }
@@ -2646,6 +3233,253 @@ pub fn parse_text_fallback(
     events
 }
 
+/// **P0.1: IR-aware fallback parser.**
+///
+/// Резервный парсер: regex-based извлечение **семантических инструкций
+/// (L1.5)** из русского/украинского текста без Python. Это та же логика,
+/// что и в [`parse_text_fallback`], но результат — `Vec<SemanticInstruction>`
+/// вместо `Vec<Event>`. Это позволяет подключить IR-методы `validate()`,
+/// `conflicts_with()`, `importance_weight()` до того, как инструкции
+/// опустятся до `Event` через `lower_to_event()`.
+///
+/// # Алгоритм
+///
+/// 1. Текст разбивается на предложения по `[.!?…]+` с сохранением byte
+///    offset'ов (так же как `parse_text_fallback`).
+/// 2. Для каждого предложения:
+///    - Очищается от прямой речи через `strip_dialogue_content`.
+///    - Находятся заглавные слова — потенциальные имена.
+///    - Определяется глагол (kill/speak/die/resurrect/arrive).
+///    - Извлекается actor и target (через `EntityResolver`).
+///    - Строится `SvoTriplet` (синтетический, для переиспользования
+///      `lower_svo_to_ir`).
+///    - Вызывается `lower_svo_to_ir` → `SemanticInstruction`.
+/// 3. Каждая инструкция получает `confidence = 0.5` (ниже, чем у SVO) и
+///    `Provenance::RustParser` (через `source_type` none).
+///
+/// # Возвращаемое
+///
+/// `Vec<SemanticInstruction>` — готов для `ReasoningCycle::observe_instructions`.
+pub fn parse_text_to_instructions(
+    text: &str,
+    resolver: &EntityResolver,
+    chapters: &[ParsedChapter],
+) -> Vec<SemanticInstruction> {
+    if text.is_empty() {
+        return Vec::new();
+    }
+
+    let regexes = fallback_regexes();
+    let mut instructions: Vec<SemanticInstruction> = Vec::new();
+
+    // Разбиваем на предложения (логика идентична parse_text_fallback).
+    let mut last_start = 0usize;
+    let mut boundaries: Vec<(usize, usize)> = Vec::new();
+    for r in regexes.sentence_split.find_iter(text) {
+        if let Ok(m) = r {
+            boundaries.push((last_start, m.start()));
+            last_start = m.end();
+        }
+    }
+    if last_start < text.len() {
+        boundaries.push((last_start, text.len()));
+    } else if boundaries.is_empty() {
+        boundaries.push((0, text.len()));
+    }
+
+    for (sent_start, sent_end) in boundaries {
+        if sent_end <= sent_start {
+            continue;
+        }
+        let sentence = if text.is_char_boundary(sent_start) && text.is_char_boundary(sent_end) {
+            &text[sent_start..sent_end]
+        } else {
+            continue;
+        };
+
+        let clean_sentence_owned = strip_dialogue_content(sentence);
+        let clean_sentence = clean_sentence_owned.as_str();
+        if clean_sentence.trim().is_empty() {
+            continue;
+        }
+
+        let caps: Vec<String> = regexes
+            .cap_word
+            .find_iter(clean_sentence)
+            .filter_map(|r| r.ok())
+            .map(|m| m.as_str().to_string())
+            .collect();
+
+        // Определяем action и verb_lemma по матчу глагола.
+        let (verb_lemma, polarity, needs_target): (&str, &str, bool) =
+            if regexes.kill.is_match(clean_sentence).unwrap_or(false) {
+                ("убить", "negative", true)
+            } else if regexes.speak.is_match(clean_sentence).unwrap_or(false) {
+                ("сказать", "neutral", false)
+            } else if regexes.die.is_match(clean_sentence).unwrap_or(false) {
+                ("умереть", "negative", false)
+            } else if regexes.resurrect.is_match(clean_sentence).unwrap_or(false) {
+                ("воскреснуть", "positive", false)
+            } else if regexes.arrive.is_match(clean_sentence).unwrap_or(false) {
+                ("прийти", "neutral", false)
+            } else {
+                continue; // Нет известного глагола — пропускаем.
+            };
+
+        let sentence_words: Vec<&str> = clean_sentence.split_whitespace().collect();
+
+        // Target extraction (для needs_target действий).
+        let target_str = if needs_target {
+            let kill_verb_pos = sentence_words.iter().position(|w| {
+                let w_lc = w.to_lowercase();
+                w_lc.contains("убил")
+                    || w_lc.contains("убить")
+                    || w_lc.contains("застрелил")
+                    || w_lc.contains("погубил")
+                    || w_lc.contains("казнил")
+                    || w_lc.contains("убивают")
+            });
+
+            let mut found_target: Option<String> = None;
+            if let Some(verb_idx) = kill_verb_pos {
+                for &word in &sentence_words[verb_idx + 1..] {
+                    let clean_word: String = word.chars().filter(|c| c.is_alphabetic()).collect();
+                    if clean_word.is_empty() {
+                        continue;
+                    }
+                    if resolver.resolve(&clean_word).is_some() {
+                        found_target = Some(clean_word);
+                        break;
+                    }
+                    if clean_word.chars().next().map(|c| c.is_uppercase()).unwrap_or(false)
+                        && !is_russian_stop_word(&clean_word)
+                    {
+                        found_target = Some(clean_word);
+                        break;
+                    }
+                }
+            }
+            found_target.or_else(|| caps.get(1).cloned())
+        } else {
+            None
+        };
+
+        // Actor extraction (по глаголу речи или fallback на caps).
+        let mut extracted_actor: Option<String> = None;
+        let speak_verb_pos = sentence_words.iter().position(|w| {
+            let w_lc = w.to_lowercase();
+            w_lc.contains("сказал")
+                || w_lc.contains("говорит")
+                || w_lc.contains("говорят")
+                || w_lc.contains("ответил")
+                || w_lc.contains("ответила")
+                || w_lc.contains("ответили")
+                || w_lc.contains("спросил")
+                || w_lc.contains("спросила")
+                || w_lc.contains("спросили")
+        });
+
+        if let Some(speak_idx) = speak_verb_pos {
+            // Сначала ищем субъекта ДО глагола речи.
+            let mut before_actor = None;
+            for &prev_word in &sentence_words[..speak_idx] {
+                let clean: String = prev_word.chars().filter(|c| c.is_alphabetic()).collect();
+                if clean.is_empty() || is_russian_stop_word(&clean) {
+                    continue;
+                }
+                if resolver.resolve(&clean).is_some() {
+                    before_actor = Some(clean);
+                    break;
+                }
+                if clean.chars().next().map(|c| c.is_uppercase()).unwrap_or(false)
+                    && clean.chars().count() > 2
+                {
+                    before_actor = Some(clean);
+                    break;
+                }
+            }
+
+            if before_actor.is_some() {
+                extracted_actor = before_actor;
+            } else {
+                // Иначе — ищем ПОСЛЕ глагола речи.
+                for &next_word in &sentence_words[speak_idx + 1..] {
+                    let clean: String = next_word.chars().filter(|c| c.is_alphabetic()).collect();
+                    if clean.is_empty() || is_russian_stop_word(&clean) {
+                        continue;
+                    }
+                    if let Some(ref t) = target_str {
+                        if resolver.resolve(&clean).as_ref() == resolver.resolve(t).as_ref() {
+                            continue;
+                        }
+                    }
+                    if resolver.resolve(&clean).is_some() {
+                        extracted_actor = Some(clean);
+                        break;
+                    }
+                    if clean.chars().next().map(|c| c.is_uppercase()).unwrap_or(false)
+                        && clean.chars().count() > 2
+                    {
+                        extracted_actor = Some(clean);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Fallback на caps.
+        let actor_str = match extracted_actor {
+            Some(a) => a,
+            None => {
+                let valid_cap = caps.iter().find(|cap| {
+                    if let Some(ref t) = target_str {
+                        if resolver.resolve(cap).as_ref() == resolver.resolve(t).as_ref() {
+                            return false;
+                        }
+                    }
+                    if resolver.resolve(cap).is_some() {
+                        return true;
+                    }
+                    !is_russian_stop_word(cap) && cap.chars().count() > 2
+                });
+                match valid_cap {
+                    Some(name) => name.clone(),
+                    None => continue,
+                }
+            }
+        };
+
+        // Строим синтетический SvoTriplet и прогоняем через lower_svo_to_ir.
+        let triplet = SvoTriplet {
+            subject: actor_str.clone(),
+            subject_lemma: actor_str.to_lowercase(),
+            subject_gender: None,
+            verb: verb_lemma.to_string(),
+            verb_lemma: verb_lemma.to_string(),
+            object: target_str.clone().unwrap_or_default(),
+            object_lemma: target_str.clone().unwrap_or_default().to_lowercase(),
+            object_gender: None,
+            sentence: sentence.trim().to_string(),
+            position: sent_start,
+            tense: "past".to_string(),
+            polarity: polarity.to_string(),
+            negated: false,
+            pronoun_resolved: false,
+        };
+
+        let mut ir = lower_svo_to_ir(&triplet, resolver, chapters);
+
+        // Переопределяем confidence: regex-fallback ниже, чем SVO Python.
+        // Базовый 0.5 вместо 0.9; всё ещё применяются множители Barbarism/
+        // Spelling (если actor нормализован из русизма/опечатки).
+        ir.confidence = compute_confidence(ir.actor_ref.source_type, ir.target_ref.as_ref().and_then(|t| t.source_type), false) * (0.5 / 0.9);
+
+        instructions.push(ir);
+    }
+
+    instructions
+}
+
 // ============ Юнит-тесты ============
 
 // ════════════════════════════════════════════════════════════════
@@ -2893,7 +3727,8 @@ pub fn verb_to_action_ukrainian(verb_lemma: &str, polarity: &str, negated: bool)
             };
         }
         // ── Комунікація ──
-        "сказати" | "відповісти" | "мовити" | "спитати" | "питати" =>
+        // P1.3: "спитати"/"питати" перенесені нижче на Action::Ask.
+        "сказати" | "відповісти" | "мовити" =>
         {
             return Action::Speak { topic: None };
         }
@@ -2960,6 +3795,88 @@ pub fn verb_to_action_ukrainian(verb_lemma: &str, polarity: &str, negated: bool)
             return Action::Hate {
                 target: String::new(),
             };
+        }
+
+        // ── P1.3: 6 мёртвых Action — українські лемм-маппінги ──
+        "запитати" | "питати" => return Action::Ask { topic: String::new() },
+        "хотіти" | "бажати" => return Action::Want { goal: String::new() },
+        "планувати" | "збиратися" => return Action::Plan { goal: String::new() },
+        "об'єднатися" | "приєднатися" | "союз" => {
+            return Action::Ally { partner: String::new() };
+        }
+
+        // ── P1.4: нові предикати — українські лемм-маппінги ──
+        // PossessionTransfer
+        "дати" | "подарувати" | "вручити" | "передати" => {
+            return Action::Custom {
+                verb_lemma: "__possession_give".to_string(),
+                polarity: VerbPolarity::Positive,
+            };
+        }
+        "забрати" | "відібрати" => {
+            return Action::Custom {
+                verb_lemma: "__possession_take".to_string(),
+                polarity: VerbPolarity::Negative,
+            };
+        }
+        "отримати" | "прийняти" => {
+            return Action::Custom {
+                verb_lemma: "__possession_receive".to_string(),
+                polarity: VerbPolarity::Positive,
+            };
+        }
+        // Perception
+        "побачити" | "бачити" => {
+            return Action::Custom {
+                verb_lemma: "__perception_visual".to_string(),
+                polarity: VerbPolarity::Neutral,
+            };
+        }
+        "почути" | "чути" => {
+            return Action::Custom {
+                verb_lemma: "__perception_auditory".to_string(),
+                polarity: VerbPolarity::Neutral,
+            };
+        }
+        "відчути" | "відчувати" => {
+            return Action::Custom {
+                verb_lemma: "__perception_tactile".to_string(),
+                polarity: VerbPolarity::Neutral,
+            };
+        }
+        // Obligation
+        "пообіцяти" | "обіцяти" => {
+            return Action::Custom {
+                verb_lemma: "__obligation_promise".to_string(),
+                polarity: VerbPolarity::Positive,
+            };
+        }
+        "присягнути" | "присягатися" => {
+            return Action::Custom {
+                verb_lemma: "__obligation_oath".to_string(),
+                polarity: VerbPolarity::Positive,
+            };
+        }
+        // Alliance (Reconciliation/Breakup)
+        "помиритися" | "миритися" => {
+            return Action::Custom {
+                verb_lemma: "__alliance_reconciliation".to_string(),
+                polarity: VerbPolarity::Positive,
+            };
+        }
+        "розійтися" | "розлучитися" => {
+            return Action::Custom {
+                verb_lemma: "__alliance_breakup".to_string(),
+                polarity: VerbPolarity::Negative,
+            };
+        }
+        // Discovery (додатково до існуючих)
+        "виявити" | "відкрити" | "знайти" => {
+            return Action::Discover { fact: String::new() };
+        }
+        // Transformation
+        "перетворитися" | "обернутися" => {
+            return Action::Transform { new_form: String::new() };
         }
         _ => {}
     }
@@ -5214,6 +6131,7 @@ mod tests {
     fn make_chapter(num: u32, pos: usize, end: usize) -> ParsedChapter {
         ParsedChapter {
             num,
+            suffix: None,
             title: format!("Глава {}", num),
             body: String::new(),
             full_text: String::new(),
@@ -5297,10 +6215,11 @@ mod tests {
             Action::Speak { topic: None },
             "«ответить» → Speak{{None}}"
         );
+        // P1.3: «спросить» теперь маппится на Action::Ask (раньше было Speak).
         assert_eq!(
             verb_to_action("спросить", "neutral", false),
-            Action::Speak { topic: None },
-            "«спросить» → Speak{{None}}"
+            Action::Ask { topic: String::new() },
+            "«спросить» → Ask{{topic=\"\"}}"
         );
         assert_eq!(
             verb_to_action("молвить", "neutral", false),
@@ -7001,6 +7920,7 @@ mod tests {
         let resolver = EntityResolver::default();
         let chapters = vec![ParsedChapter {
             num: 1,
+            suffix: None,
             title: "Глава 1".to_string(),
             body: String::new(),
             full_text: String::new(),
@@ -7852,5 +8772,484 @@ mod tests {
             100,
         );
         assert!((ir_wound.importance_weight() - 0.90).abs() < 1e-4);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  P1.2 + P2.2 + P3.1: тесты для новых предикатов и расширенных правил
+    // ════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_semantic_ir_arrival_departure_lowering_and_summary() {
+        let ir_arr = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Arrival { destination: "замок".to_string() },
+            None, false, 100,
+        );
+        assert!(ir_arr.summary().contains("Arrival{→замок}"));
+        let ev = ir_arr.lower_to_event();
+        assert!(matches!(ev.action, Action::Arrive { .. }));
+
+        let ir_dep = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Departure { source: "замок".to_string() },
+            None, false, 100,
+        );
+        assert!(ir_dep.summary().contains("Departure{замок→}"));
+        let ev = ir_dep.lower_to_event();
+        assert!(matches!(ev.action, Action::Leave { .. }));
+    }
+
+    #[test]
+    fn test_semantic_ir_goal_setting_lowering() {
+        let ir_want = make_test_instruction(
+            "Іван",
+            SemanticPredicate::GoalSetting { goal: "владу".to_string(), is_plan: false },
+            None, false, 100,
+        );
+        let ev = ir_want.lower_to_event();
+        assert!(matches!(ev.action, Action::Want { .. }));
+
+        let ir_plan = make_test_instruction(
+            "Іван",
+            SemanticPredicate::GoalSetting { goal: "втекти".to_string(), is_plan: true },
+            None, false, 100,
+        );
+        let ev = ir_plan.lower_to_event();
+        assert!(matches!(ev.action, Action::Plan { .. }));
+    }
+
+    #[test]
+    fn test_semantic_ir_inquiry_addressed_communication_lowering() {
+        let ir_ask = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Inquiry {
+                topic: "де Петро".to_string(),
+                addressee: None,
+            },
+            None, false, 100,
+        );
+        let ev = ir_ask.lower_to_event();
+        assert!(matches!(ev.action, Action::Ask { .. }));
+
+        let ir_tell = make_test_instruction(
+            "Іван",
+            SemanticPredicate::AddressedCommunication {
+                topic: "таємницю".to_string(),
+                addressee: "Петро".to_string(),
+            },
+            Some("Петро"), false, 100,
+        );
+        let ev = ir_tell.lower_to_event();
+        assert!(matches!(ev.action, Action::Tell { .. }));
+    }
+
+    #[test]
+    fn test_semantic_ir_validate_new_predicates() {
+        // Arrival с пустым destination
+        let ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Arrival { destination: "".to_string() },
+            None, false, 100,
+        );
+        assert!(ir.validate().is_err());
+
+        // Departure с пустым source
+        let ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Departure { source: "".to_string() },
+            None, false, 100,
+        );
+        assert!(ir.validate().is_err());
+
+        // GoalSetting с пустым goal
+        let ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::GoalSetting { goal: "".to_string(), is_plan: false },
+            None, false, 100,
+        );
+        assert!(ir.validate().is_err());
+
+        // Inquiry с пустым topic
+        let ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Inquiry { topic: "".to_string(), addressee: None },
+            None, false, 100,
+        );
+        assert!(ir.validate().is_err());
+
+        // AddressedCommunication с пустым addressee
+        let ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::AddressedCommunication {
+                topic: "x".to_string(),
+                addressee: "".to_string(),
+            },
+            None, false, 100,
+        );
+        assert!(ir.validate().is_err());
+    }
+
+    #[test]
+    fn test_semantic_ir_validate_option_string_payloads() {
+        // P2.3: AllianceAction с пустым partner (Some(""))
+        let ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::AllianceAction {
+                kind: AllianceKind::Ally,
+                partner: Some("".to_string()),
+            },
+            None, false, 100,
+        );
+        assert!(ir.validate().is_err());
+
+        // Emotion с пустым target
+        let ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Emotion {
+                emotion: EmotionKind::Love,
+                target: Some("   ".to_string()),
+            },
+            None, false, 100,
+        );
+        assert!(ir.validate().is_err());
+
+        // LethalHarm с пустым instrument
+        let ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::LethalHarm { instrument: Some("".to_string()) },
+            None, false, 100,
+        );
+        assert!(ir.validate().is_err());
+
+        // Wounding с пустым instrument
+        let ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Wounding { instrument: Some("   ".to_string()) },
+            None, false, 100,
+        );
+        assert!(ir.validate().is_err());
+    }
+
+    #[test]
+    fn test_semantic_ir_validate_nonsensical_combinations() {
+        // P2.3: PossessionTransfer::Own с target_ref — nonsense
+        let ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::PossessionTransfer {
+                direction: PossessionDirection::Own,
+                item: "книга".to_string(),
+            },
+            Some("Петро"), // target_ref присутствует — должен быть None для Own
+            false, 100,
+        );
+        assert!(ir.validate().is_err());
+
+        // CognitiveState(know) с пустым knowledge
+        let ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CognitiveState {
+                knowledge: "".to_string(),
+                is_forgotten: false,
+            },
+            None, false, 100,
+        );
+        assert!(ir.validate().is_err());
+
+        // SocialBind с пустым relationship
+        let ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::SocialBind { relationship: "".to_string() },
+            None, false, 100,
+        );
+        assert!(ir.validate().is_err());
+    }
+
+    #[test]
+    fn test_semantic_ir_conflict_lethal_harm_negation_contradiction() {
+        // P2.2 правило 5: "убил" vs "не убил" того же target = конфликт
+        let kill = make_test_instruction(
+            "Іван", SemanticPredicate::LethalHarm { instrument: None },
+            Some("Петро"), false, 100,
+        );
+        let mut no_kill = make_test_instruction(
+            "Іван", SemanticPredicate::LethalHarm { instrument: None },
+            Some("Петро"), true, 100, // negated
+        );
+        no_kill.modifiers.is_negated = true;
+        assert!(kill.conflicts_with(&no_kill));
+        assert!(no_kill.conflicts_with(&kill));
+    }
+
+    #[test]
+    fn test_semantic_ir_conflict_same_anchor_death_and_resurrection() {
+        // P2.2 правило 6: CessationOfLife + Resurrection на том же anchor
+        let mut die = make_test_instruction(
+            "Іван", SemanticPredicate::CessationOfLife,
+            None, false, 200,
+        );
+        die.modifiers.temporal_anchor.char_offset = 200;
+        let mut resurrect = make_test_instruction(
+            "Іван", SemanticPredicate::Resurrection,
+            None, false, 200, // тот же offset!
+        );
+        resurrect.modifiers.temporal_anchor.char_offset = 200;
+        assert!(die.conflicts_with(&resurrect));
+    }
+
+    #[test]
+    fn test_semantic_ir_conflict_alliance_betrayal_vs_ally() {
+        // P2.2 правило 7: Betrayal vs Ally с тем же partner
+        let betray = make_test_instruction(
+            "Іван",
+            SemanticPredicate::AllianceAction {
+                kind: AllianceKind::Betrayal,
+                partner: Some("Петро".to_string()),
+            },
+            Some("Петро"), false, 100,
+        );
+        let ally = make_test_instruction(
+            "Іван",
+            SemanticPredicate::AllianceAction {
+                kind: AllianceKind::Ally,
+                partner: Some("Петро".to_string()),
+            },
+            Some("Петро"), false, 100,
+        );
+        assert!(betray.conflicts_with(&ally));
+        assert!(ally.conflicts_with(&betray));
+    }
+
+    #[test]
+    fn test_semantic_ir_conflict_contradictory_emotions() {
+        // P2.2 правило 4: Love vs Hate к тому же target
+        // Это cross-actor правило — даже разные actor'ы конфликтуют.
+        let love = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Emotion {
+                emotion: EmotionKind::Love,
+                target: Some("Марія".to_string()),
+            },
+            Some("Марія"), false, 100,
+        );
+        let hate = make_test_instruction(
+            "Петро", // другой actor!
+            SemanticPredicate::Emotion {
+                emotion: EmotionKind::Hate,
+                target: Some("Марія".to_string()),
+            },
+            Some("Марія"), false, 100,
+        );
+        assert!(love.conflicts_with(&hate));
+    }
+
+    #[test]
+    fn test_semantic_ir_conflict_transformation_plus_death_same_anchor() {
+        // P2.2 правило 9: Transformation + CessationOfLife на том же anchor
+        let mut transform = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Transformation { new_form: "дракон".to_string() },
+            None, false, 300,
+        );
+        transform.modifiers.temporal_anchor.char_offset = 300;
+        let mut die = make_test_instruction(
+            "Іван", SemanticPredicate::CessationOfLife,
+            None, false, 300,
+        );
+        die.modifiers.temporal_anchor.char_offset = 300;
+        assert!(transform.conflicts_with(&die));
+    }
+
+    #[test]
+    fn test_semantic_ir_importance_weights_for_new_predicates() {
+        let ir_arr = make_test_instruction(
+            "Іван", SemanticPredicate::Arrival { destination: "x".to_string() },
+            None, false, 100,
+        );
+        assert!((ir_arr.importance_weight() - 0.55).abs() < 1e-4);
+
+        let ir_plan = make_test_instruction(
+            "Іван",
+            SemanticPredicate::GoalSetting { goal: "x".to_string(), is_plan: true },
+            None, false, 100,
+        );
+        assert!((ir_plan.importance_weight() - 0.60).abs() < 1e-4);
+
+        let ir_want = make_test_instruction(
+            "Іван",
+            SemanticPredicate::GoalSetting { goal: "x".to_string(), is_plan: false },
+            None, false, 100,
+        );
+        assert!((ir_want.importance_weight() - 0.50).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_verb_to_action_extended_possession_perception_obligation() {
+        // P1.4: лемм-маппинг для новых предикатов через маркеры.
+        let a = verb_to_action("дать", "positive", false);
+        assert!(matches!(a, Action::Custom { ref verb_lemma, .. } if verb_lemma == "__possession_give"));
+
+        let a = verb_to_action("увидеть", "neutral", false);
+        assert!(matches!(a, Action::Custom { ref verb_lemma, .. } if verb_lemma == "__perception_visual"));
+
+        let a = verb_to_action("пообещать", "positive", false);
+        assert!(matches!(a, Action::Custom { ref verb_lemma, .. } if verb_lemma == "__obligation_promise"));
+
+        let a = verb_to_action("помириться", "positive", false);
+        assert!(matches!(a, Action::Custom { ref verb_lemma, .. } if verb_lemma == "__alliance_reconciliation"));
+    }
+
+    #[test]
+    fn test_verb_to_action_ukrainian_possession_perception() {
+        // P1.4 UK: те же маркеры должны работать для украинских лемм.
+        let a = verb_to_action_ukrainian("дати", "positive", false);
+        assert!(matches!(a, Action::Custom { ref verb_lemma, .. } if verb_lemma == "__possession_give"));
+
+        let a = verb_to_action_ukrainian("побачити", "neutral", false);
+        assert!(matches!(a, Action::Custom { ref verb_lemma, .. } if verb_lemma == "__perception_visual"));
+
+        let a = verb_to_action_ukrainian("пообіцяти", "positive", false);
+        assert!(matches!(a, Action::Custom { ref verb_lemma, .. } if verb_lemma == "__obligation_promise"));
+    }
+
+    #[test]
+    fn test_verb_to_action_six_dead_actions_now_mapped() {
+        // P1.3: ранее мёртвые Action-варианты теперь имеют лемм-маппинг.
+        let a = verb_to_action("спросить", "neutral", false);
+        assert!(matches!(a, Action::Ask { .. }));
+
+        let a = verb_to_action("хотеть", "neutral", false);
+        assert!(matches!(a, Action::Want { .. }));
+
+        let a = verb_to_action("планировать", "neutral", false);
+        assert!(matches!(a, Action::Plan { .. }));
+
+        let a = verb_to_action("объединиться", "positive", false);
+        assert!(matches!(a, Action::Ally { .. }));
+
+        // Ukrainian
+        let a = verb_to_action_ukrainian("запитати", "neutral", false);
+        assert!(matches!(a, Action::Ask { .. }));
+
+        let a = verb_to_action_ukrainian("хотіти", "neutral", false);
+        assert!(matches!(a, Action::Want { .. }));
+
+        let a = verb_to_action_ukrainian("об'єднатися", "positive", false);
+        assert!(matches!(a, Action::Ally { .. }));
+    }
+
+    #[test]
+    fn test_extract_instrument_finds_knife() {
+        // P2.4: regex-извлечение орудия из творительного падежа.
+        let t = SvoTriplet {
+            subject: "Іван".to_string(),
+            subject_lemma: "іван".to_string(),
+            subject_gender: None,
+            verb: "убил".to_string(),
+            verb_lemma: "убить".to_string(),
+            object: "Петра".to_string(),
+            object_lemma: "петр".to_string(),
+            object_gender: None,
+            sentence: "Іван убил Петра ножом.".to_string(),
+            position: 0,
+            tense: "past".to_string(),
+            polarity: "negative".to_string(),
+            negated: false,
+            pronoun_resolved: false,
+        };
+        let instr = extract_instrument(&t);
+        assert_eq!(instr, Some("ножом".to_string()));
+    }
+
+    #[test]
+    fn test_extract_instrument_finds_gun_via_from_pattern() {
+        let t = SvoTriplet {
+            subject: "Іван".to_string(),
+            subject_lemma: "іван".to_string(),
+            subject_gender: None,
+            verb: "застрелил".to_string(),
+            verb_lemma: "застрелить".to_string(),
+            object: "Петра".to_string(),
+            object_lemma: "петр".to_string(),
+            object_gender: None,
+            sentence: "Іван застрелил Петра из ружья.".to_string(),
+            position: 0,
+            tense: "past".to_string(),
+            polarity: "negative".to_string(),
+            negated: false,
+            pronoun_resolved: false,
+        };
+        let instr = extract_instrument(&t);
+        assert_eq!(instr, Some("ружья".to_string()));
+    }
+
+    #[test]
+    fn test_parse_text_to_instructions_basic_pipeline() {
+        // P0.1: проверяем что IR-aware пайплайн реально работает.
+        let resolver = EntityResolver::from_nodes(&[]);
+        let chapters: Vec<ParsedChapter> = vec![ParsedChapter {
+            num: 1,
+            suffix: None,
+            title: "Глава 1".to_string(),
+            body: String::new(),
+            full_text: String::new(),
+            pos: 0,
+            end: 1000,
+        }];
+
+        let text = "Іван убил Петра. Петро умер. Олексій воскрес.";
+        let instructions = parse_text_to_instructions(text, &resolver, &chapters);
+
+        // Должны извлечься хотя бы 2-3 инструкции.
+        assert!(
+            !instructions.is_empty(),
+            "Должны быть извлечены инструкции, got {}",
+            instructions.len()
+        );
+
+        // Все инструкции должны иметь confidence < 0.9 (regex-fallback).
+        for ir in &instructions {
+            assert!(
+                ir.confidence < 0.9,
+                "Regex-fallback confidence должен быть < 0.9, got {}",
+                ir.confidence
+            );
+        }
+    }
+
+    #[test]
+    fn test_anchor_from_position_binary_search_with_suffix() {
+        // P2.1 + P3.2: binary search должен находить главу и извлекать suffix.
+        let chapters: Vec<ParsedChapter> = vec![
+            ParsedChapter {
+                num: 28, suffix: None,
+                title: "Глава 28".to_string(), body: String::new(),
+                full_text: String::new(), pos: 0, end: 100,
+            },
+            ParsedChapter {
+                num: 28, suffix: Some("б".to_string()),
+                title: "Глава 28б".to_string(), body: String::new(),
+                full_text: String::new(), pos: 100, end: 200,
+            },
+            ParsedChapter {
+                num: 28, suffix: Some("в".to_string()),
+                title: "Глава 28в".to_string(), body: String::new(),
+                full_text: String::new(), pos: 200, end: 300,
+            },
+        ];
+
+        // Позиция 150 — внутри «28б».
+        let anchor = anchor_from_position(150, &chapters);
+        assert_eq!(anchor.chapter_num, 28);
+        assert_eq!(anchor.chapter_suffix, Some("б".to_string()));
+
+        // Позиция 250 — внутри «28в».
+        let anchor = anchor_from_position(250, &chapters);
+        assert_eq!(anchor.chapter_num, 28);
+        assert_eq!(anchor.chapter_suffix, Some("в".to_string()));
+
+        // Позиция 50 — внутри «28» (без суффикса).
+        let anchor = anchor_from_position(50, &chapters);
+        assert_eq!(anchor.chapter_num, 28);
+        assert_eq!(anchor.chapter_suffix, None);
     }
 }
