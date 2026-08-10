@@ -2358,3 +2358,58 @@ Stage Summary:
 - Backward compat: legacy compute_epsilon_climax(omega_conf: f64) preserved for existing callers.
 - src-tauri build blocked by missing system GTK3 libs (env issue, not code issue).
 - Files: litgraph-core/Cargo.toml (+1 line), litgraph-core/src/lib.rs (+1 line), litgraph-core/src/reasoning/{mod,narrative_graph,paradox,stub}.rs (new, ~1100 lines), litgraph-core/src/parser/epsilon.rs (+165 lines).
+
+---
+Task ID: layer-f-tauri-ipc
+Agent: Super Z (main, Layer F implementation)
+Task: Implement Layer F — Tauri IPC commands (cmd_compute_epsilon_climax, cmd_extract_svo, cmd_detect_paradoxes) that expose the POLER v7.5-LEM engine (Layers A–E) to the React frontend.
+
+Work Log:
+- Pulled origin → 6091ae9 (fast-forward from 37be4b6, re-export fix).
+- Read Layer E public API surface in litgraph-core:
+  * `NarrativeGraph` (ConflictAnalyzer impl) — builds POS-filtered A_POS adjacency matrix, computes Ω_conf = ‖A_POS‖_F and ρ(A_POS).
+  * `ConflictAnalyzer` trait + `ConflictReport` struct — DI pattern for ε_climax.
+  * `ParadoxDetector` — Dead-Speaking paradox detection.
+  * `compute_epsilon_climax_with_analyzer(text, kw, κ, &impl ConflictAnalyzer)` — canonical v7.5-LEM climax with NO placeholders.
+  * `SvoParser::parse_text(text) -> Vec<SvoTriplet>` — Rust-native SVO triplet extraction.
+  * `chapters::detect(text) -> (Vec<ParsedChapter>, String)` — chapter splitter.
+  * `characters::detect(text) -> Vec<ParsedCharacter>` — character detector (Layer B).
+
+- Created `src-tauri/src/poler/mod.rs` — bridge module re-exporting Layer E types from litgraph-core. Kept separate from existing `src-tauri/src/reasoning/` (Wave 1–5 legacy reasoning engine) to avoid name collisions.
+
+- Created `src-tauri/src/commands/poler.rs` (~360 lines) with:
+  1. **DTOs** (camelCase for React frontend):
+     - `EpsilonClimaxDto` — ε_climax + Layer E conflict metrics (Ω_conf, ρ, node_count, edge_count).
+     - `SvoTripletDto` — SVO triplet with camelCase field names.
+     - `ParadoxDto` — paradox with stringified `kind` field.
+     - `ChapterBreakdownDto` + `ParadoxReportDto` — per-chapter manuscript breakdown.
+  2. **3 Tauri commands**:
+     - `cmd_compute_epsilon_climax(chapter_text, keyword, kappa)` — calls `compute_epsilon_climax_with_analyzer` with `NarrativeGraph` as the analyzer (real Ω_conf, no placeholder). Returns merged Layer D + Layer E result.
+     - `cmd_extract_svo(text)` — calls `SvoParser::new().parse_text(text)` and converts to DTOs. Rust-native replacement for the legacy Python `extract_svo` in `commands::ner`.
+     - `cmd_detect_paradoxes(text)` — splits text into chapters, runs `characters::detect` + `SvoParser` per chapter, then `ParadoxDetector::detect` on the full manuscript. Returns paradoxes + per-chapter breakdown.
+  3. **7 unit tests**:
+     - 3 tests for `SvoTripletDto::From` (preserves all fields, handles intransitive, negated polarity).
+     - 2 tests for `ParadoxDto::From` (dead_speaking, spatial_teleportation kind strings).
+     - 1 test for `EpsilonClimaxDto::from_layers` (merges Layer D + Layer E fields correctly).
+     - 3 smoke tests calling the underlying functions directly (same code path as the commands, but without Tauri runtime).
+
+- Updated `src-tauri/src/commands/mod.rs` — added `pub mod poler;`.
+- Updated `src-tauri/src/lib.rs`:
+  * Added `mod poler;` declaration.
+  * Registered 3 new commands in `tauri::generate_handler![...]`.
+
+- Fixed `litgraph-core/src/reasoning/mod.rs` — added missing re-exports for `Paradox` and `ParadoxKind` types (were only accessible via `litgraph_core::reasoning::paradox::Paradox`, now accessible at `litgraph_core::reasoning::Paradox`). This is required because `src-tauri/src/poler/mod.rs` imports them at the crate root.
+
+- Verification:
+  * `cargo check --lib` on src-tauri passes with 0 errors, 163 warnings (all pre-existing dead-code warnings in legacy reasoning module, not in new poler code).
+  * `cargo test --release --lib` on litgraph-core: 117/117 PASS (verified no regression from the Paradox re-export).
+  * src-tauri test execution requires full GTK3/WebKit2 system libraries (extracted .deb files to /tmp/gtk3dev for `cargo check`, but linking actual tests needs runtime .so files which are 198MB and not installed in this sandbox). User verified their env has full GTK3 3.24.52 — tests should run cleanly on their machine.
+
+Stage Summary:
+- Layer F complete: 3 Tauri IPC commands expose POLER v7.5-LEM engine to React frontend.
+- All commands are pure & deterministic (no I/O, no LLM, no global state) per Symbolic AI principle.
+- `cmd_compute_epsilon_climax` — canonical v7.5-LEM with real Ω_conf (no placeholder).
+- `cmd_extract_svo` — Rust-native SVO extraction (replaces Python spaCy version, no Python dep).
+- `cmd_detect_paradoxes` — multi-chapter paradox detection with per-chapter breakdown.
+- Files: src-tauri/src/poler/mod.rs (new, 38 lines), src-tauri/src/commands/poler.rs (new, ~360 lines), src-tauri/src/lib.rs (+4 lines), src-tauri/src/commands/mod.rs (+1 line), litgraph-core/src/reasoning/mod.rs (Paradox/ParadoxKind re-export, +1 line).
+- Local src-tauri test run blocked by missing system GTK3/WebKit2 runtime libs (env limitation, not code issue). User should run `cargo test --release --lib` on their machine to verify.

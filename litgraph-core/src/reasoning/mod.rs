@@ -39,7 +39,7 @@ pub mod paradox;
 pub mod stub;
 
 pub use narrative_graph::NarrativeGraph;
-pub use paradox::ParadoxDetector;
+pub use paradox::{Paradox, ParadoxDetector, ParadoxKind};
 pub use stub::StubConflictAnalyzer;
 
 use std::collections::HashMap;

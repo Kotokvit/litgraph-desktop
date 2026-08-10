@@ -14,6 +14,7 @@ pub mod linguistic_entities;
 pub mod ukrainian_semantic_categories;
 pub mod dict;
 pub mod linguistic;
+mod poler; // Layer F: bridge to litgraph-core Layer E (NarrativeGraph, ParadoxDetector)
 
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -68,6 +69,10 @@ pub fn run() {
             commands::reasoning::reasoning_run_cycle_with_ir,
             commands::reasoning::reasoning_get_world_state,
             commands::reasoning::reasoning_validate_text,
+            // poler — Layer F: POLER v7.5-LEM (Rust-native, no Python dep)
+            commands::poler::cmd_compute_epsilon_climax,
+            commands::poler::cmd_extract_svo,
+            commands::poler::cmd_detect_paradoxes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

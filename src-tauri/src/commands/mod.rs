@@ -9,3 +9,4 @@ pub mod ai;
 pub mod ner;
 pub mod conflict;
 pub mod reasoning; // Wave 5: Tauri-команды для reasoning engine
+pub mod poler; // Layer F: Tauri-команды для POLER v7.5-LEM (Layers A–E)
