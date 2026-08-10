@@ -295,12 +295,25 @@ fn test_cycle_idempotent_on_same_events() {
 #[test]
 fn test_eval_sfera_predela_full() {
     use std::fs;
-    let path = "/home/vitalij/Музика/Нова тека (2)/Нова тека/1-Сфера Предела.md";
-    if !std::path::Path::new(path).exists() {
-        println!("File 1-Сфера Предела.md not found at {}, skipping eval", path);
+    let paths = [
+        "/home/vitalij/Музика/Нова тека (2)/Нова тека/1-Сфера Предела.md",
+        "../litgraph-core/tests/sfera.md",
+        "/home/vitalij/Документи/Нова тека/litgraph-desktop/litgraph-core/tests/sfera.md",
+    ];
+    let mut text_opt = None;
+    for path in &paths {
+        if std::path::Path::new(path).exists() {
+            if let Ok(t) = fs::read_to_string(path) {
+                text_opt = Some(t);
+                break;
+            }
+        }
+    }
+    if text_opt.is_none() {
+        println!("File sfera.md not found, skipping eval");
         return;
     }
-    let text = fs::read_to_string(path).expect("failed to read file");
+    let text = text_opt.unwrap();
     let parse_res = crate::parser::build_graph(&text, "Сфера Предела", "Виталий Коток").unwrap();
 
     let now = chrono::Utc::now().timestamp_millis() as u64;
@@ -323,9 +336,7 @@ fn test_eval_sfera_predela_full() {
     let legacy_report = legacy_cycle.run_cycle(legacy_events.clone());
 
     // 2. New Semantic IR (L1.5) Pipeline
-    use crate::reasoning::semantic_parser::{
-        parse_text_to_instructions, SemanticPredicate,
-    };
+    use crate::reasoning::semantic_parser::parse_text_to_instructions;
     let instructions = parse_text_to_instructions(&text, &resolver, &chapters);
     let mut ir_cycle = ReasoningCycle::from_project(&project);
     let full_ir_report = ir_cycle.run_cycle_with_instructions(instructions.clone());
@@ -389,3 +400,112 @@ fn test_eval_sfera_predela_full() {
     }
     println!("=======================================================\n");
 }
+
+#[test]
+fn test_eval_kasiopia_full() {
+    use std::fs;
+    let paths = [
+        "../litgraph-core/tests/kasiopia.md",
+        "/home/vitalij/Документи/Нова тека/litgraph-desktop/litgraph-core/tests/kasiopia.md",
+    ];
+    let mut text_opt = None;
+    for path in &paths {
+        if std::path::Path::new(path).exists() {
+            if let Ok(t) = fs::read_to_string(path) {
+                text_opt = Some(t);
+                break;
+            }
+        }
+    }
+    if text_opt.is_none() {
+        println!("File kasiopia.md not found, skipping eval");
+        return;
+    }
+    let text = text_opt.unwrap();
+    let parse_res = crate::parser::build_graph(&text, "Кассіопея", "Виталий Коток").unwrap();
+
+    let now = chrono::Utc::now().timestamp_millis() as u64;
+    let project = Project {
+        title: "Кассіопея".to_string(),
+        author: "Виталий Коток".to_string(),
+        description: "Eval".to_string(),
+        nodes: parse_res.nodes,
+        edges: parse_res.edges,
+        created_at: now,
+        updated_at: now,
+    };
+
+    let (chapters, _) = crate::parser::chapters::detect(&text);
+    let resolver = crate::reasoning::semantic_parser::EntityResolver::from_nodes(&project.nodes);
+    
+    // 1. Classic Fallback Pipeline
+    let legacy_events = crate::reasoning::semantic_parser::parse_text_fallback(&text, &resolver, &chapters);
+    let mut legacy_cycle = ReasoningCycle::from_project(&project);
+    let legacy_report = legacy_cycle.run_cycle(legacy_events.clone());
+
+    // 2. New Semantic IR (L1.5) Pipeline
+    use crate::reasoning::semantic_parser::parse_text_to_instructions;
+    let instructions = parse_text_to_instructions(&text, &resolver, &chapters);
+    let mut ir_cycle = ReasoningCycle::from_project(&project);
+    let full_ir_report = ir_cycle.run_cycle_with_instructions(instructions.clone());
+    let ir_obs = &full_ir_report.ir_report;
+
+    println!("\n=======================================================");
+    println!("   E2E EVALUATION REPORT: Кассіопея (Semantic IR Pipeline)");
+    println!("=======================================================");
+    println!("SEMANTIC IR (L1.5) METRICS:");
+    println!("Instructions Extracted:  {}", ir_obs.total_instructions);
+    println!("Valid Instructions:      {}", ir_obs.valid_instructions);
+    println!("Validation Errors:       {}", ir_obs.validation_errors.len());
+    println!("IR Conflicts Detected:   {}", ir_obs.conflicts_detected);
+    println!("Events Processed (L2):   {}", full_ir_report.events_processed);
+    println!("-------------------------------------------------------");
+    println!("REASONING CYCLE METRICS:");
+    println!("Facts Derived:           {}", full_ir_report.facts_asserted);
+    println!("Constraint Violations:   {}", full_ir_report.violations.len());
+    println!("Temporal Paradoxes:      {}", full_ir_report.temporal_paradoxes.len());
+    println!("Hypotheses Generated:    {}", full_ir_report.hypotheses_generated);
+    println!("Hypotheses Accepted:     {}", full_ir_report.hypotheses_accepted);
+    println!("-------------------------------------------------------");
+    println!("LEGACY FALLBACK COMPARISON:");
+    println!("Legacy Events Extracted: {}", legacy_events.len());
+    println!("Legacy Violations:       {}", legacy_report.violations.len());
+    println!("Legacy Paradoxes:        {}", legacy_report.temporal_paradoxes.len());
+    println!("-------------------------------------------------------");
+
+    if !ir_obs.validation_errors.is_empty() {
+        println!("\nIR VALIDATION ERRORS (showing first 15 of {}):", ir_obs.validation_errors.len());
+        for (idx, err) in ir_obs.validation_errors.iter().take(15).enumerate() {
+            println!("#{:2}: {}", idx + 1, err);
+        }
+    }
+
+    if !ir_obs.conflicts.is_empty() {
+        println!("\nIR CONFLICTS DETECTED (showing first 15 of {}):", ir_obs.conflicts.len());
+        for (idx, (a, b)) in ir_obs.conflicts.iter().take(15).enumerate() {
+            println!("#{:2}: conflict between:\n     A: {}\n     B: {}", idx + 1, a, b);
+        }
+    }
+
+    println!("\nTOP 25 EXTRACTED INSTRUCTIONS:");
+    for (idx, inst) in instructions.iter().take(25).enumerate() {
+        println!("#{:2}: {}\n     source: \"{}\"", idx + 1, inst.summary(), inst.source_text);
+    }
+
+    if !full_ir_report.violations.is_empty() {
+        println!("\nCONSTRAINT VIOLATIONS ({}):", full_ir_report.violations.len());
+        for (idx, v) in full_ir_report.violations.iter().take(15).enumerate() {
+            println!("#{:2}: [{}] actor='{}', action={:?}, reason='{}'",
+                idx + 1, v.constraint_name, v.actor, v.attempted_action, v.reason);
+        }
+    }
+
+    if !full_ir_report.temporal_paradoxes.is_empty() {
+        println!("\nTEMPORAL PARADOXES ({}):", full_ir_report.temporal_paradoxes.len());
+        for (idx, p) in full_ir_report.temporal_paradoxes.iter().take(15).enumerate() {
+            println!("#{:2}: desc='{}'", idx + 1, p.description);
+        }
+    }
+    println!("=======================================================\n");
+}
+

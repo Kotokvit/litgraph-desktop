@@ -33,8 +33,16 @@ impl CognateEntry {
 }
 
 pub fn normalize_token(token: &str) -> Option<(&'static str, f32, SourceType)> {
+    let lower = token.trim().to_lowercase();
+    // Исключаем местоимения RU/UK из автоматической нормализации (предотвращает ошибочный маппинг «вона» -> «листуватися»).
+    if matches!(
+        lower.as_str(),
+        "он" | "она" | "оно" | "они" | "він" | "вона" | "воно" | "вони" | "я" | "ти" | "мы" | "вы" | "ми" | "ви" | "це" | "ця" | "цю" | "цей" | "цим"
+    ) {
+        return None;
+    }
     super::generated_cognates::COGNATE_MAP
-        .get(token.trim().to_lowercase().as_str())
+        .get(lower.as_str())
         .map(|e| (e.target, e.weight, e.source_type))
 }
 
@@ -64,4 +72,14 @@ mod tests {
             assert_eq!(st, SourceType::Barbarism);
         }
     }
+
+    #[test]
+    fn test_pronouns_not_normalized() {
+        assert!(normalize_token("вона").is_none());
+        assert!(normalize_token("он").is_none());
+        assert!(normalize_token("она").is_none());
+        assert!(normalize_token("він").is_none());
+        assert!(normalize_token("цю").is_none());
+    }
 }
+
