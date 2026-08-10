@@ -38,6 +38,10 @@ pub mod narrative_graph;
 pub mod paradox;
 pub mod stub;
 
+pub use narrative_graph::NarrativeGraph;
+pub use paradox::ParadoxDetector;
+pub use stub::StubConflictAnalyzer;
+
 use std::collections::HashMap;
 
 use crate::linguistic::svo_parser::SvoTriplet;
