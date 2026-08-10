@@ -1,13 +1,20 @@
-//! NER-извлечение сущностей через Python (spaCy + pymorphy3).
+//! NER-извлечение сущностей через Python (Natasha + pymorphy3).
 //!
-//! V2: использует временный файл для передачи текста (вместо stdin) —
-//! решает проблему "Канал оборвано (os error 32)" на больших текстах
-//! (>100k символов). Pipe buffer переполняется и write_all блокируется
-//! навсегда, если Python не успевает читать. Временный файл — надёжнее.
+//! v2.0 (commit после 6b78790): extract_entities переключён с v1 (spaCy +
+//! ~100-словный blacklist) на v2 (Natasha Slovnet NER + pymorphy3
+//! морфология). Точность детекции ФИО +60-133%. JSON-контракт сохранён.
+//!
+//! v1 (ner_extract.py) остаётся как библиотека для SVO и POLER pipelines
+//! (analyze_characters, extract_svo) — они импортируют из v1 `NLP`,
+//! `get_proper_lemma`, `FALSE_POSITIVE_NOUNS`. Миграция в v2 — Phase 1B.
+//!
+//! V1 (сохранено для истории): использовал временный файл для передачи
+//! текста (вместо stdin) — решает проблему "Канал оборвано (os error 32)"
+//! на больших текстах (>100k символов). Pipe buffer переполняется и
+//! write_all блокируется навсегда, если Python не успевает читать.
 //!
 //! Установка:
-//!   pip install spacy pymorphy3 numpy scipy scikit-learn
-//!   python -m spacy download ru_core_news_sm
+//!   pip install natasha pymorphy3
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -130,11 +137,10 @@ pub(crate) fn run_python_with_text_file(
             .map_err(|e| {
                 format!(
                     "Не удалось запустить Python ({}): {}\n\n\
-                     Для установки NER:\n\
+                     Для установки NER v2:\n\
                      1. Создайте venv: python -m venv ~/.litgraph-venv\n\
                      2. Активируйте: source ~/.litgraph-venv/bin/activate\n\
-                     3. Установите: pip install spacy pymorphy3 numpy scipy scikit-learn\n\
-                     4. Модель: python -m spacy download ru_core_news_sm",
+                     3. Установите: pip install natasha pymorphy3",
                     python_cmd, e
                 )
             })?;
@@ -164,15 +170,27 @@ pub(crate) fn run_python_with_text_file(
 }
 
 /// Tauri команда: извлечь сущности из текста.
+///
+/// v2.0: использует Natasha (Slovnet NER) + pymorphy3 вместо spaCy + blacklists.
+/// Точность детекции ФИО +60-133% по сравнению с v1 (см. scripts/dev/grammar/person.py).
+/// JSON-контракт сохранён (NerResult struct не изменился).
+///
+/// v1 (ner_extract.py) остаётся как библиотека для SVO и POLER pipelines,
+/// потому что svo_extract.py и poler_entities.py импортируют из него
+/// `NLP`, `get_proper_lemma`, `FALSE_POSITIVE_NOUNS` — их миграция в v2
+/// это Phase 1B.
 #[tauri::command]
 pub async fn extract_entities(text: String) -> Result<NerResult, String> {
     if text.trim().is_empty() {
         return Err("Пустой текст".to_string());
     }
 
-    let script = include_str!("../../python/ner_extract.py");
-    // ner_extract.py не имеет зависимостей от других наших скриптов
-    let stdout = run_python_with_text_file(script, &text, &[])?;
+    let script = include_str!("../../python/ner_extract_v2.py");
+    // v2 импортирует person.py — кладём его рядом с main_script.py в temp dir.
+    // person.py зависит только от natasha (внешний пакет), без внутренних импортов.
+    let person_script = include_str!("../../../scripts/dev/grammar/person.py");
+    let extra_files = vec![("person.py", person_script)];
+    let stdout = run_python_with_text_file(script, &text, &extra_files)?;
 
     let result: NerResult = serde_json::from_str(&stdout).map_err(|e| {
         format!(

@@ -42,14 +42,16 @@ import json
 import re
 from collections import defaultdict
 
-# Добавляем корень проекта в path, чтобы можно было импортировать scripts.dev.*
-# ner_extract_v2.py лежит в src-tauri/python/, корень = 3 уровня вверх
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_PROJECT_ROOT = os.path.abspath(os.path.join(_HERE, '..', '..'))
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
-
-from scripts.dev.grammar.person import extract_persons, PersonExtractor
+# Поддержка двух режимов запуска:
+# 1. Dev mode: python3 ner_extract_v2.py — запущен из src-tauri/python/,
+#    тогда scripts.dev.grammar.person доступен через project root.
+# 2. Runtime mode: Rust run_python_with_text_file копирует скрипт в
+#    /tmp/litgraph_scripts_*/main_script.py и кладёт person.py рядом.
+#    Тогда scripts.dev.* недоступен — fallback на плоский import.
+try:
+    from scripts.dev.grammar.person import extract_persons, PersonExtractor
+except ImportError:
+    from person import extract_persons, PersonExtractor
 
 
 # =============================================================================
@@ -149,22 +151,48 @@ def extract_entities(text: str, min_freq: int = 2) -> dict:
         min_freq: минимальная частота (по умолчанию 2 — одиночные упоминания шум)
 
     Returns:
-        dict с ключами 'entities' и 'stats'
+        dict с ключами 'entities' и 'stats' + meta-поля для совместимости
+        с Rust NerResult struct (commands/ner.rs).
+
+    Контракт совместимости с Rust `NerResult`:
+      Обязательные поля (без #[serde(default)] в Rust):
+        - entities: Vec<Entity>
+        - stats: {total, persons, locations, organizations}
+        - model, version, truncated
+        - textLength, processedLength
+      Опциональные поля (Rust игнорирует unknown, для v1-compat оставлены):
+        - stats.byLabel, stats.totalMentions
+        - entity.gender, entity.first, entity.last, entity.middle
     """
     # Извлекаем персонажей через Natasha
     persons = extract_persons(text, min_freq=min_freq)
     entities = aggregate_persons(persons, text)
 
-    # Статистика
+    text_length = len(text)
+    persons_count = sum(1 for e in entities if e.get('label') == 'PER')
+
+    # Статистика — обязательные поля v1-контракта + расширенные поля v2
     stats = {
+        # v1-совместимые обязательные поля (Rust NerStats struct)
         'total': len(entities),
-        'byLabel': {'PER': len(entities)},
+        'persons': persons_count,
+        'locations': 0,   # v2 пока не извлекает LOC — будет добавлено в Phase 2
+        'organizations': 0,  # v2 пока не извлекает ORG
+        # v2-расширенные поля (Rust игнорирует через unknown fields)
+        'byLabel': {'PER': persons_count},
         'totalMentions': sum(len(e['mentions']) for e in entities),
     }
 
     return {
         'entities': entities,
         'stats': stats,
+        # Meta-поля для Rust NerResult struct
+        'model': 'natasha-slovnet+pymorphy3',
+        'version': '2.0',
+        'truncated': False,
+        'textLength': text_length,
+        'processedLength': text_length,
+        'chunksProcessed': 1,
     }
 
 
