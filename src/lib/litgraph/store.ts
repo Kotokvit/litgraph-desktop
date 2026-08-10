@@ -11,6 +11,36 @@ import type {
 } from "./types";
 import { NODE_TYPES } from "./types";
 
+/**
+ * Цель перехода в Reader mode.
+ *
+ * Хранит ВСЕ моменты узла (а не только выбранный), чтобы пользователь мог
+ * листать prev/next прямо в Reader без возврата в TextMomentsDialog.
+ */
+export interface ReaderMomentRef {
+  /** Позиция совпадения (byte offset в исходном тексте). */
+  position: number;
+  /** Конец окна фрагмента. */
+  end: number;
+  /** Глава, в которой находится момент (для заголовка в навигации). */
+  chapterTitle: string;
+  /** Какое ключевое слово совпало. */
+  matchedKeyword: string;
+}
+
+export interface ReaderTarget {
+  /** ID узла, для которого открыт Reader. */
+  nodeId: string;
+  /** Заголовок узла (для шапки Reader). */
+  nodeTitle: string;
+  /** Ключевые слова узла (для подсветки всех упоминаний в тексте). */
+  keywords: string[];
+  /** Все моменты узла в тексте (отсортированы по позиции). */
+  moments: ReaderMomentRef[];
+  /** Индекс в moments[], на который нужно прокрутить при открытии. */
+  currentIndex: number;
+}
+
 // Утилита: сгенерировать id
 function uid(prefix = "n"): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random()
@@ -168,6 +198,11 @@ interface LitStore {
   backgroundLayer: BackgroundLayer | null;  // фоновый слой (карта / схема / диаграмма)
   backgroundMoving: boolean;          // в данный момент перетаскивается фон (для cursor)
   sourceMarkdown: string;             // исходный .md текст (для "Text Moments" поиска по тексту)
+  // ====== Reader mode ======
+  // Полноэкранный читатель исходного текста с подсветкой выбранного фрагмента.
+  // Открывается из TextMomentsDialog по клику на момент.
+  readerOpen: boolean;
+  readerTarget: ReaderTarget | null;
 
   // ====== Действия ======
   addNode: (type: LitNodeType, position?: { x: number; y: number }) => string;
@@ -200,6 +235,10 @@ interface LitStore {
   setBackgroundMoving: (moving: boolean) => void;
   setProjectMeta: (patch: Partial<Pick<LitStore, "title" | "author" | "description">>) => void;
   setSourceMarkdown: (text: string) => void;
+  // ====== Reader mode ======
+  openReader: (target: ReaderTarget) => void;
+  closeReader: () => void;
+  setReaderIndex: (index: number) => void;
   newProject: () => void;
   loadProject: (p: LitProject, sourceMarkdown?: string) => void;
   exportProject: () => LitProject;
@@ -231,6 +270,8 @@ export const useLitStore = create<LitStore>()(
       backgroundLayer: null,
       backgroundMoving: false,
       sourceMarkdown: "",
+      readerOpen: false,
+      readerTarget: null,
 
       addNode: (type, position) => {
         const cfg = NODE_TYPES[type];
@@ -395,6 +436,17 @@ export const useLitStore = create<LitStore>()(
 
       setSourceMarkdown: (text) => set({ sourceMarkdown: text }),
 
+      // ====== Reader mode ======
+      openReader: (target) =>
+        set({ readerOpen: true, readerTarget: target }),
+      closeReader: () => set({ readerOpen: false }),
+      setReaderIndex: (index) =>
+        set((s) =>
+          s.readerTarget && index >= 0 && index < s.readerTarget.moments.length
+            ? { readerTarget: { ...s.readerTarget, currentIndex: index } }
+            : {}
+        ),
+
       // ====== Фоновый слой ======
       setBackgroundLayer: (layer) => set({ backgroundLayer: layer }),
 
@@ -430,6 +482,8 @@ export const useLitStore = create<LitStore>()(
           backgroundLayer: null,
           backgroundMoving: false,
           sourceMarkdown: "",
+          readerOpen: false,
+          readerTarget: null,
         });
         void empty; // заглушка, чтобы TS не ругался
       },

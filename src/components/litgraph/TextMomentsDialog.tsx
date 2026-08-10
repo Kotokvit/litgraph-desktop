@@ -33,6 +33,7 @@ export function TextMomentsDialog({
 }: TextMomentsDialogProps) {
   const nodes = useLitStore((s) => s.nodes);
   const sourceMarkdown = useLitStore((s) => s.sourceMarkdown);
+  const openReader = useLitStore((s) => s.openReader);
 
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<TextMomentsResult | null>(null);
@@ -107,6 +108,36 @@ export function TextMomentsDialog({
       (c) => `${c.chapter.num}-${c.chapter.suffix}` === activeChapterKey
     );
   }, [result, activeChapterKey]);
+
+  /**
+   * Открыть полноэкранный Reader на конкретном моменте.
+   * Передаёт ВСЕ моменты узла (отсортированные по позиции), чтобы в Reader
+   * работала навигация prev/next без возврата в диалог.
+   */
+  const openInReader = useCallback(
+    (momentPosition: number) => {
+      if (!node || !result) return;
+      // Глобальный индекс момента в result.moments (отсортированы по позиции)
+      const idx = result.moments.findIndex(
+        (m) => m.position === momentPosition
+      );
+      if (idx < 0) return;
+      openReader({
+        nodeId: node.id,
+        nodeTitle: node.data.title,
+        keywords,
+        moments: result.moments.map((m) => ({
+          position: m.position,
+          end: m.end,
+          chapterTitle: m.chapter.title,
+          matchedKeyword: m.matchedKeyword,
+        })),
+        currentIndex: idx,
+      });
+      onClose();
+    },
+    [node, result, keywords, openReader, onClose]
+  );
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -220,6 +251,12 @@ export function TextMomentsDialog({
                 </p>
               </div>
             ) : (
+              <>
+                <div className="px-3 py-1.5 text-[10px] text-stone-500 bg-violet-50/50 border-b border-violet-100 flex items-center gap-1.5">
+                  <Lucide.MousePointerClick className="w-3 h-3 text-violet-500" />
+                  Клик по фрагменту откроет его в полноэкранном Читателе
+                  с подсветкой и навигацией ← →
+                </div>
               <div className="flex-1 flex overflow-hidden">
                 {/* Список глав (sidebar) */}
                 <div className="w-48 border-r overflow-y-auto lit-scroll shrink-0">
@@ -268,7 +305,9 @@ export function TextMomentsDialog({
                       return (
                         <div
                           key={`${m.chapter.num}-${idx}`}
-                          className="rounded-md border border-stone-200 bg-white p-2.5 hover:border-violet-300 transition-colors"
+                          className="group rounded-md border border-stone-200 bg-white p-2.5 hover:border-violet-400 hover:shadow-sm transition-all cursor-pointer"
+                          onClick={() => openInReader(m.position)}
+                          title="Открыть в Читателе"
                         >
                           <div className="flex items-center gap-2 mb-1.5">
                             <span className="text-[10px] font-mono text-stone-400">
@@ -307,6 +346,11 @@ export function TextMomentsDialog({
                               <span className="text-[9px] text-stone-500 font-mono w-8 text-right">
                                 {m.density.toFixed(1)}
                               </span>
+                              {/* Иконка-подсказка про клик */}
+                              <Lucide.ExternalLink
+                                className="w-3 h-3 text-stone-300 group-hover:text-violet-500 transition-colors ml-1"
+                                aria-label="Открыть в Читателе"
+                              />
                             </div>
                           </div>
                           <p className="text-xs text-stone-700 leading-relaxed">
@@ -329,6 +373,7 @@ export function TextMomentsDialog({
                   )}
                 </div>
               </div>
+              </>
             )}
           </>
         )}

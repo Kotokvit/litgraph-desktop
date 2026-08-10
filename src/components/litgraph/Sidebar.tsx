@@ -5,6 +5,7 @@ import * as Lucide from "lucide-react";
 import { NodePalette } from "./NodePalette";
 import { Inspector } from "./Inspector";
 import { TextMomentsDialog } from "./TextMomentsDialog";
+import { ReaderDialog } from "./ReaderDialog";
 import { useLitStore } from "@/lib/litgraph/store";
 import { EDGE_TYPES, NODE_TYPES, NODE_TYPE_ORDER } from "@/lib/litgraph/types";
 
@@ -198,6 +199,11 @@ export function Sidebar() {
         nodeId={textMomentsNodeId}
         onClose={() => setTextMomentsOpen(false)}
       />
+
+      {/* v0.6.0: Полноэкранный Читатель — открывается из TextMomentsDialog
+          по клику на момент. Показывает исходный текст с подсветкой
+          ключевых слов и текущего фрагмента, с навигацией prev/next. */}
+      <ReaderDialog />
     </aside>
   );
 }
