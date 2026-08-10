@@ -983,6 +983,16 @@ impl EntityResolver {
         if let Some(id) = self.by_alias.get(&key) {
             return Some(id.clone());
         }
+        // Интеграция нормализации токенов из COGNATE_MAP (LanguageTool / Когнаты)
+        if let Some((target, _weight, _source)) = crate::dict::cognate::normalize_token(&key) {
+            let target_lc = target.trim().to_lowercase();
+            if let Some(id) = self.by_lemma.get(&target_lc) {
+                return Some(id.clone());
+            }
+            if let Some(id) = self.by_alias.get(&target_lc) {
+                return Some(id.clone());
+            }
+        }
         None
     }
 

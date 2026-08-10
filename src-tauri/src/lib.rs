@@ -11,6 +11,8 @@ mod ai;
 mod reasoning;
 pub mod languagetool_weights;
 pub mod linguistic_entities;
+pub mod dict;
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
