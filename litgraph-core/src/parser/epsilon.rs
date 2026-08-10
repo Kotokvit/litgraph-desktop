@@ -43,6 +43,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::linguistic::lemmatizer;
+use crate::linguistic::svo_parser::SvoParser;
+use crate::parser::characters;
+use crate::reasoning::{ConflictAnalyzer, ConflictReport};
 
 // ============================================================================
 // Лексикони (з scripts/benchmark_poler_epsilon.py)
@@ -464,11 +467,93 @@ fn compute_epsilon_inner(
 /// **PLACEHOLDER**: `Ω_conf = 0.0`, `I_loc = 1.0`, оскільки J-матриця
 /// ще не інтегрована в Rust (див. src-tauri/python/build_j_matrix.py).
 /// Після інтеграції — замінити ці значення на реальні.
+///
+/// **Deprecated**: prefer [`compute_epsilon_climax_with_analyzer`], which
+/// accepts a [`ConflictAnalyzer`](crate::reasoning::ConflictAnalyzer) and
+/// computes real Ω_conf via Layer E. This legacy function is kept for
+/// backward compatibility with existing tests that pass `omega_conf` directly.
 pub fn compute_epsilon_climax(
     chapter_text: &str,
     keyword: Option<&str>,
     kappa: f64,
     omega_conf: f64,
+) -> EpsilonResult {
+    compute_epsilon_climax_inner(chapter_text, keyword, kappa, omega_conf, 1.0)
+}
+
+/// Compute ε_climax using a Layer E [`ConflictAnalyzer`] to derive Ω_conf.
+///
+/// This is the **canonical v7.5-LEM climax formula** with no placeholders:
+///
+/// ```text
+///                   κ · I_loc · d̄² + γ_emo · E + λ_conf · Ω_conf(analyzer)
+/// ε_climax  =  ────────────────────────────────────────────────────────────
+///                                    ln(e + |U|)
+/// ```
+///
+/// Where:
+/// - `Ω_conf` = `analyzer.analyze_chapter(chapter_text, characters, triplets).omega_conf`
+///   (computed by Layer E `NarrativeGraph` from the POS-filtered adjacency matrix).
+/// - `I_loc` = `1 + canon_count` (canonical anchors intensity — no longer hardcoded).
+/// - Other terms as in [`compute_epsilon_climax`].
+///
+/// ## Parameters
+/// - `chapter_text`: the chapter to analyze.
+/// - `keyword`: optional keyword for kw_count (currently unused in climax formula).
+/// - `kappa`: sector-adaptive coefficient (controls θ_rel = 3.5/κ).
+/// - `analyzer`: any implementation of `ConflictAnalyzer` (real `NarrativeGraph`,
+///   stub, or future LLM-backed).
+///
+/// ## Returns
+/// - [`EpsilonResult`] with `formula_variant = "climax"`.
+///
+/// ## Example
+/// ```no_run
+/// use litgraph_core::parser::epsilon::compute_epsilon_climax_with_analyzer;
+/// use litgraph_core::reasoning::{NarrativeGraph, ConflictAnalyzer};
+///
+/// let analyzer = NarrativeGraph::new();
+/// let result = compute_epsilon_climax_with_analyzer(
+///     "Петро вбив ворога у бою.",
+///     None,
+///     1.0,
+///     &analyzer,
+/// );
+/// assert!(result.epsilon >= 0.0);
+/// ```
+pub fn compute_epsilon_climax_with_analyzer(
+    chapter_text: &str,
+    keyword: Option<&str>,
+    kappa: f64,
+    analyzer: &impl ConflictAnalyzer,
+) -> EpsilonResult {
+    // Layer A+B: detect characters in this chapter.
+    let detected_chars = characters::detect(chapter_text);
+    // Layer C: extract SVO triplets.
+    let triplets = SvoParser::new().parse_text(chapter_text);
+    // Layer E: compute Ω_conf via the injected analyzer.
+    let report: ConflictReport =
+        analyzer.analyze_chapter(chapter_text, detected_chars.clone(), triplets.clone());
+
+    // I_loc is now derived from canonical anchors present in this chapter
+    // (no longer hardcoded to 1.0). I_loc = 1 + canon_count, clamped to ≥ 1.
+    let canon_count_in_chapter: usize = detected_chars
+        .iter()
+        .filter(|c| is_canon_anchor(&c.name.to_lowercase()))
+        .count();
+    let i_loc = 1.0 + canon_count_in_chapter as f64;
+
+    compute_epsilon_climax_inner(chapter_text, keyword, kappa, report.omega_conf, i_loc)
+}
+
+/// Internal implementation shared by legacy `compute_epsilon_climax` and the
+/// new `compute_epsilon_climax_with_analyzer` variant.
+fn compute_epsilon_climax_inner(
+    chapter_text: &str,
+    keyword: Option<&str>,
+    kappa: f64,
+    omega_conf: f64,
+    i_loc: f64,
 ) -> EpsilonResult {
     let tokens = tokenize(chapter_text);
     let cleaned_lower = chapter_text.to_lowercase();
@@ -490,8 +575,7 @@ pub fn compute_epsilon_climax(
     let d_bar = d / u_len as f64; // середня рідкість
     let d_bar_sq = d_bar.powi(2);
 
-    // I_loc — placeholder (буде обчислено з канонічних якорів)
-    let i_loc = 1.0;
+    // I_loc passed as parameter (computed by caller from canon anchors or = 1.0 for legacy).
 
     // I_kw для kw_count
     let mut kw_count = 0usize;
@@ -806,6 +890,112 @@ mod tests {
         assert!(r_fallback.epsilon > 1.30 && r_fallback.epsilon < 1.45,
                 "Fallback path (no SVO): ε should be ~1.38 (a_svo = 2.0 * action_count). Got {}",
                 r_fallback.epsilon);
+    }
+
+    // ============================================================
+    // Layer E integration tests for compute_epsilon_climax_with_analyzer
+    // ============================================================
+
+    #[test]
+    fn test_epsilon_climax_with_stub_analyzer_zero_conflict() {
+        // StubConflictAnalyzer with 0 keywords → Ω_conf = 0.0
+        // Should behave like legacy compute_epsilon_climax with omega_conf=0.0
+        use crate::reasoning::stub::StubConflictAnalyzer;
+        let stub = StubConflictAnalyzer::new();
+        let r = compute_epsilon_climax_with_analyzer(
+            "Звичайний текст без конфліктних слів.",
+            None, 1.0, &stub,
+        );
+        assert_eq!(r.formula_variant, "climax");
+        assert!(r.epsilon >= 0.0);
+        // Ω_conf = 0.0 → no conflict contribution
+        // Compare to legacy with omega=0.0:
+        let r_legacy = compute_epsilon_climax(
+            "Звичайний текст без конфліктних слів.",
+            None, 1.0, 0.0,
+        );
+        assert!((r.epsilon - r_legacy.epsilon).abs() < 1e-9,
+                "Zero-conflict stub should match legacy with omega=0. stub={}, legacy={}",
+                r.epsilon, r_legacy.epsilon);
+    }
+
+    #[test]
+    fn test_epsilon_climax_with_stub_analyzer_nonzero_conflict() {
+        // StubConflictAnalyzer with conflict keywords → Ω_conf > 0
+        // ε_climax must be strictly higher than zero-conflict version
+        use crate::reasoning::stub::StubConflictAnalyzer;
+        let stub = StubConflictAnalyzer::with_weight(1.0);
+        let conflict_text = "Війна! Битва! Зрада! Ворог!";
+        let r_conflict = compute_epsilon_climax_with_analyzer(
+            conflict_text, None, 1.0, &stub,
+        );
+        let r_peace = compute_epsilon_climax_with_analyzer(
+            "Спокійний текст без ключових слів.",
+            None, 1.0, &stub,
+        );
+        assert!(r_conflict.epsilon > r_peace.epsilon,
+                "Conflict text must yield higher ε_climax than peace text. conflict={}, peace={}",
+                r_conflict.epsilon, r_peace.epsilon);
+        // Ω_conf = 4 keywords × 1.0 weight = 4.0
+        // ε_climax includes λ_conf × Ω_conf = 12.5 × 4.0 = 50.0 in numerator
+        let omega = stub.analyze_chapter(conflict_text, vec![], vec![]).omega_conf;
+        assert!((omega - 4.0).abs() < 1e-9, "Ω_conf should be 4.0, got {}", omega);
+    }
+
+    #[test]
+    fn test_epsilon_climax_with_narrative_graph_two_characters() {
+        // Two-character chapter with conflict → NarrativeGraph produces Ω_conf > 0
+        use crate::reasoning::narrative_graph::NarrativeGraph;
+        let ng = NarrativeGraph::new();
+        // "Петро вбив ворога" — both likely registered as characters by detector.
+        // Even if detector finds only Петро, Ω_conf should be ≥ 0 (no crash).
+        let r = compute_epsilon_climax_with_analyzer(
+            "Петро вбив ворога у бою.",
+            None, 1.0, &ng,
+        );
+        assert_eq!(r.formula_variant, "climax");
+        assert!(r.epsilon >= 0.0, "ε_climax must be non-negative");
+        // Compare to legacy with omega=0.0 — should be ≥ (because Ω_conf ≥ 0)
+        let r_legacy = compute_epsilon_climax(
+            "Петро вбив ворога у бою.",
+            None, 1.0, 0.0,
+        );
+        assert!(r.epsilon >= r_legacy.epsilon,
+                "Real Ω_conf ≥ 0 ⇒ ε_climax_with_analyzer ≥ ε_climax(omega=0). analyzer={}, legacy={}",
+                r.epsilon, r_legacy.epsilon);
+    }
+
+    #[test]
+    fn test_epsilon_climax_dependency_injection_pattern() {
+        // Verify the Dependency Inversion Principle: same input, different analyzers,
+        // produces different ε_climax values reflecting the analyzer's Ω_conf.
+        use crate::reasoning::stub::StubConflictAnalyzer;
+        use crate::reasoning::narrative_graph::NarrativeGraph;
+        let text = "Війна і битва. Зрада ворога.";
+        let stub = StubConflictAnalyzer::with_weight(2.0);
+        let ng = NarrativeGraph::new();
+        let r_stub = compute_epsilon_climax_with_analyzer(text, None, 1.0, &stub);
+        let r_ng = compute_epsilon_climax_with_analyzer(text, None, 1.0, &ng);
+        // Both must produce valid ε_climax (non-negative, finite)
+        assert!(r_stub.epsilon.is_finite() && r_stub.epsilon >= 0.0);
+        assert!(r_ng.epsilon.is_finite() && r_ng.epsilon >= 0.0);
+        // Stub with 4 keywords × weight 2.0 = Ω_conf 8.0 → λ_conf × 8.0 = 100.0 boost
+        // NarrativeGraph depends on detected characters (may be 0 if "Війна", "битва",
+        // "Зрада", "ворога" are not classified as characters by the detector).
+        // Both values are valid — the test verifies DI works, not specific magnitudes.
+        assert_eq!(r_stub.formula_variant, "climax");
+        assert_eq!(r_ng.formula_variant, "climax");
+    }
+
+    #[test]
+    fn test_epsilon_climax_with_analyzer_determinism() {
+        use crate::reasoning::stub::StubConflictAnalyzer;
+        let stub = StubConflictAnalyzer::new();
+        let text = "Війна і зрада ворога.";
+        let r1 = compute_epsilon_climax_with_analyzer(text, None, 1.0, &stub);
+        let r2 = compute_epsilon_climax_with_analyzer(text, None, 1.0, &stub);
+        assert_eq!(r1.epsilon, r2.epsilon,
+                "Determinism: same input + same analyzer must yield identical ε_climax");
     }
 }
 

@@ -2321,3 +2321,40 @@ Stage Summary:
   (c) replacement changed back to additive — test 3 fails (ε > 1.85)
 - All 81 lib tests pass; no production code changed (only test assertions strengthened)
 - Files modified: litgraph-core/src/parser/epsilon.rs (test module only)
+
+---
+Task ID: layer-e-implementation
+Agent: Super Z (main, deep architecture mode)
+Task: Eliminate the placeholder tail in compute_epsilon_climax() (Ω_conf=0.0, I_loc=1.0) by implementing Layer E (Narrative Graph + Conflict Analysis) using Dependency Injection pattern per user's architectural plan.
+
+Work Log:
+- Read user's architectural plan: full Layer E implementation with DI, not stub.
+- Added petgraph = "0.6" dependency to litgraph-core/Cargo.toml.
+- Created `litgraph-core/src/reasoning/` module with 4 files:
+  1. `mod.rs` — ConflictAnalyzer trait + ConflictReport struct + frobenius_norm() + spectral_radius_power_iteration() helpers + ManuscriptAnalysis input bundle. 9 unit tests for matrix math (Frobenius norm, power iteration on identity/complete graphs).
+  2. `narrative_graph.rs` — NarrativeGraph struct (backed by petgraph::DiGraph) implementing ConflictAnalyzer. Builds POS-filtered character adjacency matrix A_POS from SVO triplets, computes Ω_conf = ||A_POS||_F and ρ(A_POS). 11 unit tests including 2-character interaction (Ω=√2, ρ=1), 3-character complete graph K_3 (Ω=√6, ρ=2), alias resolution, concept exclusion, weight aggregation, determinism, SvoParser integration.
+  3. `paradox.rs` — ParadoxDetector for Dead-Speaking paradox (character acts/speaks after death). 6 tests including feminine marker ("померла"), multiple deaths, same-chapter non-paradox.
+  4. `stub.rs` — StubConflictAnalyzer (keyword-density-based, for testing DI). 5 tests.
+
+- Refactored `litgraph-core/src/parser/epsilon.rs`:
+  * Added `compute_epsilon_climax_with_analyzer(text, kw, κ, &impl ConflictAnalyzer)` — canonical v7.5-LEM climax with NO placeholders. Calls characters::detect() (Layer B), SvoParser::new().parse_text() (Layer C), then analyzer.analyze_chapter() (Layer E) to get real Ω_conf.
+  * I_loc is now derived: `1 + canon_count_in_chapter` (no longer hardcoded to 1.0).
+  * Extracted `compute_epsilon_climax_inner()` shared impl — legacy `compute_epsilon_climax()` delegates with i_loc=1.0 (backward-compat preserved).
+  * Added 5 integration tests verifying DI pattern, zero-conflict equivalence with legacy, conflict-boosts-ε, NarrativeGraph integration, determinism.
+
+- Fixed bugs during testing:
+  * Alias nodes were duplicated in graph (Phase 1 added aliases as separate nodes). Fix: only canonical names are nodes; aliases resolved via alias→canonical map in Phase 2.
+  * Paradox detector: `w == *marker` failed on "помер." vs "помер" due to trailing punctuation. Fix: `w.trim_end_matches(|c| !c.is_alphanumeric()) == *marker`.
+  * Stray `petgraph::visit::EdgeRef` unused import removed.
+
+- Test results: 117/117 lib tests PASS (was 81, +36 new tests for Layer E). All 22 epsilon tests pass (was 17, +5 Layer E integration tests).
+
+Stage Summary:
+- Layer E interface (ConflictAnalyzer trait) implemented per Dependency Inversion Principle.
+- NarrativeGraph computes real Ω_conf from POS-filtered A_POS adjacency matrix.
+- spectral_radius_power_iteration verified on K_n (ρ = n-1) and identity (ρ = 1).
+- ParadoxDetector catches Dead-Speaking paradoxes with masculine/feminine death markers.
+- compute_epsilon_climax_with_analyzer() — no more placeholders; Ω_conf comes from injected analyzer.
+- Backward compat: legacy compute_epsilon_climax(omega_conf: f64) preserved for existing callers.
+- src-tauri build blocked by missing system GTK3 libs (env issue, not code issue).
+- Files: litgraph-core/Cargo.toml (+1 line), litgraph-core/src/lib.rs (+1 line), litgraph-core/src/reasoning/{mod,narrative_graph,paradox,stub}.rs (new, ~1100 lines), litgraph-core/src/parser/epsilon.rs (+165 lines).
