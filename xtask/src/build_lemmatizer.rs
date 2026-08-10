@@ -396,7 +396,7 @@ fn parse_affix_file(path: &Path) -> Result<Vec<AffixGroup>> {
                 .unwrap_or_default();
             (before, pos_tag)
         } else {
-            (line.as_str(), String::new())
+            (line, String::new())
         };
 
         // Split by tabs (or whitespace) into columns
@@ -536,9 +536,10 @@ mod tests {
             match_regex: Regex::new(r"(?i)[^с]ти$").ok(),
             pos_tag: "verb:past:f".to_string(),
         };
-        // "пустити" ends with "сти" → regex [^с]ти$ should NOT match (с before ти)
-        let form = apply_rule("пустити", &rule);
-        assert!(form.is_none(), "Regex should have rejected пустити");
+        // "пасти" ends with "сти" → regex [^с]ти$ should NOT match (с before ти)
+        // Note: "пустити" was wrong here — it ends with "ити", not "сти".
+        let form = apply_rule("пасти", &rule);
+        assert!(form.is_none(), "Regex should have rejected пасти (ends in сти)");
     }
 
     #[test]

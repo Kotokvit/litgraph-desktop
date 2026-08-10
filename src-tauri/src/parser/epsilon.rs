@@ -175,7 +175,8 @@ fn tokenize(text: &str) -> Vec<String> {
 /// B5 resolution: використовуємо log10 (не ln).
 fn word_rarity(word: &str, _total_words: usize, _counts: &HashMap<String, usize>) -> f64 {
     let clean = word.trim().to_lowercase();
-    if clean.len() <= 2 {
+    // Use char count, not byte length — Cyrillic chars are 2 bytes in UTF-8
+    if clean.chars().count() <= 2 {
         return 0.0;
     }
 

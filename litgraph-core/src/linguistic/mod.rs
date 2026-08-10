@@ -7,8 +7,12 @@
 //!   Pure symbolic morphology — no ML, no statistics. Loads
 //!   `lemma_index.json.gz` (built by `xtask build-lemmatizer`) at first use.
 //!
+//! - [`pos_tagger`]: POS disambiguation via LanguageTool UK rules.
+//!   Loads `pos_rules.json.gz` (built by `xtask build-pos-tables`) at first use.
+//!   Resolves homonymy like "мати" (noun vs. verb) using 450 contextual rules
+//!   + 37,728 verb→case government entries.
+//!
 //! Future layers (planned, not yet implemented):
-//! - `pos_tagger`: POS disambiguation via LanguageTool UK rules.
 //! - `svo_parser`: subject-verb-object extraction via UD-Ukrainian-IU patterns.
 //!
 //! ## Architecture
@@ -21,3 +25,4 @@
 //! No layer depends on ML training or stochastic weights.
 
 pub mod lemmatizer;
+pub mod pos_tagger;

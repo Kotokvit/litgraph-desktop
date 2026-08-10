@@ -54,7 +54,7 @@ use serde::{Deserialize, Serialize};
 /// A single word form may have multiple lemma candidates
 /// (e.g. "пила" → "пити" verb:past:f or "пило" noun:f:v_naz).
 /// The POS tagger (Layer B, not yet implemented) will disambiguate.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LemmaEntry {
     /// The lemma (dictionary form): "ходити", "абонувати", "страх", "бути"
     pub lemma: String,

@@ -266,7 +266,8 @@ fn lemmatize_token(word: &str) -> String {
 /// B5 resolution: використовуємо `log10` (не `ln`), як у канонічній формулі.
 fn word_rarity(word: &str, _total_words: usize, _counts: &HashMap<String, usize>) -> f64 {
     let clean = word.trim().to_lowercase();
-    if clean.len() <= 2 {
+    // Use char count, not byte length — Cyrillic chars are 2 bytes in UTF-8
+    if clean.chars().count() <= 2 {
         return 0.0;
     }
 
@@ -640,7 +641,7 @@ mod tests {
 
     #[test]
     fn test_compute_epsilon_climax_placeholder() {
-        let counts = HashMap::new();
+        let counts: HashMap<&str, u32> = HashMap::new();
         let _ = counts;
         // ε_climax з Ω_conf=0.0 (placeholder)
         let result = compute_epsilon_climax("етерія вбити страх", None, 1.0, 0.0);

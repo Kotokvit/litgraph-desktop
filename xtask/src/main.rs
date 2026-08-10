@@ -5,6 +5,7 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 mod build_lemmatizer;
+mod build_pos_tables;
 
 #[derive(Debug, Clone)]
 struct RawCognate {
@@ -14,13 +15,23 @@ struct RawCognate {
 }
 
 fn main() -> Result<()> {
-    // Parse CLI args: if first arg is "build-lemmatizer", run that subcommand.
+    // Parse CLI args: dispatch to subcommands.
     let args: Vec<String> = std::env::args().collect();
-    if args.len() > 1 && args[1] == "build-lemmatizer" {
+    if args.len() > 1 {
         let resources_path = PathBuf::from("resources/ua-linguistic");
-        let dict_uk_path = resources_path.join("dict_uk");
-        let out_path = resources_path.join("derivatives/lemma_index.json.gz");
-        return build_lemmatizer::run(&dict_uk_path, &out_path);
+        match args[1].as_str() {
+            "build-lemmatizer" => {
+                let dict_uk_path = resources_path.join("dict_uk");
+                let out_path = resources_path.join("derivatives/lemma_index.json.gz");
+                return build_lemmatizer::run(&dict_uk_path, &out_path);
+            }
+            "build-pos-tables" => {
+                let languagetool_dir = resources_path.join("languagetool");
+                let out_path = resources_path.join("derivatives/pos_rules.json.gz");
+                return build_pos_tables::run(&languagetool_dir, &out_path);
+            }
+            _ => {}
+        }
     }
 
     println!("=== LitGraph Cognates & LanguageTool Weights Generator ===");
