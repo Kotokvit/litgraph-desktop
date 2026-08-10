@@ -316,39 +316,71 @@ fn test_eval_sfera_predela_full() {
 
     let (chapters, _) = crate::parser::chapters::detect(&text);
     let resolver = crate::reasoning::semantic_parser::EntityResolver::from_nodes(&project.nodes);
-    let events = crate::reasoning::semantic_parser::parse_text_fallback(&text, &resolver, &chapters);
+    
+    // 1. Classic Fallback Pipeline
+    let legacy_events = crate::reasoning::semantic_parser::parse_text_fallback(&text, &resolver, &chapters);
+    let mut legacy_cycle = ReasoningCycle::from_project(&project);
+    let legacy_report = legacy_cycle.run_cycle(legacy_events.clone());
 
-    let mut cycle = ReasoningCycle::from_project(&project);
-    let report = cycle.run_cycle(events.clone());
+    // 2. New Semantic IR (L1.5) Pipeline
+    let instructions = crate::reasoning::semantic_parser::parse_text_to_instructions(&text, &resolver, &chapters);
+    let mut ir_cycle = ReasoningCycle::from_project(&project);
+    let full_ir_report = ir_cycle.run_cycle_with_instructions(instructions.clone());
+    let ir_obs = &full_ir_report.ir_report;
 
     println!("\n=======================================================");
-    println!("   E2E EVALUATION REPORT: Сфера Предела (Wave 7)");
+    println!("   E2E EVALUATION REPORT: Сфера Предела (Semantic IR Pipeline)");
     println!("=======================================================");
-    println!("Events Extracted:        {}", events.len());
-    println!("Facts Derived:           {}", cycle.facts.all_facts().len());
-    println!("Constraint Violations:   {}", report.violations.len());
-    println!("Temporal Paradoxes:      {}", report.temporal_paradoxes.len());
-    println!("Hypotheses Generated:    {}", report.hypotheses_generated);
-    println!("Hypotheses Accepted:     {}", report.hypotheses_accepted);
+    println!("SEMANTIC IR (L1.5) METRICS:");
+    println!("Instructions Extracted:  {}", ir_obs.total_instructions);
+    println!("Valid Instructions:      {}", ir_obs.valid_instructions);
+    println!("Validation Errors:       {}", ir_obs.validation_errors.len());
+    println!("IR Conflicts Detected:   {}", ir_obs.conflicts_detected);
+    println!("Events Processed (L2):   {}", full_ir_report.events_processed);
+    println!("-------------------------------------------------------");
+    println!("REASONING CYCLE METRICS:");
+    println!("Facts Derived:           {}", full_ir_report.facts_asserted);
+    println!("Constraint Violations:   {}", full_ir_report.violations.len());
+    println!("Temporal Paradoxes:      {}", full_ir_report.temporal_paradoxes.len());
+    println!("Hypotheses Generated:    {}", full_ir_report.hypotheses_generated);
+    println!("Hypotheses Accepted:     {}", full_ir_report.hypotheses_accepted);
+    println!("-------------------------------------------------------");
+    println!("LEGACY FALLBACK COMPARISON:");
+    println!("Legacy Events Extracted: {}", legacy_events.len());
+    println!("Legacy Violations:       {}", legacy_report.violations.len());
+    println!("Legacy Paradoxes:        {}", legacy_report.temporal_paradoxes.len());
     println!("-------------------------------------------------------");
 
-    println!("\nTOP 25 EXTRACTED EVENTS:");
-    for (idx, ev) in events.iter().take(25).enumerate() {
-        println!("#{:2}: [{:?}] actor='{}', target={:?}, time={:?}\n     source: \"{}\"",
-            idx + 1, ev.action, ev.actor, ev.target, ev.time, ev.source_text);
+    if !ir_obs.validation_errors.is_empty() {
+        println!("\nIR VALIDATION ERRORS (showing first 15 of {}):", ir_obs.validation_errors.len());
+        for (idx, err) in ir_obs.validation_errors.iter().take(15).enumerate() {
+            println!("#{:2}: {}", idx + 1, err);
+        }
     }
 
-    if !report.violations.is_empty() {
-        println!("\nCONSTRAINT VIOLATIONS ({}):", report.violations.len());
-        for (idx, v) in report.violations.iter().take(15).enumerate() {
+    if !ir_obs.conflicts.is_empty() {
+        println!("\nIR CONFLICTS DETECTED (showing first 15 of {}):", ir_obs.conflicts.len());
+        for (idx, (a, b)) in ir_obs.conflicts.iter().take(15).enumerate() {
+            println!("#{:2}: conflict between:\n     A: {}\n     B: {}", idx + 1, a, b);
+        }
+    }
+
+    println!("\nTOP 25 EXTRACTED INSTRUCTIONS:");
+    for (idx, inst) in instructions.iter().take(25).enumerate() {
+        println!("#{:2}: {}\n     source: \"{}\"", idx + 1, inst.summary(), inst.source_text);
+    }
+
+    if !full_ir_report.violations.is_empty() {
+        println!("\nCONSTRAINT VIOLATIONS ({}):", full_ir_report.violations.len());
+        for (idx, v) in full_ir_report.violations.iter().take(15).enumerate() {
             println!("#{:2}: [{}] actor='{}', action={:?}, reason='{}'",
                 idx + 1, v.constraint_name, v.actor, v.attempted_action, v.reason);
         }
     }
 
-    if !report.temporal_paradoxes.is_empty() {
-        println!("\nTEMPORAL PARADOXES ({}):", report.temporal_paradoxes.len());
-        for (idx, p) in report.temporal_paradoxes.iter().take(15).enumerate() {
+    if !full_ir_report.temporal_paradoxes.is_empty() {
+        println!("\nTEMPORAL PARADOXES ({}):", full_ir_report.temporal_paradoxes.len());
+        for (idx, p) in full_ir_report.temporal_paradoxes.iter().take(15).enumerate() {
             println!("#{:2}: desc='{}'", idx + 1, p.description);
         }
     }

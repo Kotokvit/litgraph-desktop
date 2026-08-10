@@ -994,43 +994,29 @@ impl SemanticInstruction {
             // Правило 4 всё ещё применимо cross-actor если target совпадает.
             // Проверяем ниже.
         } else {
-            // Правило 1: Dead-cannot-act.
+            // Правило 1: Dead-cannot-act (смерть сталася до або під час іншої активної дії, крім Resurrection).
             if matches!(self.predicate, SemanticPredicate::CessationOfLife)
                 && !self.modifiers.is_negated
             {
-                let self_after_other = self.modifiers.temporal_anchor.char_offset
-                    >= other.modifiers.temporal_anchor.char_offset
+                let death_before_or_at_other = self.modifiers.temporal_anchor.char_offset
+                    <= other.modifiers.temporal_anchor.char_offset
                     && self.modifiers.temporal_anchor.char_offset > 0;
-                if self_after_other {
-                    let other_is_active = matches!(
-                        other.predicate,
-                        SemanticPredicate::Communication { .. }
-                            | SemanticPredicate::LethalHarm { .. }
-                            | SemanticPredicate::SpatialTransition { .. }
-                            | SemanticPredicate::CognitiveState { is_forgotten: false, .. }
-                            | SemanticPredicate::SocialBind { .. }
-                            | SemanticPredicate::Resurrection
-                            | SemanticPredicate::PossessionTransfer { .. }
-                            | SemanticPredicate::AllianceAction { .. }
-                            | SemanticPredicate::Arrival { .. }
-                            | SemanticPredicate::Departure { .. }
-                            | SemanticPredicate::GoalSetting { .. }
-                            | SemanticPredicate::Inquiry { .. }
-                            | SemanticPredicate::AddressedCommunication { .. }
-                            | SemanticPredicate::Wounding { .. }
-                            | SemanticPredicate::CaptureRelease { .. }
-                            | SemanticPredicate::Imprisonment
-                            | SemanticPredicate::Healing
-                            | SemanticPredicate::PhysicalContact
-                            | SemanticPredicate::Transformation { .. }
-                            | SemanticPredicate::Discovery { .. }
-                            | SemanticPredicate::Perception { .. }
-                            | SemanticPredicate::Obligation { .. }
-                            | SemanticPredicate::Emotion { .. }
-                    );
-                    if other_is_active {
-                        return true;
-                    }
+                let other_requires_active = other.requires_active_actor()
+                    && !matches!(other.predicate, SemanticPredicate::Resurrection);
+                if death_before_or_at_other && other_requires_active {
+                    return true;
+                }
+            }
+            if matches!(other.predicate, SemanticPredicate::CessationOfLife)
+                && !other.modifiers.is_negated
+            {
+                let death_before_or_at_self = other.modifiers.temporal_anchor.char_offset
+                    <= self.modifiers.temporal_anchor.char_offset
+                    && other.modifiers.temporal_anchor.char_offset > 0;
+                let self_requires_active = self.requires_active_actor()
+                    && !matches!(self.predicate, SemanticPredicate::Resurrection);
+                if death_before_or_at_self && self_requires_active {
+                    return true;
                 }
             }
 
@@ -8181,20 +8167,16 @@ mod tests {
             SemanticPredicate::CessationOfLife,
             None,
             false,
-            200,
+            100,
         );
-        // Після смерті Іван говорить — це парадокс.
+        // Після смерті (100) Іван говорить (200) — це парадокс.
         let speaks_after = make_test_instruction(
             "Іван",
             SemanticPredicate::Communication { topic: None },
             None,
             false,
-            100,
+            200,
         );
-        // death.conflicts_with(speaks_after) — перевіряє, чи speaks_after (раніше)
-        // конфліктує з death (пізніше). Оскільки death пізніше — speaks_after не може
-        // бути виконане мертвим. Але логіка в conflicts_with перевіряє «якщо self пізніше other».
-        // self=death(200), other=speaks_after(100) → 200>=100 → other_is_active → true.
         assert!(death.conflicts_with(&speaks_after));
     }
 
