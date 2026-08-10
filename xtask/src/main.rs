@@ -45,6 +45,19 @@ fn main() -> Result<()> {
                 source_type: st,
             },
         );
+        // Bidirectional mapping for cross-language resolution
+        // (RU↔UK cognates — both directions are valid; unlike LT replace.txt
+        // where reverse direction would "normalize" correct word into error)
+        if src != tgt {
+            entries.insert(
+                tgt.to_string(),
+                RawCognate {
+                    target: src.to_string(),
+                    weight: w,
+                    source_type: st,
+                },
+            );
+        }
     }
 
     // 2. Fetch LanguageTool UK replace.txt
