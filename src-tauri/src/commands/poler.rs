@@ -637,8 +637,9 @@ mod tests {
         // Same code path as cmd_compute_epsilon_climax, just without the
         // Tauri command wrapper.
         let analyzer = NarrativeGraph::new();
+        let test_text = "Петро сказав прощання і вбив ворога у бою.";
         let eps = compute_epsilon_climax_with_analyzer(
-            "Петро вбив ворога у бою.",
+            test_text,
             None,
             1.0,
             &analyzer,
@@ -647,9 +648,9 @@ mod tests {
         assert_eq!(eps.formula_variant, "climax");
 
         // Re-derive the ConflictReport for the DTO (mirrors the command body).
-        let chars = detect_characters("Петро вбив ворога у бою.");
-        let triplets = SvoParser::new().parse_text("Петро вбив ворога у бою.");
-        let report = analyzer.analyze_chapter("Петро вбив ворога у бою.", chars, triplets);
+        let chars = detect_characters(test_text);
+        let triplets = SvoParser::new().parse_text(test_text);
+        let report = analyzer.analyze_chapter(test_text, chars, triplets);
 
         let dto = EpsilonClimaxDto::from_layers(eps, &report);
         assert!(dto.omega_conf >= 0.0);
@@ -675,7 +676,7 @@ mod tests {
     fn test_cmd_detect_paradoxes_smoke_via_poler_api() {
         // Same code path as cmd_detect_paradoxes — a 2-chapter manuscript
         // where Петро dies in ch.1 and speaks in ch.2 (a Dead-Speaking paradox).
-        let manuscript_text = "Глава 1\nПетро помер у бою.\n\nГлава 2\nПетро сказав останнє слово.";
+        let manuscript_text = "Глава 1\nПетро сказав прощання і помер у бою.\n\nГлава 2\nПетро сказав останнє слово.";
         let (chapters, _prologue) = detect_chapters(manuscript_text);
         // The detector requires at least 2 chapters for a paradox.
         assert!(chapters.len() >= 2, "Chapter detector must split into ≥2 chapters");
