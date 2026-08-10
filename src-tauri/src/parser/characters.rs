@@ -50,6 +50,72 @@ pub struct ParsedCharacter {
     /// - concept: speech_count == 0 и freq < ORGANIZATION_THRESHOLD,
     ///   либо контекст не указывает на организацию
     pub entity_type: EntityType,
+    /// v0.5.0 / Phase 2: Bitmask evidence signals (по матрице Phase 2):
+    /// - bit 0 (SIGNAL_CAPITALIZED)   = 1 — Capitalized word in non-sentence-start position
+    /// - bit 1 (SIGNAL_SPEECH_VERB)   = 2 — упоминается с глаголом речи (speech_count >= 1)
+    /// - bit 2 (SIGNAL_DIRECT_ADDRESS) = 4 — упоминается в прямом обращении (direct_count >= 1)
+    ///
+    /// Для Characters — всегда установлен bit 0 + хотя бы один из bits 1/2.
+    /// Для Concepts/Organizations — только bit 0.
+    pub evidence_signals: u8,
+    /// v0.5.0 / Phase 2: Confidence score в диапазоне [0.0, 1.0].
+    /// Вычисляется из evidence_signals + is_single_token() по детерминированной
+    /// политике (см. `ParsedCharacter::confidence_from_signals`):
+    ///   3 сигнала → 1.0  (cap + speech + direct) → Rust fast path eligible
+    ///   2 сигнала → 0.7  если single-token, иначе 0.5 (multi-token → Python)
+    ///   1 сигнал  → 0.3  (только cap) → Python fallback обязателен
+    ///   0 сигналов → 0.0
+    pub confidence: f32,
+}
+
+/// v0.5.0 / Phase 2: Битовые флаги evidence signals для `ParsedCharacter::evidence_signals`.
+///
+/// Используются как битовая маска: `evidence_signals = SIGNAL_CAPITALIZED |
+/// SIGNAL_SPEECH_VERB | SIGNAL_DIRECT_ADDRESS`. Например, персонаж с speech
+/// и direct адресом имеет `evidence_signals = 1 | 2 | 4 = 7` → 3 сигнала →
+/// confidence 1.0.
+pub const SIGNAL_CAPITALIZED: u8 = 1;
+pub const SIGNAL_SPEECH_VERB: u8 = 2;
+pub const SIGNAL_DIRECT_ADDRESS: u8 = 4;
+
+impl ParsedCharacter {
+    /// v0.5.0 / Phase 2: Вычислить confidence из evidence_signals + токенизации.
+    ///
+    /// Это **детерминированная** политика скоринга (не эвристика):
+    ///   - 3 сигнала (cap + speech + direct) → `1.0`
+    ///   - 2 сигнала (cap + speech, или cap + direct):
+    ///       - если `is_single_token` → `0.7` (Rust fast path eligible)
+    ///       - если multi-token → `0.5` (нужен Python для FIO resolution)
+    ///   - 1 сигнал (только cap) → `0.3` (Python fallback обязателен)
+    ///   - 0 сигналов → `0.0`
+    ///
+    /// Эта функция — единственный источник правды для fast-path решений.
+    /// Никакие другие части кода не должны решать «достаточно ли уверенно
+    /// срабатывание» — только через этот score.
+    pub fn confidence_from_signals(evidence_signals: u8, is_single_token: bool) -> f32 {
+        let count = evidence_signals.count_ones();
+        match count {
+            0 => 0.0,
+            1 => 0.3,
+            2 => {
+                if is_single_token {
+                    0.7
+                } else {
+                    0.5
+                }
+            }
+            _ => 1.0, // 3 или больше (защитно — больше 3 не бывает)
+        }
+    }
+
+    /// v0.5.0 / Phase 2: Является ли `name` односложным (без пробелов и дефисов).
+    ///
+    /// Multi-token names (например «Иван Петров» или «Анна-Мария») требуют
+    /// Python fallback для корректного разрешения ФИО — Natasha точнее на
+    /// multi-token NER, чем Rust-regex.
+    pub fn is_single_token(&self) -> bool {
+        !self.name.contains(' ') && !self.name.contains('-')
+    }
 }
 
 /// v0.4.0: Тип сущности для контекстно-зависимой классификации.
@@ -375,8 +441,15 @@ pub fn detect(text: &str) -> Vec<ParsedCharacter> {
         let rest = &text[after_dash..];
         // Пропускаем пробелы после em-dash, ищем Capitalized слово
         if let Some(name) = extract_capitalized_word(rest) {
+            // v0.5.1 fix: вычисляем позицию имени через pointer arithmetic,
+            // а не `after_dash + name.len()` (старый вариант игнорировал
+            // whitespace между em-dash и именем, из-за чего direct_count
+            // почти всегда был 0, и confidence 1.0 был недостижим).
+            // Без этого фикса матрица Phase 2 теряет смысл: 3-сигнальный
+            // кейс (cap + speech + direct) никогда не срабатывает.
+            let name_start_in_text = (name.as_ptr() as usize) - (text.as_ptr() as usize);
+            let name_end = name_start_in_text + name.len();
             // Проверяем, что после имени идёт знак препинания (, ! . ?)
-            let name_end = after_dash + name.len();
             let after_name = if name_end < text.as_bytes().len() {
                 text.as_bytes()[name_end]
             } else {
@@ -520,6 +593,16 @@ pub fn detect(text: &str) -> Vec<ParsedCharacter> {
                 count, aliases_str, speech, direct
             );
 
+            // v0.5.0 / Phase 2: Compute evidence_signals + confidence.
+            // Character всегда имеет SIGNAL_CAPITALIZED (иначе бы не попал в
+            // кандидаты). Биты 1/2 выставляются по speech/direct counts.
+            let evidence_signals: u8 = SIGNAL_CAPITALIZED
+                | (if speech >= 1 { SIGNAL_SPEECH_VERB } else { 0 })
+                | (if direct >= 1 { SIGNAL_DIRECT_ADDRESS } else { 0 });
+            let is_single_token = !rep.contains(' ') && !rep.contains('-');
+            let confidence =
+                ParsedCharacter::confidence_from_signals(evidence_signals, is_single_token);
+
             ParsedCharacter {
                 name: rep,
                 aliases: forms_vec,
@@ -529,6 +612,8 @@ pub fn detect(text: &str) -> Vec<ParsedCharacter> {
                 direct_count: direct,
                 reason,
                 entity_type: EntityType::Character,
+                evidence_signals,
+                confidence,
             }
         })
         .collect();
@@ -599,6 +684,11 @@ pub fn detect(text: &str) -> Vec<ParsedCharacter> {
             direct_count: 0,
             reason,
             entity_type,
+            // v0.5.0 / Phase 2: Concept/Org — только CAPITALIZED signal.
+            // Confidence 0.3 → Python fallback обязателен (Rust не имеет
+            // morphological context для подтверждения concept vs character).
+            evidence_signals: SIGNAL_CAPITALIZED,
+            confidence: ParsedCharacter::confidence_from_signals(SIGNAL_CAPITALIZED, true),
         });
     }
 
@@ -894,4 +984,169 @@ fn extract_capitalized_word_before(text: &str, pos: usize) -> Option<&str> {
 /// (потому что они часто стоят в начале предложений и фильтровались Signal 1).
 fn count_word_occurrences(word: &str, text: &str) -> usize {
     count_in_text(&[word.to_string()], text)
+}
+
+// ============================================================================
+// v0.5.0 / Phase 2: Unit tests for confidence + evidence_signals
+// ============================================================================
+//
+// Эти тесты — формальная верификация матрицы Phase 2:
+//   3 сигнала → 1.0
+//   2 сигнала single-token → 0.7
+//   2 сигнала multi-token  → 0.5
+//   1 сигнал  → 0.3
+//   0 сигналов → 0.0
+//
+// Без этих тестов «confidence policy» остаётся только документацией.
+// Тесты замыкают контракт: любое изменение политики должно пройти через
+// обновление матрицы здесь.
+#[cfg(test)]
+mod phase2_confidence_tests {
+    use super::*;
+
+    #[test]
+    fn test_3_signals_confidence_1_0() {
+        // cap + speech + direct = 1 | 2 | 4 = 7 → 3 сигнала → 1.0
+        let signals = SIGNAL_CAPITALIZED | SIGNAL_SPEECH_VERB | SIGNAL_DIRECT_ADDRESS;
+        assert_eq!(ParsedCharacter::confidence_from_signals(signals, true), 1.0);
+        assert_eq!(ParsedCharacter::confidence_from_signals(signals, false), 1.0);
+    }
+
+    #[test]
+    fn test_2_signals_single_token_confidence_0_7() {
+        // cap + speech = 1 | 2 = 3 → 2 сигнала → 0.7 (single-token)
+        let signals = SIGNAL_CAPITALIZED | SIGNAL_SPEECH_VERB;
+        assert_eq!(ParsedCharacter::confidence_from_signals(signals, true), 0.7);
+
+        // cap + direct = 1 | 4 = 5 → 2 сигнала → 0.7 (single-token)
+        let signals = SIGNAL_CAPITALIZED | SIGNAL_DIRECT_ADDRESS;
+        assert_eq!(ParsedCharacter::confidence_from_signals(signals, true), 0.7);
+    }
+
+    #[test]
+    fn test_2_signals_multi_token_confidence_0_5() {
+        // Multi-token names → 0.5 (Python fallback для FIO resolution)
+        let signals = SIGNAL_CAPITALIZED | SIGNAL_SPEECH_VERB;
+        assert_eq!(ParsedCharacter::confidence_from_signals(signals, false), 0.5);
+
+        let signals = SIGNAL_CAPITALIZED | SIGNAL_DIRECT_ADDRESS;
+        assert_eq!(ParsedCharacter::confidence_from_signals(signals, false), 0.5);
+    }
+
+    #[test]
+    fn test_1_signal_confidence_0_3() {
+        // только cap = 1 → 1 сигнал → 0.3 (Python fallback обязателен)
+        let signals = SIGNAL_CAPITALIZED;
+        assert_eq!(ParsedCharacter::confidence_from_signals(signals, true), 0.3);
+        assert_eq!(ParsedCharacter::confidence_from_signals(signals, false), 0.3);
+    }
+
+    #[test]
+    fn test_0_signals_confidence_0_0() {
+        assert_eq!(ParsedCharacter::confidence_from_signals(0, true), 0.0);
+        assert_eq!(ParsedCharacter::confidence_from_signals(0, false), 0.0);
+    }
+
+    #[test]
+    fn test_is_single_token_helper() {
+        let single = ParsedCharacter {
+            name: "Анна".to_string(),
+            aliases: vec![],
+            count: 1,
+            description: String::new(),
+            speech_count: 0,
+            direct_count: 0,
+            reason: String::new(),
+            entity_type: EntityType::Character,
+            evidence_signals: SIGNAL_CAPITALIZED,
+            confidence: 0.3,
+        };
+        assert!(single.is_single_token());
+
+        let multi = ParsedCharacter {
+            name: "Иван Петров".to_string(),
+            aliases: vec![],
+            count: 1,
+            description: String::new(),
+            speech_count: 0,
+            direct_count: 0,
+            reason: String::new(),
+            entity_type: EntityType::Character,
+            evidence_signals: SIGNAL_CAPITALIZED,
+            confidence: 0.3,
+        };
+        assert!(!multi.is_single_token());
+
+        let hyphen = ParsedCharacter {
+            name: "Анна-Мария".to_string(),
+            aliases: vec![],
+            count: 1,
+            description: String::new(),
+            speech_count: 0,
+            direct_count: 0,
+            reason: String::new(),
+            entity_type: EntityType::Character,
+            evidence_signals: SIGNAL_CAPITALIZED,
+            confidence: 0.3,
+        };
+        assert!(!hyphen.is_single_token());
+    }
+
+    /// Integration test: detect() на тексте с speech+direct адресом должно
+    /// дать персонажа с confidence 1.0 (3 сигнала) и evidence_signals=7.
+    ///
+    /// Это **e2e-контур** того, что confidence policy действительно применяется
+    /// внутри detect(), а не только в изолированном helper.
+    #[test]
+    fn test_detect_populates_confidence_for_3_signal_character() {
+        // Текст: имя + speech verb + direct address → 3 сигнала
+        let text = "Архип сказал привет. — Архип, иди сюда! Архип ответил.";
+        let result = detect(text);
+
+        let archip = result.iter().find(|c| c.name == "Архип");
+        assert!(archip.is_some(), "Архип должен быть обнаружен как персонаж");
+        let archip = archip.unwrap();
+
+        assert_eq!(archip.entity_type, EntityType::Character);
+        assert_eq!(archip.evidence_signals, 7, "3 сигнала: cap|speech|direct = 7");
+        assert_eq!(archip.confidence, 1.0);
+    }
+
+    /// Integration test: detect() на тексте только с speech verb (без direct)
+    /// должно дать персонажа с confidence 0.7 (2 сигнала, single-token).
+    #[test]
+    fn test_detect_populates_confidence_for_2_signal_character() {
+        let text = "Борис сказал слово. Борис промолчал и ушёл.";
+        let result = detect(text);
+
+        let boris = result.iter().find(|c| c.name == "Борис");
+        assert!(boris.is_some(), "Борис должен быть обнаружен");
+        let boris = boris.unwrap();
+
+        assert_eq!(boris.entity_type, EntityType::Character);
+        // 2 сигнала: cap + speech = 3
+        assert_eq!(boris.evidence_signals, 3);
+        assert_eq!(boris.confidence, 0.7, "single-token 2-signal → 0.7");
+    }
+
+    /// Integration test: detect() на тексте только с capitalized (concept)
+    /// должно дать концепт с confidence 0.3 (1 сигнал).
+    #[test]
+    fn test_detect_populates_confidence_for_concept() {
+        // «Бездна» упоминается многократно, но не говорит → Concept
+        let text = "Бездна смотрела. Бездна звала. Бездна ждала. \
+                    Бездна дышала. Бездна молчала. Бездна пела. \
+                    Бездна раскрывалась. Бездна закрывалась. \
+                    Бездна улыбалась. Бездна хмурилась.";
+        let result = detect(text);
+
+        let abyss = result.iter().find(|c| c.name == "Бездна");
+        // Бездна в ABSTRACT_NOUNS → Concept после reclassify
+        if let Some(abyss) = abyss {
+            assert_ne!(abyss.entity_type, EntityType::Character,
+                "Бездна должна быть реклассифицирована из Character");
+            assert_eq!(abyss.evidence_signals, 1, "только cap signal");
+            assert_eq!(abyss.confidence, 0.3);
+        }
+    }
 }

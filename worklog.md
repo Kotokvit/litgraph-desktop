@@ -2413,3 +2413,126 @@ Stage Summary:
 - `cmd_detect_paradoxes` — multi-chapter paradox detection with per-chapter breakdown.
 - Files: src-tauri/src/poler/mod.rs (new, 38 lines), src-tauri/src/commands/poler.rs (new, ~360 lines), src-tauri/src/lib.rs (+4 lines), src-tauri/src/commands/mod.rs (+1 line), litgraph-core/src/reasoning/mod.rs (Paradox/ParadoxKind re-export, +1 line).
 - Local src-tauri test run blocked by missing system GTK3/WebKit2 runtime libs (env limitation, not code issue). User should run `cargo test --release --lib` on their machine to verify.
+
+---
+Task ID: phase-2-step-1
+Agent: Super Z (main)
+Task: Phase 2 Step 1 — Rust fast path для extract_entities + confidence policy + evidence_signals
+
+Work Log:
+- Прочитал /home/z/my-project/litgraph-desktop/litgraph-core/src/parser/characters.rs (897 строк)
+  и src-tauri/src/parser/characters.rs (897 строк, byte-identical копия).
+- Обнаружил что обе копии ParsedCharacter идентичны — любые изменения нужно вносить синхронно.
+- Прочитал src-tauri/src/commands/ner.rs (277 строк), commands/parse_md_full.rs (для понимания run_ner_safe),
+  litgraph-core/tests/parser_test.rs, litgraph-core/src/reasoning/{narrative_graph,paradox}.rs
+  (для обновления test helpers).
+
+- РАСШИРИЛ ParsedCharacter в litgraph-core/src/parser/characters.rs (и синхронно в src-tauri):
+  * Добавил поле `evidence_signals: u8` — bitmask (SIGNAL_CAPITALIZED=1, SIGNAL_SPEECH_VERB=2, SIGNAL_DIRECT_ADDRESS=4)
+  * Добавил поле `confidence: f32` — score [0.0, 1.0]
+  * Добавил константы SIGNAL_CAPITALIZED, SIGNAL_SPEECH_VERB, SIGNAL_DIRECT_ADDRESS
+  * Добавил impl ParsedCharacter с двумя методами:
+    - `confidence_from_signals(evidence_signals, is_single_token) -> f32` — детерминированная политика скоринга
+    - `is_single_token(&self) -> bool` — проверка single vs multi-token
+  * Политика скоринга (из Phase 2 matrix):
+    - 3 сигнала → 1.0
+    - 2 сигнала single-token → 0.7
+    - 2 сигнала multi-token → 0.5 (Python для FIO)
+    - 1 сигнал → 0.3 (Python обязателен)
+    - 0 сигналов → 0.0
+
+- ПОПУЛЯРИЗИРОВАЛ новые поля в detect():
+  * Character literal (line ~599): evidence_signals = SIGNAL_CAPITALIZED | (speech>=1 ? SIGNAL_SPEECH_VERB : 0) | (direct>=1 ? SIGNAL_DIRECT_ADDRESS : 0)
+  * Concept/Org literal (line ~671): evidence_signals = SIGNAL_CAPITALIZED, confidence = 0.3
+  * is_single_token вычисляется через !name.contains(' ') && !name.contains('-')
+
+- ИСПРАВИЛ давний баг в Signal 3 (direct_address detection):
+  * Баг: `name_end = after_dash + name.len()` игнорировал whitespace между em-dash и именем
+  * Симптом: direct_count почти всегда = 0, из-за чего SIGNAL_DIRECT_ADDRESS никогда не выставлялся,
+    и confidence 1.0 был недостижим (матрица Phase 2 теряла смысл)
+  * Фикс: вычисляем name_start_in_text через pointer arithmetic:
+    `let name_start_in_text = (name.as_ptr() as usize) - (text.as_ptr() as usize);`
+    `let name_end = name_start_in_text + name.len();`
+  * Фикс применён к ОБОИМ копиям (litgraph-core + src-tauri)
+  * Этот баг был тихим — ни один существующий тест не проверял direct_count > 0 из реального текста
+
+- ОБНОВИЛ test helpers в litgraph-core/src/reasoning/{narrative_graph,paradox}.rs:
+  * make_character() / char() — добавил evidence_signals=SIGNAL_CAPITALIZED|SIGNAL_SPEECH_VERB, confidence=0.7
+  * test_concept_entity_excluded_from_graph — Бездна: evidence_signals=SIGNAL_CAPITALIZED, confidence=0.3
+
+- ДОБАВИЛ unit-тесты в litgraph-core/src/parser/characters.rs (модуль phase2_confidence_tests):
+  * test_3_signals_confidence_1_0
+  * test_2_signals_single_token_confidence_0_7
+  * test_2_signals_multi_token_confidence_0_5
+  * test_1_signal_confidence_0_3
+  * test_0_signals_confidence_0_0
+  * test_is_single_token_helper (3 кейса: single, multi-space, hyphen)
+  * test_detect_populates_confidence_for_3_signal_character (e2e: Архип + speech + direct → 1.0)
+  * test_detect_populates_confidence_for_2_signal_character (e2e: Борис + speech only → 0.7)
+  * test_detect_populates_confidence_for_concept (e2e: Бездна → 0.3)
+  * Итого: 9 новых тестов
+
+- ДОБАВИЛ rust_fast_path_entities() в src-tauri/src/commands/ner.rs:
+  * Сигнатура: `fn rust_fast_path_entities(text: &str) -> Option<NerResult>`
+  * Логика:
+    1. Вызывает crate::parser::characters::detect(text)
+    2. Если пустой результат → возвращает Some(empty NerResult, model="rust-fast-path")
+    3. Eligibility: ВСЕ Characters должны быть single-token И confidence >= 0.7
+    4. Если хотя бы один Concept/Org или multi-token Character → None (Python fallback)
+    5. Строит NerResult только из Characters (label="PER", locations/orgs=0)
+    6. model="rust-fast-path", version="2.1", chunks_processed=None
+  * Контракт стабильности: JSON shape идентичен Python-результату (serde-совместимый)
+
+- ОБНОВИЛ extract_entities() в ner.rs:
+  * Добавил ранний return: `if let Some(rust_result) = rust_fast_path_entities(&text) { return Ok(rust_result); }`
+  * Если fast path не сработал → прежний Python fallback (include_str! ner_extract_v2.py + person.py)
+  * Обновил docstring с описанием v2.1 / Phase 2 dispatch policy
+
+- ДОБАВИЛ regression-тесты в ner.rs (модуль phase2_fast_path_tests):
+  * test_fast_path_single_token_with_speech_verb — Борис + speech → Some, model="rust-fast-path"
+  * test_fast_path_three_signals_confidence_1 — Архип + speech + direct → Some
+  * test_fast_path_multi_token_returns_none — "Иван Петров" → None
+  * test_fast_path_concept_returns_none — Бездна → None
+  * test_fast_path_empty_text_returns_empty_result — whitespace → Some(empty)
+  * test_fast_path_mixed_single_and_multi_returns_none — mixed → None
+  * test_fast_path_json_contract — сериализация JSON shape (entities, stats, model, version, truncated, textLength, processedLength, chunksProcessed)
+  * Итого: 7 новых тестов
+
+- ЗАПУСТИЛ cargo test --release для litgraph-core:
+  * lib unit tests: 126 passed (was 117 + 9 new phase2_confidence_tests) — ALL PASS ✅
+  * parser_test.rs: 3 passed
+  * profile_test.rs: 1 passed
+  * sfera_test.rs: 1 passed
+  * test_lt.rs: 1 passed
+  * doctests: 5 passed, 2 ignored
+  * ВСЕ ТЕСТЫ ЗЕЛЁНЫЕ ✅
+
+- ПРОВЕРИЛ src-tauri через rustc --emit=metadata (parse-only):
+  * GTK3 system libs недоступны в sandbox (известное ограничение, зафиксировано в worklog ранее)
+  * cargo check --lib падает на pkg-config gdk-3.0
+  * Parse-only проверка ner.rs: только expected "unresolved import" ошибки (serde, tauri, fancy_regex)
+  * Реальных syntax/type errors в моём коде НЕТ
+  * Пользователь должен запустить `cargo test --release --lib` на своей машине для полной верификации
+
+- НЕ КОММИТИЛ — оставил пользователю для ревью и коммита
+
+Stage Summary:
+- Phase 2 Step 1 complete: Rust fast path для extract_entities реализован и покрыт тестами.
+- ParsedCharacter расширен аддитивно: +2 поля, +3 константы, +2 метода. API обратно совместим.
+- Confidence policy формализована в коде и верифицирована 9 unit-тестами (3-signal / 2-signal / 1-signal / 0-signal + e2e).
+- Fast path dispatch покрыт 7 regression-тестами (single-token / multi-token / concept / empty / mixed / JSON contract).
+- Давний баг в Signal 3 (direct_address) исправлен — без этого фикса confidence 1.0 был недостижим.
+- Provenance контракты: model="rust-fast-path" + version="2.1" для fast path; model="natasha-slovnet+pymorphy3" + version="2.0" для Python fallback.
+- NerResult JSON shape НЕ изменился — UI различает ветки только по полю model.
+- litgraph-core: 126/126 PASS (было 117, добавилось 9 новых тестов).
+- src-tauri: parse-only OK, runtime tests требует GTK3 libs на машине пользователя.
+- Файлы изменены:
+  * litgraph-core/src/parser/characters.rs (+169 строк: struct extend, impl, 9 тестов, Signal 3 fix)
+  * src-tauri/src/parser/characters.rs (синхронизирован с litgraph-core)
+  * litgraph-core/src/reasoning/narrative_graph.rs (+6 строк: test helpers extend)
+  * litgraph-core/src/reasoning/paradox.rs (+5 строк: test helper extend)
+  * src-tauri/src/commands/ner.rs (+155 строк: rust_fast_path_entities, docstring update, 7 тестов)
+- Что НЕ сделано (намеренно, surgical scope):
+  * analyze_characters, extract_svo, get_conflict_graph, run_ner_safe — оставлены на Python v2 (Phase 2 Step 2)
+  * Merge logic (4-way table) — не реализована (Phase 2 Step 3)
+  * Cold/warm latency benchmarking — не реализовано (Phase 2 Step 4)

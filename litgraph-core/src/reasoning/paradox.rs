@@ -217,6 +217,9 @@ mod tests {
     use crate::parser::characters::EntityType;
 
     fn char(name: &str) -> ParsedCharacter {
+        use crate::parser::characters::{SIGNAL_CAPITALIZED, SIGNAL_SPEECH_VERB};
+        // Test helper: 2 signals (cap + speech) → confidence 0.7 (single-token)
+        let signals = SIGNAL_CAPITALIZED | SIGNAL_SPEECH_VERB;
         ParsedCharacter {
             name: name.to_string(),
             aliases: vec![],
@@ -226,6 +229,8 @@ mod tests {
             direct_count: 0,
             reason: "test".to_string(),
             entity_type: EntityType::Character,
+            evidence_signals: signals,
+            confidence: ParsedCharacter::confidence_from_signals(signals, true),
         }
     }
 
