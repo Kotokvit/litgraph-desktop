@@ -1806,6 +1806,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92daf443525c4cce67b150400bc2316076100ce0b3686209eb8cf3c31612e6f0"
 
 [[package]]
+name = "litgraph-core"
+version = "0.2.0"
+dependencies = [
+ "chrono",
+ "dirs 5.0.1",
+ "fancy-regex",
+ "flate2",
+ "phf 0.11.3",
+ "regex",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "unicode-segmentation",
+ "uuid",
+]
+
+[[package]]
 name = "litgraph-desktop"
 version = "0.2.2"
 dependencies = [
@@ -1813,6 +1832,7 @@ dependencies = [
  "dirs 5.0.1",
  "fancy-regex",
  "flate2",
+ "litgraph-core",
  "phf 0.11.3",
  "regex",
  "reqwest 0.12.28",

@@ -1,17 +1,8 @@
-//! Linguistic layer for Symbolic UA-LP Engine (src-tauri variant).
+//! Linguistic layer for Symbolic UA-LP Engine (src-tauri).
 //!
-//! This module mirrors `litgraph-core/src/linguistic/` so that the Tauri
-//! backend has direct access to the linguistic pipeline without depending
-//! on the `litgraph-core` crate.
-//!
-//! ## Layers
-//!
-//! - [`pos_tagger`]: POS disambiguation via LanguageTool UK rules.
-//!   Loads `pos_rules.json.gz` (built by `xtask build-pos-tables`).
-//!
-//! Note: The lemmatizer (Layer A) is NOT included in src-tauri yet —
-//! `epsilon.rs` here uses the v7.0 (no-lemmatization) variant.
-//! For full Layer A+B pipeline, use `litgraph-core`.
+//! Re-exports canonical linguistic modules from `litgraph-core`:
+//! - [`lemmatizer`]: Base form dictionary resolution via dict_uk
+//! - [`pos_tagger`]: 3-pass POS disambiguation via LanguageTool UK rules
+//! - [`svo_parser`]: Rule-based SVO Triplet extractor
 
-pub mod pos_tagger;
-pub mod svo_parser;
+pub use litgraph_core::linguistic::{lemmatizer, pos_tagger, svo_parser};
