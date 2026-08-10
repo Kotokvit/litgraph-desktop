@@ -2956,215 +2956,49 @@ pub fn verb_to_action_extended(verb_lemma: &str) -> Option<Action> {
             })
         }
         // ─── Глаголы коммуникации ───────────────────────────────────
-        "сказать" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "молвить" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "промолвить" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "изречь" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "проговорить" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "пробормотать" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "прошептать" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "крикнуть" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "воскликнуть" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "заявить" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "объявить" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "сообщить" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "поведать" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "рассказать" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "признаться" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "покаяться" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "спросить" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "поинтересоваться" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "ответить" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "возразить" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "оспорить" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "опровергнуть" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "подтвердить" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "пообещать" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "поклясться" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "упрекнуть" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "похвалить" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "благодарить" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "поздравить" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "извиниться" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "попросить" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "умолять" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "приказать" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "распорядиться" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "поручить" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "запретить" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "разрешить" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "посоветовать" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "рекомендовать" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "предложить" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "назвать" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
-        }
-        "окрестить" => {
-            return Some(Action::Speak {
-                text: String::new(),
-            })
+        "сказать"
+        | "молвить"
+        | "промолвить"
+        | "изречь"
+        | "проговорить"
+        | "пробормотать"
+        | "прошептать"
+        | "крикнуть"
+        | "воскликнуть"
+        | "заявить"
+        | "объявить"
+        | "сообщить"
+        | "поведать"
+        | "рассказать"
+        | "признаться"
+        | "покаяться"
+        | "спросить"
+        | "поинтересоваться"
+        | "ответить"
+        | "возразить"
+        | "оспорить"
+        | "опровергнуть"
+        | "подтвердить"
+        | "пообещать"
+        | "поклясться"
+        | "упрекнуть"
+        | "похвалить"
+        | "благодарить"
+        | "поздравить"
+        | "извиниться"
+        | "попросить"
+        | "умолять"
+        | "приказать"
+        | "распорядиться"
+        | "поручить"
+        | "запретить"
+        | "разрешить"
+        | "посоветовать"
+        | "рекомендовать"
+        | "предложить"
+        | "назвать"
+        | "окрестить" => {
+            return Some(Action::Speak { topic: None });
         }
         // ─── Глаголы восприятия ─────────────────────────────────────
         "увидеть" => {
