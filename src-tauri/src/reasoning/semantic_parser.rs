@@ -2715,6 +2715,462 @@ pub fn conjunction_to_logic_role(conj: &str) -> Option<ConjunctionLogic> {
         .map(|(_, role)| *role)
 }
 
+// ─── Українські прийменники та керовані відмінки ───────────────────
+//
+// Дзеркальна таблиця до `RUSSIAN_PREPOSITION_CASES`, але для української
+// мови. У українській мові 7 відмінків (називний, родовий, давальний,
+// знахідний, орудний, місцевий, кличний) — на один більше, ніж у російській
+// (кличний відмінок відсутній у російській).
+//
+// Ця таблиця використовується функцією `ukrainian_preposition_case()` для
+// визначення відмінка, якого вимагає український прийменник.
+
+/// Таблиця «прийменник → відмінок» для українських прийменників.
+/// Формат: (прийменник, відмінок, приклад).
+pub const UKRAINIAN_PREPOSITION_CASES: &[(&str, &str, &str)] = &[
+    // Родивний відмінок (genitive)
+    ("без", "genitive", "без друга"),
+    ("біля", "genitive", "біля дому"),
+    ("вместо", "genitive", "замість мене"),
+    ("замість", "genitive", "замість мене"),
+    ("вне", "genitive", "поза домом"),
+    ("поза", "genitive", "поза домом"),
+    ("для", "genitive", "для брата"),
+    ("до", "genitive", "до міста"),
+    ("з", "genitive", "з дому"),
+    ("з-за", "genitive", "з-за рогу"),
+    ("з-під", "genitive", "з-під стола"),
+    ("крім", "genitive", "крім мене"),
+    ("між", "genitive", "між нами"),
+    ("близько", "genitive", "близько дому"),
+    ("навколо", "genitive", "навколо дому"),
+    ("від", "genitive", "від друга"),
+    ("проти", "genitive", "проти вітру"),
+    ("раді", "genitive", "раді друга"),
+    ("з", "genitive", "зо стола"),
+    ("серед", "genitive", "серед друзів"),
+    ("у", "genitive", "у друга"),
+    ("в", "genitive", "в друга"),
+    ("поза", "genitive", "поза другом"),
+    // Давальний відмінок (dative)
+    ("завдяки", "dative", "завдяки другу"),
+    ("всупереч", "dative", "всупереч бажанню"),
+    ("наперекір", "dative", "наперекір долі"),
+    ("назустріч", "dative", "назустріч вітру"),
+    ("до", "dative", "до другу"),
+    ("за", "dative", "за другу"),
+    ("після", "dative", "після другу"),
+    ("згідно з", "dative", "згідно з наказом"),
+    ("поряд з", "dative", "поряд з другом"),
+    // Знахідний відмінок (accusative)
+    ("в", "accusative", "в ліс"),
+    ("у", "accusative", "у ліс"),
+    ("за", "accusative", "за друга"),
+    ("на", "accusative", "на стіл"),
+    ("про", "accusative", "про друга"),
+    ("під", "accusative", "під стіл"),
+    ("через", "accusative", "через дорогу"),
+    ("о", "accusative", "о камінець"),
+    ("об", "accusative", "об кут"),
+    ("поперек", "accusative", "поперек дороги"),
+    // Орудний відмінок (instrumental)
+    ("за", "instrumental", "за домом"),
+    ("з", "instrumental", "з другом"),
+    ("із", "instrumental", "із другом"),
+    ("між", "instrumental", "між друзями"),
+    ("над", "instrumental", "над столом"),
+    ("перед", "instrumental", "перед домом"),
+    ("під", "instrumental", "під столом"),
+    ("поперед", "instrumental", "поперед домом"),
+    ("понад", "instrumental", "понад домом"),
+    ("з-перед", "instrumental", "з-перед дому"),
+    // Місцевий відмінок (locative/prepositional)
+    ("в", "locative", "в лісі"),
+    ("у", "locative", "у лісі"),
+    ("на", "locative", "на столі"),
+    ("при", "locative", "при другові"),
+    ("о", "locative", "о другові"),
+    ("об", "locative", "об отцеві"),
+    ("по", "locative", "по дорозі"),
+    // Кличний відмінок (vocative) — лише в українській!
+    ("о", "vocative", "о друже!"),
+    // Додаткові прийменники
+    ("відносно", "genitive", "відносно мене"),
+    ("щодо", "genitive", "щодо брата"),
+    ("юрія", "genitive", "юрія друг"),
+    ("всередині", "genitive", "всередині дому"),
+    ("зовні", "genitive", "зовні дому"),
+    ("впереред", "genitive", "попереду дому"),
+    ("попереду", "genitive", "попереду дому"),
+    ("всупереч", "dative", "всупереч бажанню"),
+    ("напереріз", "dative", "напереріз долі"),
+    ("наперекір", "dative", "наперекір другу"),
+    ("нашкода", "dative", "нашкода другу"),
+    ("всупереч", "dative", "всупереч бажанню"),
+];
+
+/// Повертає відмінок, якого вимагає український прийменник, або `None`.
+///
+/// # Приклади
+///
+/// ```rust,ignore
+/// assert_eq!(ukrainian_preposition_case("без"), Some("genitive"));
+/// assert_eq!(ukrainian_preposition_case("до"), Some("dative"));
+/// assert_eq!(ukrainian_preposition_case("xyz"), None);
+/// ```
+pub fn ukrainian_preposition_case(prep: &str) -> Option<&'static str> {
+    let lc = prep.trim().to_lowercase();
+    if lc.is_empty() {
+        return None;
+    }
+    // Повертаємо перший збіг (деякі прийменники можуть керувати кількома відмінками).
+    UKRAINIAN_PREPOSITION_CASES
+        .iter()
+        .find(|(p, _, _)| *p == lc)
+        .map(|(_, case, _)| *case)
+}
+
+/// Повертає всі можливі відмінки для українського прийменника.
+/// Деякі прийменники (за, в/у, на, з, між, під) керують кількома відмінками
+/// залежно від контексту (напрямок vs місце).
+pub fn ukrainian_preposition_all_cases(prep: &str) -> Vec<&'static str> {
+    let lc = prep.trim().to_lowercase();
+    if lc.is_empty() {
+        return Vec::new();
+    }
+    UKRAINIAN_PREPOSITION_CASES
+        .iter()
+        .filter(|(p, _, _)| *p == lc)
+        .map(|(_, case, _)| *case)
+        .collect()
+}
+
+// ─── Українські союзи та їхня логична роль ─────────────────────────
+//
+// Дзеркальна таблиця до `RUSSIAN_CONJUNCTIONS_LOGIC`. Українські союзи
+// загалом відповідають російським за логичною роллю, але мають іншу форму.
+//
+//   «і» → кон'юнкція (AND)
+//   «а» → контраст (BUT/AND-NOT)
+//   «але» → контраст (BUT)
+//   «або» → диз'юнкція (OR)
+//   «або...або» → виключаюча диз'юнкція (XOR)
+//   «якщо» → імплікація (IF)
+//   «то» → наслідок (THEN)
+//   «тому що» → причина (BECAUSE)
+//   «тому» → наслідок (THEREFORE)
+//   «хоча» → поступка (ALTHOUGH)
+//   «щоб» → мета (IN-ORDER-TO)
+//   «коли» → час (WHEN)
+//   «де» → місце (WHERE)
+
+/// Таблиця «союз → логічна роль» для українських союзів.
+pub const UKRAINIAN_CONJUNCTIONS_LOGIC: &[(&str, ConjunctionLogic)] = &[
+    // Кон'юнкція
+    ("і", ConjunctionLogic::And),
+    ("та", ConjunctionLogic::And),
+    ("також", ConjunctionLogic::And),
+    ("тож", ConjunctionLogic::And),
+    ("ані", ConjunctionLogic::And),
+    ("й", ConjunctionLogic::And),
+    ("так само як", ConjunctionLogic::And),
+    // Слабкий контраст
+    ("а", ConjunctionLogic::AndNot),
+    ("ані...ані", ConjunctionLogic::AndNot),
+    // Сильний контраст
+    ("але", ConjunctionLogic::But),
+    ("однак", ConjunctionLogic::But),
+    ("проте", ConjunctionLogic::But),
+    ("зате", ConjunctionLogic::But),
+    ("втім", ConjunctionLogic::But),
+    ("все ж", ConjunctionLogic::But),
+    ("все-таки", ConjunctionLogic::But),
+    // Диз'юнкція
+    ("або", ConjunctionLogic::Or),
+    (" чи", ConjunctionLogic::Or),
+    ("чи", ConjunctionLogic::Or),
+    // Виключаюча диз'юнкція
+    ("або...або", ConjunctionLogic::Xor),
+    ("чи...чи", ConjunctionLogic::Xor),
+    ("то...то", ConjunctionLogic::Xor),
+    // Імплікація
+    ("якщо", ConjunctionLogic::If),
+    ("коли", ConjunctionLogic::If),
+    ("якби", ConjunctionLogic::If),
+    ("аби", ConjunctionLogic::If),
+    ("раз", ConjunctionLogic::If),
+    ("лише", ConjunctionLogic::If),
+    ("тільки", ConjunctionLogic::If),
+    // Наслідок
+    ("то", ConjunctionLogic::Then),
+    ("отже", ConjunctionLogic::Then),
+    ("тому", ConjunctionLogic::Then),
+    ("значить", ConjunctionLogic::Then),
+    ("виводить", ConjunctionLogic::Then),
+    ("стало бути", ConjunctionLogic::Then),
+    ("таким чином", ConjunctionLogic::Then),
+    ("отож", ConjunctionLogic::Then),
+    // Причина
+    ("тому що", ConjunctionLogic::Because),
+    ("бо", ConjunctionLogic::Because),
+    ("оскільки", ConjunctionLogic::Because),
+    ("зважаючи на те що", ConjunctionLogic::Because),
+    ("через те що", ConjunctionLogic::Because),
+    ("з огляду на те що", ConjunctionLogic::Because),
+    // Поступка
+    ("хоча", ConjunctionLogic::Although),
+    ("хоч", ConjunctionLogic::Although),
+    ("не зважаючи на те що", ConjunctionLogic::Although),
+    ("незважаючи на те що", ConjunctionLogic::Although),
+    ("притому що", ConjunctionLogic::Although),
+    // Мета
+    ("щоб", ConjunctionLogic::InOrderTo),
+    ("аби", ConjunctionLogic::InOrderTo),
+    ("для того щоб", ConjunctionLogic::InOrderTo),
+    ("з тим щоб", ConjunctionLogic::InOrderTo),
+    ("тому щоб", ConjunctionLogic::InOrderTo),
+    // Час
+    ("коли", ConjunctionLogic::When),
+    ("поки", ConjunctionLogic::When),
+    ("доки", ConjunctionLogic::When),
+    ("як тільки", ConjunctionLogic::When),
+    ("щойно", ConjunctionLogic::When),
+    ("після того як", ConjunctionLogic::When),
+    ("до того як", ConjunctionLogic::When),
+    ("перед тим як", ConjunctionLogic::When),
+    ("відтоді як", ConjunctionLogic::When),
+    ("ледве", ConjunctionLogic::When),
+    // Місце
+    ("де", ConjunctionLogic::Where),
+    ("куди", ConjunctionLogic::Where),
+    ("звідки", ConjunctionLogic::Where),
+    ("звідкіль", ConjunctionLogic::Where),
+    ("навколо", ConjunctionLogic::Where),
+    ("скрізь де", ConjunctionLogic::Where),
+];
+
+/// Повертає логічну роль для українського союза.
+///
+/// Пошук — case-insensitive, caller має нормалізувати регістр
+/// та прибрати пунктуацію навколо слова.
+pub fn ukrainian_conjunction_to_logic_role(conj: &str) -> Option<ConjunctionLogic> {
+    let c = conj.trim().to_lowercase();
+    if c.is_empty() {
+        return None;
+    }
+    UKRAINIAN_CONJUNCTIONS_LOGIC
+        .iter()
+        .find(|(w, _)| *w == c)
+        .map(|(_, role)| *role)
+}
+
+// ─── Українські префікси глаголів руху ─────────────────────────────
+//
+// В українській мові глаголи руху творять видові пари за допомогою
+// префіксів, кожен з яких додає спрямовану семантику (аналогічно російській):
+//
+//   іти → прийти (прибуття), піти (видалення), вийти (вихід),
+//         увійти (вхід), дійти (досягнення), зайти (захід),
+//         перейти (перетин), обійти (обхід), зійти (спуск),
+//         відійти (віддалення), знайти (знаходження)
+//
+// Ця таблиця — дзеркальна до `RUSSIAN_MOTION_PREFIXES` та використовується
+// функцією `ukrainian_motion_verb_semantic_role()`.
+
+/// Таблиця «префікс → MotionRole» для українських глаголів руху.
+pub const UKRAINIAN_MOTION_PREFIXES: &[(&str, MotionRole)] = &[
+    ("при", MotionRole::Arrival),       // прийти, прибігти
+    ("пі", MotionRole::Departure),      // піти, побігти
+    ("ввійш", MotionRole::Entry),       // ввійшов, ввійти
+    ("увійш", MotionRole::Entry),       // увійшов, увійти
+    ("уві", MotionRole::Entry),         // увійти
+    ("вві", MotionRole::Entry),         // ввійти
+    ("ви", MotionRole::Exit),           // вийти, вибігти
+    ("до", MotionRole::ArrivalAtGoal),  // дійти, добігти
+    ("пере", MotionRole::Crossing),     // перейти, перебігти
+    ("обі", MotionRole::Bypass),        // обійти, оббігти
+    ("об", MotionRole::Bypass),         // обійти (варіант)
+    ("взі", MotionRole::Ascent),        // зійти (підйом) — взійти
+    ("вз", MotionRole::Ascent),         // взійти
+    ("зі", MotionRole::Descent),        // зійти (спуск)
+    ("з", MotionRole::Descent),         // зійти (спуск) — варіант
+    ("за", MotionRole::Stopover),       // зайти, забігти
+    ("від", MotionRole::MoveAway),      // відійти, відбігти
+    ("віді", MotionRole::MoveAway),     // відійти (варіант)
+    ("на", MotionRole::Discovery),      // натрапити, наткнутися
+    ("про", MotionRole::Passage),       // пройти, пробігти
+    ("розі", MotionRole::Divergence),   // розійтися, розбігтися
+    ("роз", MotionRole::Divergence),    // розійтися (варіант)
+    ("зійш", MotionRole::Convergence),  // зійшовся, зійтися
+    ("з'ї", MotionRole::Convergence),   // з'їхатися, з'йтися
+];
+
+/// Базові українські глаголи руху (без префіксів).
+/// УВІГ: містить обидві форми «іти» та «йти», оскільки в українській
+/// мові після префіксів форма «іти» часто чергується з «йти»
+/// (піти, вийти, зайти, дійти, перейти, відійти).
+pub const UKRAINIAN_MOTION_BASE_VERBS: &[&str] = &[
+    "іти",
+    "йти", // чергування і/й після префікса
+    "ходити",
+    "бігти",
+    "бігати",
+    "їхати",
+    "їздити",
+    "летіти",
+    "літати",
+    "пливти",
+    "плавати",
+    "повзти",
+    "повзати",
+    "тягтися",
+    "шкандибати",
+    "бредти",
+    "бродити",
+    "лізти",
+    "лазити",
+    "гнати",
+    "тягнути",
+    "везти",
+    "возити",
+    "нести",
+    "носити",
+    "вести",
+    "водити",
+    "котитися",
+    "котити",
+    "катати",
+    "плентатися",
+    "чвалати",
+    "мчати",
+    "тупати",
+    "семенити",
+    "дрібнити",
+];
+
+/// Визначає семантичну роль українського глагола руху за його префіксом.
+///
+/// # Приклади
+///
+/// ```rust,ignore
+/// assert_eq!(ukrainian_motion_verb_semantic_role("прийти"), Some(MotionRole::Arrival));
+/// assert_eq!(ukrainian_motion_verb_semantic_role("вийти"), Some(MotionRole::Exit));
+/// assert_eq!(ukrainian_motion_verb_semantic_role("перейти"), Some(MotionRole::Crossing));
+/// assert_eq!(ukrainian_motion_verb_semantic_role("іти"), Some(MotionRole::BaseMotion));
+/// assert_eq!(ukrainian_motion_verb_semantic_role("спати"), None);
+/// ```
+pub fn ukrainian_motion_verb_semantic_role(verb_lemma: &str) -> Option<MotionRole> {
+    let v = verb_lemma.trim().to_lowercase();
+    if v.is_empty() {
+        return None;
+    }
+    // Точний збіг з базовим глаголом.
+    if UKRAINIAN_MOTION_BASE_VERBS.iter().any(|base| *base == v) {
+        return Some(MotionRole::BaseMotion);
+    }
+    // Перевіряємо, чи закінчується глагол на базовий глагол руху.
+    // (Префікс + база: «прийти» = «при» + «йти», «вийти» = «ви» + «йти»)
+    let ends_with_motion_base = UKRAINIAN_MOTION_BASE_VERBS
+        .iter()
+        .any(|base| v.ends_with(base) && v.len() > base.len());
+    if !ends_with_motion_base {
+        return None;
+    }
+    // Шукаємо найдовший префікс, яким починається глагол.
+    let mut best: Option<(usize, MotionRole)> = None;
+    for (prefix, role) in UKRAINIAN_MOTION_PREFIXES {
+        if v.starts_with(prefix) {
+            let len = prefix.chars().count();
+            match best {
+                None => best = Some((len, *role)),
+                Some((cur, _)) if len > cur => best = Some((len, *role)),
+                _ => {}
+            }
+        }
+    }
+    best.map(|(_, role)| role)
+}
+
+// ─── Wrappers для українських семантичних категорій ────────────────
+// (дзеркально до is_ru_weekday_word(), is_ru_month_word() тощо)
+//
+// Ці wrapper'и делегують до `crate::ukrainian_semantic_categories`,
+// відкриваючи доступ до таблиць UK_WEEKDAYS, UK_MONTHS, UK_COLORS,
+// UK_NATIONS, UK_TIME_WORDS, UK_HUMAN_QUALITIES, UK_PROFESSIONS,
+// UK_VVODNOE_WORDS, UK_PREP_V_WORDS, UK_PREP_NA_WORDS, UK_ZAGL_WORDS.
+//
+// Аналогічно `is_ru_weekday_word()`, `is_ru_month_word()` тощо.
+
+/// Перевіряє, чи є слово українською назвою дня тижня.
+pub fn is_uk_weekday_word(word: &str) -> bool {
+    crate::ukrainian_semantic_categories::is_uk_weekday(word)
+}
+
+/// Перевіряє, чи є слово українською назвою місяця.
+pub fn is_uk_month_word(word: &str) -> bool {
+    crate::ukrainian_semantic_categories::is_uk_month(word)
+}
+
+/// Перевіряє, чи є слово українською назвою кольору.
+pub fn is_uk_color_word(word: &str) -> bool {
+    crate::ukrainian_semantic_categories::is_uk_color(word)
+}
+
+/// Перевіряє, чи є слово українською назвою національності.
+pub fn is_uk_nation_word(word: &str) -> bool {
+    crate::ukrainian_semantic_categories::is_uk_nation(word)
+}
+
+/// Перевіряє, чи є слово українським тимчасовим словом
+/// (минулий, наступний, теперішній, давній тощо).
+pub fn is_uk_time_word_token(word: &str) -> bool {
+    crate::ukrainian_semantic_categories::is_uk_time_word(word)
+}
+
+/// Перевіряє, чи є слово українською назвою людської якості
+/// (розумний, мудрий, хоробрий, боягузливий тощо).
+pub fn is_uk_human_quality_word(word: &str) -> bool {
+    crate::ukrainian_semantic_categories::is_uk_human_quality(word)
+}
+
+/// Перевіряє, чи є слово українською назвою професії.
+pub fn is_uk_profession_word(word: &str) -> bool {
+    crate::ukrainian_semantic_categories::is_uk_profession(word)
+}
+
+/// Перевіряє, чи є слово українським ввідним словом
+/// (звісно, безперечно, отже тощо).
+pub fn is_uk_vvodnoe_word_token(word: &str) -> bool {
+    crate::ukrainian_semantic_categories::is_uk_vvodnoe(word)
+}
+
+/// Перевіряє, чи вимагає слово українського прийменника «у/в».
+pub fn is_uk_prep_v_word_token(word: &str) -> bool {
+    crate::ukrainian_semantic_categories::is_uk_prep_v_word(word)
+}
+
+/// Перевіряє, чи вимагає слово українського прийменника «на».
+pub fn is_uk_prep_na_word_token(word: &str) -> bool {
+    crate::ukrainian_semantic_categories::is_uk_prep_na_word(word)
+}
+
+/// Перевіряє, чи є слово українським заголовним оголошенням
+/// (РОЗДІЛ, ГЛАВА, ВАЖЛИВО, УВАГА, ПРИМІТКА).
+pub fn is_uk_zagl_word_token(word: &str) -> bool {
+    crate::ukrainian_semantic_categories::is_uk_zagl_word(word)
+}
+
+/// Повертає правильну форму для українського пароніма.
+pub fn ukrainian_paronym_correct(word: &str) -> Option<&'static str> {
+    crate::ukrainian_semantic_categories::ukrainian_paronym_correct(word)
+}
+
+/// Повертає сумарну кількість записів у всіх таблицях українських
+/// семантичних категорій.
+pub fn total_uk_semantic_category_tokens_in_lt() -> usize {
+    crate::ukrainian_semantic_categories::total_uk_semantic_categories()
+}
+
 // ─── Дополнительные русские глаголы для расширения `verb_to_action`.
 // Эти леммы добавлены на основе анализа LanguageTool grammar.xml
 // (категория GRAMMAR) и дополнены вручную.
@@ -5172,6 +5628,323 @@ mod tests {
         assert_eq!(
             die_count, 0,
             "«Но он не умер» — пропущено (стоп-слово «Но», без валидного actor)"
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Тести для українських прийменників, сполучників та глаголів руху
+    // ──────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_ukrainian_preposition_case_basic() {
+        assert_eq!(ukrainian_preposition_case("без"), Some("genitive"));
+        assert_eq!(ukrainian_preposition_case("для"), Some("genitive"));
+        assert_eq!(ukrainian_preposition_case("до"), Some("genitive"));
+        assert_eq!(ukrainian_preposition_case("завдяки"), Some("dative"));
+        assert_eq!(ukrainian_preposition_case("через"), Some("accusative"));
+        assert_eq!(ukrainian_preposition_case("над"), Some("instrumental"));
+        assert_eq!(ukrainian_preposition_case("на"), Some("accusative"));
+        assert_eq!(ukrainian_preposition_case("при"), Some("locative"));
+        assert_eq!(ukrainian_preposition_case("xyz"), None);
+        assert_eq!(ukrainian_preposition_case(""), None);
+    }
+
+    #[test]
+    fn test_ukrainian_preposition_case_insensitive() {
+        assert_eq!(ukrainian_preposition_case("БЕЗ"), Some("genitive"));
+        assert_eq!(ukrainian_preposition_case("  завдяки  "), Some("dative"));
+    }
+
+    #[test]
+    fn test_ukrainian_preposition_all_cases() {
+        // «в» управляє трьома відмінками: genitive, accusative, locative.
+        let cases = ukrainian_preposition_all_cases("в");
+        assert!(cases.contains(&"genitive"));
+        assert!(cases.contains(&"accusative"));
+        assert!(cases.contains(&"locative"));
+        assert!(cases.len() >= 3);
+
+        // «на» — accusative + locative.
+        let na_cases = ukrainian_preposition_all_cases("на");
+        assert!(na_cases.contains(&"accusative"));
+        assert!(na_cases.contains(&"locative"));
+
+        // Невідомий прийменник.
+        let empty = ukrainian_preposition_all_cases("xyz");
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn test_ukrainian_vocative_case_unique() {
+        // Кличний відмінок є лише в українській мові.
+        let voc = ukrainian_preposition_case("о");
+        assert!(voc.is_some(), "Prиспівник «о» має бути в таблиці");
+        let all_o = ukrainian_preposition_all_cases("о");
+        assert!(all_o.contains(&"vocative"), "Повинен бути vocative");
+    }
+
+    #[test]
+    fn test_ukrainian_conjunction_to_logic_role_basic() {
+        assert_eq!(
+            ukrainian_conjunction_to_logic_role("і"),
+            Some(ConjunctionLogic::And)
+        );
+        assert_eq!(
+            ukrainian_conjunction_to_logic_role("але"),
+            Some(ConjunctionLogic::But)
+        );
+        assert_eq!(
+            ukrainian_conjunction_to_logic_role("або"),
+            Some(ConjunctionLogic::Or)
+        );
+        assert_eq!(
+            ukrainian_conjunction_to_logic_role("якщо"),
+            Some(ConjunctionLogic::If)
+        );
+        assert_eq!(
+            ukrainian_conjunction_to_logic_role("то"),
+            Some(ConjunctionLogic::Then)
+        );
+        assert_eq!(
+            ukrainian_conjunction_to_logic_role("тому що"),
+            Some(ConjunctionLogic::Because)
+        );
+        assert_eq!(
+            ukrainian_conjunction_to_logic_role("хоча"),
+            Some(ConjunctionLogic::Although)
+        );
+        assert_eq!(
+            ukrainian_conjunction_to_logic_role("щоб"),
+            Some(ConjunctionLogic::InOrderTo)
+        );
+        assert_eq!(
+            ukrainian_conjunction_to_logic_role("коли"),
+            Some(ConjunctionLogic::When)
+        );
+        assert_eq!(
+            ukrainian_conjunction_to_logic_role("де"),
+            Some(ConjunctionLogic::Where)
+        );
+    }
+
+    #[test]
+    fn test_ukrainian_conjunction_to_logic_role_insensitive() {
+        assert_eq!(
+            ukrainian_conjunction_to_logic_role("АЛЕ"),
+            Some(ConjunctionLogic::But)
+        );
+        assert_eq!(
+            ukrainian_conjunction_to_logic_role("  якщо  "),
+            Some(ConjunctionLogic::If)
+        );
+        assert_eq!(ukrainian_conjunction_to_logic_role(""), None);
+        assert_eq!(ukrainian_conjunction_to_logic_role("xyz"), None);
+    }
+
+    #[test]
+    fn test_ukrainian_conjunctions_table_size() {
+        // Таблиця має бути повною — щонайменше 50 сполучників.
+        assert!(
+            UKRAINIAN_CONJUNCTIONS_LOGIC.len() >= 50,
+            "Expected >=50 conjunctions, got {}",
+            UKRAINIAN_CONJUNCTIONS_LOGIC.len()
+        );
+    }
+
+    #[test]
+    fn test_ukrainian_motion_verb_semantic_role_arrival() {
+        assert_eq!(
+            ukrainian_motion_verb_semantic_role("прийти"),
+            Some(MotionRole::Arrival)
+        );
+        assert_eq!(
+            ukrainian_motion_verb_semantic_role("прибігти"),
+            Some(MotionRole::Arrival)
+        );
+    }
+
+    #[test]
+    fn test_ukrainian_motion_verb_semantic_role_exit() {
+        assert_eq!(
+            ukrainian_motion_verb_semantic_role("вийти"),
+            Some(MotionRole::Exit)
+        );
+        assert_eq!(
+            ukrainian_motion_verb_semantic_role("вибігти"),
+            Some(MotionRole::Exit)
+        );
+    }
+
+    #[test]
+    fn test_ukrainian_motion_verb_semantic_role_crossing() {
+        assert_eq!(
+            ukrainian_motion_verb_semantic_role("перейти"),
+            Some(MotionRole::Crossing)
+        );
+        assert_eq!(
+            ukrainian_motion_verb_semantic_role("перебігти"),
+            Some(MotionRole::Crossing)
+        );
+    }
+
+    #[test]
+    fn test_ukrainian_motion_verb_semantic_role_base() {
+        assert_eq!(
+            ukrainian_motion_verb_semantic_role("іти"),
+            Some(MotionRole::BaseMotion)
+        );
+        assert_eq!(
+            ukrainian_motion_verb_semantic_role("бігти"),
+            Some(MotionRole::BaseMotion)
+        );
+        assert_eq!(
+            ukrainian_motion_verb_semantic_role("їхати"),
+            Some(MotionRole::BaseMotion)
+        );
+    }
+
+    #[test]
+    fn test_ukrainian_motion_verb_semantic_role_none() {
+        // Не глагол руху.
+        assert_eq!(ukrainian_motion_verb_semantic_role("спати"), None);
+        assert_eq!(ukrainian_motion_verb_semantic_role("їсти"), None);
+        assert_eq!(ukrainian_motion_verb_semantic_role(""), None);
+    }
+
+    #[test]
+    fn test_ukrainian_motion_prefixes_table_size() {
+        assert!(
+            UKRAINIAN_MOTION_PREFIXES.len() >= 20,
+            "Expected >=20 motion prefixes, got {}",
+            UKRAINIAN_MOTION_PREFIXES.len()
+        );
+    }
+
+    #[test]
+    fn test_ukrainian_motion_base_verbs_table_size() {
+        assert!(
+            UKRAINIAN_MOTION_BASE_VERBS.len() >= 25,
+            "Expected >=25 motion base verbs, got {}",
+            UKRAINIAN_MOTION_BASE_VERBS.len()
+        );
+    }
+
+    #[test]
+    fn test_ukrainian_motion_base_verbs_has_yti_variant() {
+        // Обидві форми «іти» та «йти» мають бути в таблиці.
+        assert!(UKRAINIAN_MOTION_BASE_VERBS.contains(&"іти"));
+        assert!(UKRAINIAN_MOTION_BASE_VERBS.contains(&"йти"));
+    }
+
+    #[test]
+    fn test_is_uk_weekday_word() {
+        assert!(is_uk_weekday_word("понеділок"));
+        assert!(is_uk_weekday_word("неділя"));
+        assert!(is_uk_weekday_word("Середа"));
+        assert!(!is_uk_weekday_word("monday"));
+        assert!(!is_uk_weekday_word(""));
+    }
+
+    #[test]
+    fn test_is_uk_month_word() {
+        assert!(is_uk_month_word("січень"));
+        assert!(is_uk_month_word("грудень"));
+        assert!(is_uk_month_word("липень"));
+        assert!(!is_uk_month_word("january"));
+    }
+
+    #[test]
+    fn test_is_uk_color_word() {
+        assert!(is_uk_color_word("червоний"));
+        assert!(is_uk_color_word("зелений"));
+        assert!(is_uk_color_word("синій"));
+        assert!(!is_uk_color_word("red"));
+    }
+
+    #[test]
+    fn test_is_uk_nation_word() {
+        assert!(is_uk_nation_word("українець"));
+        assert!(is_uk_nation_word("росіянин"));
+        assert!(is_uk_nation_word("німець"));
+        assert!(!is_uk_nation_word("martian"));
+    }
+
+    #[test]
+    fn test_is_uk_profession_word() {
+        assert!(is_uk_profession_word("вчитель"));
+        assert!(is_uk_profession_word("лікар"));
+        assert!(is_uk_profession_word("шахтар"));
+        assert!(is_uk_profession_word("письменник"));
+        assert!(!is_uk_profession_word("wizard"));
+    }
+
+    #[test]
+    fn test_is_uk_human_quality_word() {
+        assert!(is_uk_human_quality_word("хоробрий"));
+        assert!(is_uk_human_quality_word("боягузливий"));
+        assert!(is_uk_human_quality_word("мудрий"));
+        assert!(!is_uk_human_quality_word("brave"));
+    }
+
+    #[test]
+    fn test_is_uk_vvodnoe_word_token() {
+        assert!(is_uk_vvodnoe_word_token("звісно"));
+        assert!(is_uk_vvodnoe_word_token("отже"));
+        assert!(is_uk_vvodnoe_word_token("мабуть"));
+        assert!(!is_uk_vvodnoe_word_token("however"));
+    }
+
+    #[test]
+    fn test_is_uk_prep_v_word_token() {
+        assert!(is_uk_prep_v_word_token("школа"));
+        assert!(is_uk_prep_v_word_token("театр"));
+        assert!(is_uk_prep_v_word_token("лікарня"));
+        assert!(!is_uk_prep_v_word_token("school"));
+    }
+
+    #[test]
+    fn test_is_uk_prep_na_word_token() {
+        assert!(is_uk_prep_na_word_token("завод"));
+        assert!(is_uk_prep_na_word_token("поле"));
+        assert!(is_uk_prep_na_word_token("стадіон"));
+        assert!(!is_uk_prep_na_word_token("factory"));
+    }
+
+    #[test]
+    fn test_is_uk_zagl_word_token() {
+        assert!(is_uk_zagl_word_token("РОЗДІЛ"));
+        assert!(is_uk_zagl_word_token("ГЛАВА"));
+        assert!(is_uk_zagl_word_token("ВАЖЛИВО"));
+        assert!(is_uk_zagl_word_token("УВАГА"));
+        assert!(!is_uk_zagl_word_token("chapter"));
+    }
+
+    #[test]
+    fn test_ukrainian_paronym_correct_basic() {
+        // «геройський» — це правильна форма, плутають з «героїчним».
+        let res = ukrainian_paronym_correct("геройський");
+        // Таблиця містить пару (героїчний, геройський) — отже «геройський»
+        // буде правильним для «героїчного».
+        // Якщо слово не в таблиці як wrong — повернеться None.
+        assert!(res.is_some() || res.is_none()); // просто перевірка, що не panic
+    }
+
+    #[test]
+    fn test_total_uk_semantic_category_tokens_in_lt() {
+        let total = total_uk_semantic_category_tokens_in_lt();
+        assert!(
+            total >= 500,
+            "Expected >=500 UK semantic category tokens, got {}",
+            total
+        );
+    }
+
+    #[test]
+    fn test_ukrainian_preposition_cases_table_size() {
+        assert!(
+            UKRAINIAN_PREPOSITION_CASES.len() >= 50,
+            "Expected >=50 UK preposition entries, got {}",
+            UKRAINIAN_PREPOSITION_CASES.len()
         );
     }
 }

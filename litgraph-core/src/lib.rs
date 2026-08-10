@@ -6,5 +6,6 @@ pub mod parser;
 pub mod ai;
 pub mod languagetool_weights;
 pub mod linguistic_entities;
+pub mod ukrainian_semantic_categories;
 pub mod dict;
 
