@@ -179,7 +179,7 @@ fn word_rarity(word: &str, _total_words: usize, _counts: &HashMap<String, usize>
         return 0.0;
     }
 
-    let p_w = if is_canon_anchor(&clean) {
+    let p_w: f64 = if is_canon_anchor(&clean) {
         0.0001
     } else if is_action_verb(&clean) {
         0.0003
