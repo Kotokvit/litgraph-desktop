@@ -19,6 +19,9 @@ import { NerDialog } from "./NerDialog";
 import { CharacterGraphDialog } from "./CharacterGraphDialog";
 import { ConflictGraphDialog } from "./ConflictGraphDialog";
 import { ReasoningDialog } from "./ReasoningDialog";
+// Layer F.2: POLER Engine Ψ — React Visualizer (v7.5-LEM canonical symbolic engine).
+// Distinct from PolerDialog (which is the spectral k-modes clustering visualizer).
+import { PolerPanel } from "./PolerPanel";
 import {
   Dialog,
   DialogContent,
@@ -76,6 +79,8 @@ export function Toolbar() {
   const [charGraphOpen, setCharGraphOpen] = useState(false);
   const [conflictGraphOpen, setConflictGraphOpen] = useState(false);
   const [reasoningOpen, setReasoningOpen] = useState(false);
+  // Layer F.2: POLER Engine Ψ visualizer modal (v7.5-LEM canonical).
+  const [polerPanelOpen, setPolerPanelOpen] = useState(false);
   const [bgImporting, setBgImporting] = useState(false);
   const [bgError, setBgError] = useState<string | null>(null);
 
@@ -95,6 +100,29 @@ export function Toolbar() {
       .map((n) => n.data.fullText || "")
       .filter((t) => t.trim().length > 0)
       .join("\n\n");
+  });
+
+  // Layer F.2: текст выбранной глави (или первой, если нет выделения).
+  // Используется как chapterText для PolerPanel — ε_climax и SVO считаются
+  // для одной главы, а парадоксы — для всего рукопису (fullManuscriptText).
+  const selectedChapterText = useLitStore((s) => {
+    const chapters = s.nodes.filter((n) => n.type === "chapter" && n.data.fullText);
+    if (chapters.length === 0) return "";
+    if (s.selectedNodeId) {
+      const sel = chapters.find((n) => n.id === s.selectedNodeId);
+      if (sel && sel.data.fullText) return sel.data.fullText;
+    }
+    return chapters[0].data.fullText || "";
+  });
+
+  const selectedChapterIndex = useLitStore((s) => {
+    const chapters = s.nodes.filter((n) => n.type === "chapter" && n.data.fullText);
+    if (chapters.length === 0) return 0;
+    if (s.selectedNodeId) {
+      const idx = chapters.findIndex((n) => n.id === s.selectedNodeId);
+      if (idx >= 0) return idx;
+    }
+    return 0;
   });
   
 
@@ -483,6 +511,23 @@ export function Toolbar() {
         >
           <Lucide.Network className="w-4 h-4" />
           <span className="text-xs ml-1 hidden md:inline">POLER</span>
+        </Button>
+
+        {/* POLER Engine Ψ — Layer F.2 React Visualizer (v7.5-LEM canonical) */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 px-2"
+          onClick={() => setPolerPanelOpen(true)}
+          title="POLER Engine Ψ: ε-climax heatmap, SVO inspector, paradox feed (Layer F.2)"
+          style={{
+            borderColor: "#8B5CF640",
+            color: "#7C3AED",
+            background: "linear-gradient(135deg, rgba(139,92,246,0.08), rgba(245,158,11,0.05), rgba(6,182,212,0.08))",
+          }}
+        >
+          <Lucide.Atom className="w-4 h-4" />
+          <span className="text-xs ml-1 hidden md:inline">POLER Ψ</span>
         </Button>
 
         {/* NER — извлечение персонажей и локаций (spaCy + pymorphy3) */}
@@ -891,6 +936,15 @@ export function Toolbar() {
         open={reasoningOpen}
         text={collectedText}
         onClose={() => setReasoningOpen(false)}
+      />
+
+      {/* Layer F.2: POLER Engine Ψ — v7.5-LEM React Visualizer */}
+      <PolerPanel
+        isOpen={polerPanelOpen}
+        onClose={() => setPolerPanelOpen(false)}
+        chapterText={selectedChapterText}
+        fullManuscriptText={collectedText}
+        chapterIndex={selectedChapterIndex}
       />
     </>
   );

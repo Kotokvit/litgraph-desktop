@@ -273,3 +273,167 @@ export async function reasoningValidateText(
 ): Promise<ValidationResultDto> {
   return invoke("reasoning_validate_text", { project, events, proposedText });
 }
+
+// ====== POLER Layer F — v7.5-LEM Canonical Symbolic Engine ======
+//
+// Tauri IPC wrappers for the Rust-native POLER commands defined in
+// `src-tauri/src/commands/poler.rs`. These mirror the camelCase Rust DTOs
+// (#[serde(rename_all = "camelCase")]) so no field-name conversion is
+// needed on the JS side.
+//
+// All three commands are **pure & deterministic** — no I/O, no LLM, no
+// global mutable state. Safe to invoke in tight loops.
+//
+// Source of truth: src-tauri/src/commands/poler.rs (EpsilonClimaxDto,
+// SvoTripletDto, ParadoxDto, ChapterBreakdownDto, ParadoxReportDto).
+
+/**
+ * Per-chapter ε_climax result with Layer E conflict metrics.
+ *
+ * Fields mirror Rust `EpsilonClimaxDto` exactly (camelCase via serde rename).
+ */
+export interface EpsilonClimaxDto {
+  /** Raw ε_climax value (unnormalized). */
+  epsilon: number;
+  /** Normalized to 0–100 scale (relative to max chapter). 0 for single-chapter calls. */
+  normalized: number;
+  wordCount: number;
+  uniqueWords: number;
+  emotionCount: number;
+  kwCount: number;
+  canonCount: number;
+  actionCount: number;
+  /** Adaptive noise threshold θ_rel = 3.5/κ. */
+  thetaRel: number;
+  /** True if ε < θ_rel (chapter is "noise"). */
+  isNoise: boolean;
+  /** True if ε ≥ CLIMAX_THRESHOLD (chapter is a climax). */
+  isClimax: boolean;
+  formulaVariant: string;
+  /** Conflict magnitude Ω_conf from Layer E (Frobenius norm ‖A_POS‖_F). 0.0 if no characters interact. */
+  omegaConf: number;
+  /** Spectral radius ρ(A_POS) — largest eigenvalue of character adjacency. */
+  spectralRadius: number;
+  /** Number of character nodes in the conflict graph for this chapter. */
+  nodeCount: number;
+  /** Number of directed edges in the conflict graph for this chapter. */
+  edgeCount: number;
+}
+
+/**
+ * SVO triplet (Subject-Verb-Object) extracted by the Rust-native Layer C parser.
+ */
+export interface SvoTripletDto {
+  /** Subject / Nominative — who acts. */
+  actor: string;
+  /** Canonical verb lemma (e.g. "вбити" not "вбив"). */
+  verb: string;
+  /** Direct Object / Accusative or Genitive of Negation. null if intransitive. */
+  target: string | null;
+  /** Instrument case. null if absent. */
+  instrument: string | null;
+  /** Locative with preposition. null if absent. */
+  location: string | null;
+  /** false if negated with "не"/"ні". */
+  polarity: boolean;
+  /** Confidence in [0.0, 1.0]. */
+  confidence: number;
+}
+
+/**
+ * Single temporal paradox detected by Layer E ParadoxDetector.
+ */
+export interface ParadoxDto {
+  /** "dead_speaking" | "spatial_teleportation" */
+  kind: string;
+  character: string;
+  /** Index of the chapter where the paradox manifests. */
+  chapterIdx: number;
+  /** Index of the chapter where the originating event was recorded. */
+  originChapterIdx: number;
+  /** Human-readable explanation (Ukrainian/English). */
+  explanation: string;
+}
+
+/**
+ * Per-chapter breakdown returned alongside the paradox list.
+ */
+export interface ChapterBreakdownDto {
+  chapterIdx: number;
+  title: string;
+  /** Number of characters detected in this chapter (Layer B). */
+  characterCount: number;
+  /** Number of SVO triplets extracted from this chapter (Layer C). */
+  tripletCount: number;
+  /** Character names detected in this chapter. */
+  characters: string[];
+}
+
+/**
+ * Result bundle for cmd_detect_paradoxes.
+ */
+export interface ParadoxReportDto {
+  /** All detected paradoxes, ordered by chapterIdx ASC. */
+  paradoxes: ParadoxDto[];
+  /** Per-chapter breakdown (characters + triplets). */
+  chapters: ChapterBreakdownDto[];
+  /** Distinct character count across the whole manuscript. */
+  totalCharacters: number;
+  /** Total SVO triplets across the whole manuscript. */
+  totalTriplets: number;
+}
+
+/**
+ * Compute ε_climax for a single chapter using the canonical POLER v7.5-LEM
+ * formula with real Ω_conf from Layer E NarrativeGraph.
+ *
+ * Formula:
+ *   ε_climax = (κ · I_loc · d̄² + γ_emo · E + λ_conf · Ω_conf) / ln(e + |U|)
+ *
+ * @param chapterText Full chapter text (Ukrainian/Russian).
+ * @param keyword Optional keyword for kw_count (currently unused in climax
+ *   formula but reserved). Pass null/undefined if not needed.
+ * @param kappa Sector-adaptive coefficient (default 1.0). Controls θ_rel = 3.5/κ.
+ */
+export async function cmdComputeEpsilonClimax(
+  chapterText: string,
+  keyword?: string | null,
+  kappa: number = 1.0
+): Promise<EpsilonClimaxDto> {
+  return invoke<EpsilonClimaxDto>("cmd_compute_epsilon_climax", {
+    chapterText,
+    keyword: keyword ?? null,
+    kappa,
+  });
+}
+
+/**
+ * Extract SVO triplets (Subject-Verb-Object) from text using the Rust-native
+ * SvoParser (Layer C, POLER v7.5-LEM).
+ *
+ * Does NOT require Python, spaCy, or pymorphy3 — uses the in-process
+ * lemmatizer, POS-tagger, and UD_Ukrainian-IU dependency templates.
+ *
+ * @param text Input text (single sentence, paragraph, or full chapter).
+ * @returns One SvoTripletDto per detected triplet.
+ */
+export async function cmdExtractSvo(text: string): Promise<SvoTripletDto[]> {
+  return invoke<SvoTripletDto[]>("cmd_extract_svo", { text });
+}
+
+/**
+ * Detect temporal paradoxes in a multi-chapter manuscript.
+ *
+ * Splits `text` into chapters via Layer A detect_chapters, runs Layer B
+ * (detect_characters) and Layer C (SvoParser) on each chapter, then feeds
+ * the full ManuscriptAnalysis to Layer E ParadoxDetector.
+ *
+ * Currently detected paradox types:
+ * - "dead_speaking" — character marked as deceased in chapter N acts/speaks in any later chapter M > N.
+ * - "spatial_teleportation" — placeholder (not yet implemented in Layer E).
+ *
+ * @param text Full manuscript text (markdown with `^Глава N` headers or plain text).
+ */
+export async function cmdDetectParadoxes(text: string): Promise<ParadoxReportDto> {
+  return invoke<ParadoxReportDto>("cmd_detect_paradoxes", { text });
+}
