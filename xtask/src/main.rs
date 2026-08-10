@@ -2,7 +2,9 @@ use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+mod build_lemmatizer;
 
 #[derive(Debug, Clone)]
 struct RawCognate {
@@ -12,6 +14,15 @@ struct RawCognate {
 }
 
 fn main() -> Result<()> {
+    // Parse CLI args: if first arg is "build-lemmatizer", run that subcommand.
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 && args[1] == "build-lemmatizer" {
+        let resources_path = PathBuf::from("resources/ua-linguistic");
+        let dict_uk_path = resources_path.join("dict_uk");
+        let out_path = resources_path.join("derivatives/lemma_index.json.gz");
+        return build_lemmatizer::run(&dict_uk_path, &out_path);
+    }
+
     println!("=== LitGraph Cognates & LanguageTool Weights Generator ===");
 
     let mut entries: HashMap<String, RawCognate> = HashMap::new();

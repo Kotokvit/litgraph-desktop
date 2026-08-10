@@ -41,3 +41,10 @@ yarn-error.log*
 **/*.key
 **/*.pem
 **/.env
+
+# UA Linguistic Resources (LGPL, downloaded, not committed — see README)
+resources/ua-linguistic/dict_uk/
+resources/ua-linguistic/languagetool/
+resources/ua-linguistic/ud-ukrainian/
+resources/ua-linguistic/derivatives/*.bin
+resources/ua-linguistic/derivatives/*.json.gz
