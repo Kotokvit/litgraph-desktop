@@ -165,6 +165,32 @@ pub enum SemanticPredicate {
     SocialBind { relationship: String },
     /// Несклассифицированный предикат с полярностью.
     Generic { polarity: bool, raw_verb: String },
+
+    // ── Расширенные семантические предикаты ─────────────────────────────
+    /// Передача или владение предметом ("дать", "забрать", "украсть", "иметь").
+    PossessionTransfer { direction: PossessionDirection, item: String },
+    /// Восприятие органами чувств ("увидеть", "услышать", "почувствовать").
+    Perception { sense: PerceptionSense, object: String },
+    /// Эмоциональное состояние или отношение ("любить", "ненавидеть", "бояться").
+    Emotion { emotion: EmotionKind, target: Option<String> },
+    /// Обязательство или клятва ("пообещать", "поклясться", "отказаться").
+    Obligation { kind: ObligationKind, content: String },
+    /// Социальный союз или предательство ("объединиться", "предать", "помириться").
+    AllianceAction { kind: AllianceKind, partner: Option<String> },
+    /// Трансформация ("превратиться", "оборотень").
+    Transformation { new_form: String },
+    /// Захват или освобождение ("захватить", "освободить").
+    CaptureRelease { is_captive: bool },
+    /// Открытие факта ("обнаружить", "открыть").
+    Discovery { fact: String },
+    /// Нанесение ранения ("ранить", "ударить").
+    Wounding { instrument: Option<String> },
+    /// Тюремное заключение.
+    Imprisonment,
+    /// Исцеление.
+    Healing,
+    /// Тактильный физический контакт.
+    PhysicalContact,
 }
 
 /// Семантические модификаторы (отрицание, время, временной анкор).
@@ -252,6 +278,133 @@ impl SemanticInstruction {
                         VerbPolarity::Negative
                     },
                     verb_lemma: raw_verb.clone(),
+                },
+                None,
+            ),
+            SemanticPredicate::Wounding { .. } => {
+                let target = self.target_ref.as_ref().map(|t| {
+                    t.resolved_id
+                        .clone()
+                        .unwrap_or_else(|| EntityId::from(t.normalized_token.as_str()))
+                });
+                (Action::Wound, target)
+            }
+            SemanticPredicate::CaptureRelease { is_captive: true } => {
+                let target = self.target_ref.as_ref().map(|t| {
+                    t.resolved_id
+                        .clone()
+                        .unwrap_or_else(|| EntityId::from(t.normalized_token.as_str()))
+                });
+                (Action::Capture, target)
+            }
+            SemanticPredicate::CaptureRelease { is_captive: false } => {
+                let target = self.target_ref.as_ref().map(|t| {
+                    t.resolved_id
+                        .clone()
+                        .unwrap_or_else(|| EntityId::from(t.normalized_token.as_str()))
+                });
+                (Action::Free, target)
+            }
+            SemanticPredicate::Imprisonment => {
+                let target = self.target_ref.as_ref().map(|t| {
+                    t.resolved_id
+                        .clone()
+                        .unwrap_or_else(|| EntityId::from(t.normalized_token.as_str()))
+                });
+                (Action::Imprison, target)
+            }
+            SemanticPredicate::Healing => {
+                let target = self.target_ref.as_ref().map(|t| {
+                    t.resolved_id
+                        .clone()
+                        .unwrap_or_else(|| EntityId::from(t.normalized_token.as_str()))
+                });
+                (Action::Heal, target)
+            }
+            SemanticPredicate::PhysicalContact => {
+                let target = self.target_ref.as_ref().map(|t| {
+                    t.resolved_id
+                        .clone()
+                        .unwrap_or_else(|| EntityId::from(t.normalized_token.as_str()))
+                });
+                (Action::Touch, target)
+            }
+            SemanticPredicate::Emotion { emotion, target: _ } => {
+                let target_resolved = self
+                    .target_ref
+                    .as_ref()
+                    .map(|t| {
+                        t.resolved_id
+                            .as_ref()
+                            .map(|id| id.to_string())
+                            .unwrap_or_else(|| t.normalized_token.clone())
+                    })
+                    .unwrap_or_default();
+                match emotion {
+                    EmotionKind::Love => (Action::FallInLove { partner: target_resolved }, None),
+                    EmotionKind::Hate => (Action::Hate { target: target_resolved }, None),
+                    _ => (
+                        Action::Custom {
+                            polarity: VerbPolarity::Neutral,
+                            verb_lemma: format!("emotion_{:?}", emotion).to_lowercase(),
+                        },
+                        None,
+                    ),
+                }
+            }
+            SemanticPredicate::AllianceAction { kind, partner: _ } => {
+                let partner = self
+                    .target_ref
+                    .as_ref()
+                    .map(|t| {
+                        t.resolved_id
+                            .as_ref()
+                            .map(|id| id.to_string())
+                            .unwrap_or_else(|| t.normalized_token.clone())
+                    })
+                    .unwrap_or_default();
+                match kind {
+                    AllianceKind::Ally => (Action::Ally { partner }, None),
+                    AllianceKind::Betrayal => (Action::Betray { victim: partner }, None),
+                    _ => (
+                        Action::Custom {
+                            polarity: VerbPolarity::Neutral,
+                            verb_lemma: format!("alliance_{:?}", kind).to_lowercase(),
+                        },
+                        None,
+                    ),
+                }
+            }
+            SemanticPredicate::Transformation { new_form } => (
+                Action::Transform {
+                    new_form: new_form.clone(),
+                },
+                None,
+            ),
+            SemanticPredicate::Discovery { fact } => (
+                Action::Discover {
+                    fact: fact.clone(),
+                },
+                None,
+            ),
+            SemanticPredicate::PossessionTransfer { direction, item } => (
+                Action::Custom {
+                    polarity: VerbPolarity::Neutral,
+                    verb_lemma: format!("possession_{:?}_{}", direction, item).to_lowercase(),
+                },
+                None,
+            ),
+            SemanticPredicate::Perception { sense, object } => (
+                Action::Custom {
+                    polarity: VerbPolarity::Neutral,
+                    verb_lemma: format!("perception_{:?}_{}", sense, object).to_lowercase(),
+                },
+                None,
+            ),
+            SemanticPredicate::Obligation { kind, content } => (
+                Action::Custom {
+                    polarity: VerbPolarity::Neutral,
+                    verb_lemma: format!("obligation_{:?}_{}", kind, content).to_lowercase(),
                 },
                 None,
             ),
@@ -472,6 +625,46 @@ impl SemanticInstruction {
                     ));
                 }
             }
+            SemanticPredicate::PossessionTransfer { item, .. } => {
+                if item.trim().is_empty() {
+                    return Err(format!(
+                        "SemanticInstruction::validate: PossessionTransfer with empty item for actor='{}'",
+                        self.actor_ref.normalized_token
+                    ));
+                }
+            }
+            SemanticPredicate::Perception { object, .. } => {
+                if object.trim().is_empty() {
+                    return Err(format!(
+                        "SemanticInstruction::validate: Perception with empty object for actor='{}'",
+                        self.actor_ref.normalized_token
+                    ));
+                }
+            }
+            SemanticPredicate::Obligation { content, .. } => {
+                if content.trim().is_empty() {
+                    return Err(format!(
+                        "SemanticInstruction::validate: Obligation with empty content for actor='{}'",
+                        self.actor_ref.normalized_token
+                    ));
+                }
+            }
+            SemanticPredicate::Transformation { new_form } => {
+                if new_form.trim().is_empty() {
+                    return Err(format!(
+                        "SemanticInstruction::validate: Transformation with empty new_form for actor='{}'",
+                        self.actor_ref.normalized_token
+                    ));
+                }
+            }
+            SemanticPredicate::Discovery { fact } => {
+                if fact.trim().is_empty() {
+                    return Err(format!(
+                        "SemanticInstruction::validate: Discovery with empty fact for actor='{}'",
+                        self.actor_ref.normalized_token
+                    ));
+                }
+            }
             _ => {}
         }
 
@@ -548,6 +741,40 @@ impl SemanticInstruction {
             SemanticPredicate::Generic { polarity: false, raw_verb } => {
                 format!("Generic{{−,{}}}", raw_verb)
             }
+            SemanticPredicate::PossessionTransfer { direction, item } => {
+                format!("Possession{{dir={:?},item=\"{}\"}}", direction, item)
+            }
+            SemanticPredicate::Perception { sense, object } => {
+                format!("Perception{{sense={:?},obj=\"{}\"}}", sense, object)
+            }
+            SemanticPredicate::Emotion { emotion, target: Some(t) } => {
+                format!("Emotion{{kind={:?},target=\"{}\"}}", emotion, t)
+            }
+            SemanticPredicate::Emotion { emotion, target: None } => {
+                format!("Emotion{{kind={:?}}}", emotion)
+            }
+            SemanticPredicate::Obligation { kind, content } => {
+                format!("Obligation{{kind={:?},content=\"{}\"}}", kind, content)
+            }
+            SemanticPredicate::AllianceAction { kind, partner: Some(p) } => {
+                format!("Alliance{{kind={:?},partner=\"{}\"}}", kind, p)
+            }
+            SemanticPredicate::AllianceAction { kind, partner: None } => {
+                format!("Alliance{{kind={:?}}}", kind)
+            }
+            SemanticPredicate::Transformation { new_form } => {
+                format!("Transformation{{to=\"{}\"}}", new_form)
+            }
+            SemanticPredicate::CaptureRelease { is_captive: true } => "Capture".to_string(),
+            SemanticPredicate::CaptureRelease { is_captive: false } => "Release".to_string(),
+            SemanticPredicate::Discovery { fact } => format!("Discovery{{\"{}\"}}", fact),
+            SemanticPredicate::Wounding { instrument: Some(i) } => {
+                format!("Wounding{{instr={}}}", i)
+            }
+            SemanticPredicate::Wounding { instrument: None } => "Wounding".to_string(),
+            SemanticPredicate::Imprisonment => "Imprisonment".to_string(),
+            SemanticPredicate::Healing => "Healing".to_string(),
+            SemanticPredicate::PhysicalContact => "PhysicalContact".to_string(),
         }
     }
 
@@ -640,13 +867,8 @@ impl SemanticInstruction {
     pub fn requires_active_actor(&self) -> bool {
         match &self.predicate {
             SemanticPredicate::CessationOfLife => false,
-            SemanticPredicate::Resurrection => true,
-            SemanticPredicate::LethalHarm { .. } => true,
-            SemanticPredicate::Communication { .. } => true,
-            SemanticPredicate::SpatialTransition { .. } => true,
             SemanticPredicate::CognitiveState { is_forgotten, .. } => !is_forgotten,
-            SemanticPredicate::SocialBind { .. } => true,
-            SemanticPredicate::Generic { .. } => true,
+            _ => true,
         }
     }
 
@@ -741,10 +963,23 @@ impl SemanticInstruction {
             SemanticPredicate::LethalHarm { .. } => 1.0,
             SemanticPredicate::CessationOfLife => 1.0,
             SemanticPredicate::Resurrection => 0.95,
+            SemanticPredicate::Transformation { .. } => 0.95,
+            SemanticPredicate::AllianceAction { kind: AllianceKind::Betrayal, .. } => 0.95,
+            SemanticPredicate::Wounding { .. } => 0.90,
+            SemanticPredicate::Imprisonment => 0.90,
+            SemanticPredicate::CaptureRelease { .. } => 0.90,
             SemanticPredicate::SocialBind { .. } => 0.85,
+            SemanticPredicate::AllianceAction { .. } => 0.85,
+            SemanticPredicate::PossessionTransfer { .. } => 0.80,
+            SemanticPredicate::Obligation { .. } => 0.80,
             SemanticPredicate::SpatialTransition { .. } => 0.75,
             SemanticPredicate::CognitiveState { is_forgotten: true, .. } => 0.70,
+            SemanticPredicate::Discovery { .. } => 0.70,
             SemanticPredicate::CognitiveState { is_forgotten: false, .. } => 0.60,
+            SemanticPredicate::Emotion { .. } => 0.60,
+            SemanticPredicate::Perception { .. } => 0.50,
+            SemanticPredicate::Healing => 0.50,
+            SemanticPredicate::PhysicalContact => 0.50,
             SemanticPredicate::Communication { .. } => 0.45,
             SemanticPredicate::Generic { .. } => 0.30,
         };
@@ -1770,6 +2005,34 @@ pub fn lower_svo_to_ir(
 
     let predicate = match &action {
         Action::Kill => SemanticPredicate::LethalHarm { instrument: None },
+        Action::Wound | Action::Hit => SemanticPredicate::Wounding { instrument: None },
+        Action::Capture => SemanticPredicate::CaptureRelease { is_captive: true },
+        Action::Imprison => SemanticPredicate::Imprisonment,
+        Action::Free => SemanticPredicate::CaptureRelease { is_captive: false },
+        Action::Heal => SemanticPredicate::Healing,
+        Action::Touch => SemanticPredicate::PhysicalContact,
+        Action::FallInLove { partner } => SemanticPredicate::Emotion {
+            emotion: EmotionKind::Love,
+            target: if partner.is_empty() { None } else { Some(partner.clone()) },
+        },
+        Action::Hate { target } => SemanticPredicate::Emotion {
+            emotion: EmotionKind::Hate,
+            target: if target.is_empty() { None } else { Some(target.clone()) },
+        },
+        Action::Ally { partner } => SemanticPredicate::AllianceAction {
+            kind: AllianceKind::Ally,
+            partner: if partner.is_empty() { None } else { Some(partner.clone()) },
+        },
+        Action::Betray { victim } => SemanticPredicate::AllianceAction {
+            kind: AllianceKind::Betrayal,
+            partner: if victim.is_empty() { None } else { Some(victim.clone()) },
+        },
+        Action::Discover { fact } => SemanticPredicate::Discovery {
+            fact: fact.clone(),
+        },
+        Action::Transform { new_form } => SemanticPredicate::Transformation {
+            new_form: new_form.clone(),
+        },
         Action::Die => SemanticPredicate::CessationOfLife,
         Action::Resurrect => SemanticPredicate::Resurrection,
         Action::Speak { topic } => SemanticPredicate::Communication {
@@ -7428,5 +7691,166 @@ mod tests {
             100,
         );
         assert!(neg.summary().contains("Generic{−,злиться}"));
+    }
+
+    #[test]
+    fn test_semantic_ir_new_predicates_lowering_and_summary() {
+        // PossessionTransfer
+        let ir_poss = make_test_instruction(
+            "Іван",
+            SemanticPredicate::PossessionTransfer {
+                direction: PossessionDirection::Give,
+                item: "ключ".to_string(),
+            },
+            Some("Петро"),
+            false,
+            100,
+        );
+        assert!(ir_poss.summary().contains("Possession{dir=Give,item=\"ключ\"}"));
+        assert!(ir_poss.validate().is_ok());
+
+        // Perception
+        let ir_perc = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Perception {
+                sense: PerceptionSense::Visual,
+                object: "замок".to_string(),
+            },
+            None,
+            false,
+            100,
+        );
+        assert!(ir_perc.summary().contains("Perception{sense=Visual,obj=\"замок\"}"));
+        assert!(ir_perc.validate().is_ok());
+
+        // Emotion
+        let ir_emo = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Emotion {
+                emotion: EmotionKind::Love,
+                target: Some("Марія".to_string()),
+            },
+            Some("Марія"),
+            false,
+            100,
+        );
+        assert!(ir_emo.summary().contains("Emotion{kind=Love,target=\"Марія\"}"));
+        let event_emo = ir_emo.lower_to_event();
+        assert!(matches!(event_emo.action, Action::FallInLove { .. }));
+
+        // Obligation
+        let ir_obl = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Obligation {
+                kind: ObligationKind::Oath,
+                content: "захищати".to_string(),
+            },
+            None,
+            false,
+            100,
+        );
+        assert!(ir_obl.summary().contains("Obligation{kind=Oath,content=\"захищати\"}"));
+        assert!(ir_obl.validate().is_ok());
+
+        // AllianceAction
+        let ir_ally = make_test_instruction(
+            "Іван",
+            SemanticPredicate::AllianceAction {
+                kind: AllianceKind::Ally,
+                partner: Some("Петро".to_string()),
+            },
+            Some("Петро"),
+            false,
+            100,
+        );
+        assert!(ir_ally.summary().contains("Alliance{kind=Ally,partner=\"Петро\"}"));
+        let event_ally = ir_ally.lower_to_event();
+        assert!(matches!(event_ally.action, Action::Ally { .. }));
+
+        // Wounding, Imprisonment, Healing, PhysicalContact lowering
+        let ir_wound = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Wounding { instrument: None },
+            Some("Петро"),
+            false,
+            100,
+        );
+        assert!(matches!(ir_wound.lower_to_event().action, Action::Wound));
+
+        let ir_imprison = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Imprisonment,
+            Some("Петро"),
+            false,
+            100,
+        );
+        assert!(matches!(ir_imprison.lower_to_event().action, Action::Imprison));
+
+        let ir_heal = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Healing,
+            Some("Петро"),
+            false,
+            100,
+        );
+        assert!(matches!(ir_heal.lower_to_event().action, Action::Heal));
+
+        let ir_touch = make_test_instruction(
+            "Іван",
+            SemanticPredicate::PhysicalContact,
+            Some("Петро"),
+            false,
+            100,
+        );
+        assert!(matches!(ir_touch.lower_to_event().action, Action::Touch));
+    }
+
+    #[test]
+    fn test_semantic_ir_new_predicates_validation_errors() {
+        let invalid_poss = make_test_instruction(
+            "Іван",
+            SemanticPredicate::PossessionTransfer {
+                direction: PossessionDirection::Give,
+                item: "   ".to_string(),
+            },
+            None,
+            false,
+            100,
+        );
+        assert!(invalid_poss.validate().is_err());
+
+        let invalid_trans = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Transformation {
+                new_form: "".to_string(),
+            },
+            None,
+            false,
+            100,
+        );
+        assert!(invalid_trans.validate().is_err());
+    }
+
+    #[test]
+    fn test_semantic_ir_new_predicates_importance_weights() {
+        let ir_trans = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Transformation {
+                new_form: "дракон".to_string(),
+            },
+            None,
+            false,
+            100,
+        );
+        assert!((ir_trans.importance_weight() - 0.95).abs() < 1e-4);
+
+        let ir_wound = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Wounding { instrument: None },
+            None,
+            false,
+            100,
+        );
+        assert!((ir_wound.importance_weight() - 0.90).abs() < 1e-4);
     }
 }
