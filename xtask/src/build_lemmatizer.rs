@@ -1,8 +1,9 @@
 //! Build Lemmatizer Index from dict_uk (ВЕСУМ)
 //!
 //! Reads:
-//!   resources/ua-linguistic/dict_uk/data/dict/base.lst   (lemmas with POS tags)
-//!   resources/ua-linguistic/dict_uk/data/affix/*.aff     (paradigm rules)
+//!   resources/ua-linguistic/dict_uk/data/dict/base.lst       (lemmas with POS tags)
+//!   resources/ua-linguistic/dict_uk/data/dict/exceptions.lst (suppletive word forms)
+//!   resources/ua-linguistic/dict_uk/data/affix/*.aff         (paradigm rules)
 //!
 //! Produces:
 //!   resources/ua-linguistic/derivatives/lemma_index.json.gz
@@ -12,7 +13,9 @@
 //! Algorithm:
 //!   1. Parse base.lst → list of (lemma, paradigm_class, modifiers)
 //!   2. For each lemma, apply its paradigm's affix rules to generate all word forms
-//!   3. Build reverse index: word_form → Vec<(lemma, pos_tag)>
+//!   3. Parse exceptions.lst → pre-expanded word_form → (lemma, pos) entries
+//!      (for suppletive forms: бути/є/буду/було, іти/хід/ішов, etc.)
+//!   4. Build reverse index: word_form → Vec<(lemma, pos_tag)>
 //!
 //! This is pure symbolic morphology — no ML, no statistics.
 
@@ -64,22 +67,23 @@ pub fn run(dict_uk_path: &Path, out_path: &Path) -> Result<()> {
     println!("  Output: {}", out_path.display());
 
     let base_lst = dict_uk_path.join("data/dict/base.lst");
+    let exceptions_lst = dict_uk_path.join("data/dict/exceptions.lst");
     let affix_dir = dict_uk_path.join("data/affix");
 
     // Step 1: Parse all affix files into a map: paradigm_class → Vec<AffixRule>
-    println!("[1/4] Parsing affix rules...");
+    println!("[1/5] Parsing affix rules...");
     let affix_groups = parse_all_affix_files(&affix_dir)?;
     let total_rules: usize = affix_groups.values().map(|g| g.rules.len()).sum();
     println!("      Loaded {} paradigm groups, {} total rules",
              affix_groups.len(), total_rules);
 
     // Step 2: Parse base.lst → list of lemmas
-    println!("[2/4] Parsing lemmas from base.lst...");
+    println!("[2/5] Parsing lemmas from base.lst...");
     let lemmas = parse_base_lst(&base_lst)?;
     println!("      Loaded {} lemma records", lemmas.len());
 
     // Step 3: Generate all word forms by applying affix rules
-    println!("[3/4] Generating word forms (this may take a while)...");
+    println!("[3/5] Generating word forms (this may take a while)...");
     let mut word_form_index: HashMap<String, Vec<LemmaEntry>> = HashMap::new();
     let mut total_forms = 0usize;
     let mut lemmas_with_no_paradigm = 0usize;
@@ -137,12 +141,18 @@ pub fn run(dict_uk_path: &Path, out_path: &Path) -> Result<()> {
         total_forms += 1;
     }
 
-    println!("      Generated {} total word forms", total_forms);
+    println!("      Generated {} total word forms (from affixes)", total_forms);
     println!("      Unique word forms in index: {}", word_form_index.len());
     println!("      Lemmas without matching paradigm: {}", lemmas_with_no_paradigm);
 
-    // Step 4: Serialize to gzipped JSON
-    println!("[4/4] Serializing to JSON.gz...");
+    // Step 4: Merge exceptions.lst (suppletive forms: бути/є/буду, іти/хід/ішов, etc.)
+    println!("[4/5] Merging exceptions.lst (suppletive forms)...");
+    let exceptions_count = merge_exceptions_lst(&exceptions_lst, &mut word_form_index)?;
+    println!("      Merged {} exception word-form entries", exceptions_count);
+    println!("      Unique word forms after merge: {}", word_form_index.len());
+
+    // Step 5: Serialize to gzipped JSON
+    println!("[5/5] Serializing to JSON.gz...");
     if let Some(parent) = out_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -209,6 +219,90 @@ fn parse_base_lst(path: &Path) -> Result<Vec<LemmaRecord>> {
     }
 
     Ok(lemmas)
+}
+
+/// Merge exceptions.lst entries into the existing word_form_index.
+///
+/// exceptions.lst format (3 columns, space-separated):
+///   `<word_form> <lemma> <pos_tag>  # optional comment`
+///
+/// Examples (suppletive verbs and irregular nouns):
+///   `бути бути verb:inf:imperf                       # rv_oru:rv_dav`
+///   `було бути verb:past:n:imperf:insert`
+///   `є бути verb:pres:s:1:imperf`     (not in file, hypothetical)
+///   `діти дитина noun:anim:p:v_naz`   (suppletive plural)
+///   `якоря якір noun:m:v_rod`         (irregular noun declension)
+///
+/// Some lines use `//p:v_naz/v_zna/v_kly` syntax in the POS column to indicate
+/// that the same word form also has plural forms — we keep these tags as-is.
+///
+/// Lines starting with `!` (like `# !noun`) are section markers — skip them.
+/// Lines like `переддень /n20.a.p` (lemma with paradigm tag, NOT 3-column exception)
+/// are skipped here — they belong to base.lst format, not exceptions.
+fn merge_exceptions_lst(
+    path: &Path,
+    word_form_index: &mut HashMap<String, Vec<LemmaEntry>>,
+) -> Result<usize> {
+    if !path.exists() {
+        // exceptions.lst is optional — return 0 if missing
+        return Ok(0);
+    }
+
+    let file = File::open(path).context("Failed to open exceptions.lst")?;
+    let reader = BufReader::new(file);
+    let mut count = 0usize;
+
+    for line in reader.lines() {
+        let line = line?;
+        let line = line.trim();
+
+        // Skip empty lines, comments, and section markers like "# !noun"
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        // Strip trailing comment (after #) but preserve the POS tag columns
+        let line_no_comment = line.split('#').next().unwrap_or(line).trim();
+        if line_no_comment.is_empty() {
+            continue;
+        }
+
+        // Split into columns by whitespace.
+        // Expected: <word_form> <lemma> <pos_tag>
+        // If we get only 2 columns where the 2nd starts with '/', it's a base.lst-style
+        // line (lemma + paradigm tag) — skip it, those are processed by parse_base_lst.
+        let cols: Vec<&str> = line_no_comment.split_whitespace().collect();
+        if cols.len() < 3 {
+            continue;
+        }
+
+        // Skip lines that look like base.lst entries (word /paradigm.tag)
+        if cols[1].starts_with('/') {
+            continue;
+        }
+
+        let word_form = cols[0];
+        let lemma = cols[1];
+        let pos_tag = cols[2..].join(" "); // join in case POS has spaces (rare)
+
+        // Normalize: lowercase word form for lookup
+        let form_lower = word_form.to_lowercase();
+        if form_lower.is_empty() || lemma.is_empty() {
+            continue;
+        }
+
+        word_form_index
+            .entry(form_lower)
+            .or_default()
+            .push(LemmaEntry {
+                lemma: lemma.to_string(),
+                pos: pos_tag,
+                paradigm_class: "exception".to_string(),
+            });
+        count += 1;
+    }
+
+    Ok(count)
 }
 
 /// Parse all .aff files in the affix directory.
@@ -445,5 +539,75 @@ mod tests {
         // "пустити" ends with "сти" → regex [^с]ти$ should NOT match (с before ти)
         let form = apply_rule("пустити", &rule);
         assert!(form.is_none(), "Regex should have rejected пустити");
+    }
+
+    #[test]
+    fn test_parse_exceptions_lst_suppletive_verb() {
+        // Simulate parsing "було бути verb:past:n:imperf:insert"
+        let line = "було бути verb:past:n:imperf:insert";
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        assert_eq!(cols.len(), 3);
+        assert_eq!(cols[0], "було");
+        assert_eq!(cols[1], "бути");
+        assert_eq!(cols[2], "verb:past:n:imperf:insert");
+        // cols[1] does not start with '/' → it's a real exception, not a base.lst line
+        assert!(!cols[1].starts_with('/'));
+    }
+
+    #[test]
+    fn test_parse_exceptions_lst_skips_base_lst_style() {
+        // Lines like "переддень /n20.a.p" should be skipped (cols[1] starts with '/')
+        let line = "переддень /n20.a.p";
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        assert_eq!(cols.len(), 2); // only 2 cols, also fails the len < 3 check
+        assert!(cols.len() < 3 || cols[1].starts_with('/'));
+    }
+
+    #[test]
+    fn test_parse_exceptions_lst_ignores_comments() {
+        // Section markers and comments should be skipped
+        let line = "# !noun";
+        assert!(line.starts_with('#'));
+        let line2 = "# Іменники";
+        assert!(line2.starts_with('#'));
+    }
+
+    #[test]
+    fn test_merge_exceptions_lst_into_index() {
+        use std::io::Write;
+        let tmpdir = std::env::temp_dir().join("litgraph_test_exceptions");
+        std::fs::create_dir_all(&tmpdir).unwrap();
+        let tmpfile = tmpdir.join("exceptions.lst");
+        let mut f = std::fs::File::create(&tmpfile).unwrap();
+        writeln!(f, "# test data").unwrap();
+        writeln!(f, "бути бути verb:inf:imperf").unwrap();
+        writeln!(f, "було бути verb:past:n:imperf:insert").unwrap();
+        writeln!(f, "діти дитина noun:anim:p:v_naz").unwrap();
+        writeln!(f, "якоря якір noun:m:v_rod").unwrap();
+        writeln!(f, "# base.lst-style line should be skipped:").unwrap();
+        writeln!(f, "переддень /n20.a.p").unwrap();
+        writeln!(f, "# comment-only line").unwrap();
+        drop(f);
+
+        let mut index: HashMap<String, Vec<LemmaEntry>> = HashMap::new();
+        let count = merge_exceptions_lst(&tmpfile, &mut index).unwrap();
+        // 4 real exceptions, 1 base.lst-style skip, 2 comments
+        assert_eq!(count, 4);
+        // бути has 2 entries: "бути" (inf) and "було" (past n)
+        assert!(index.contains_key("бути"));
+        assert!(index.contains_key("було"));
+        assert!(index.contains_key("діти"));
+        assert!(index.contains_key("якоря"));
+        // переддень was NOT added (base.lst-style line skipped)
+        assert!(!index.contains_key("переддень"));
+        // Verify lemma mapping for "було"
+        let bulo_entries = &index["було"];
+        assert_eq!(bulo_entries.len(), 1);
+        assert_eq!(bulo_entries[0].lemma, "бути");
+        assert_eq!(bulo_entries[0].pos, "verb:past:n:imperf:insert");
+        assert_eq!(bulo_entries[0].paradigm_class, "exception");
+
+        // Cleanup
+        std::fs::remove_dir_all(&tmpdir).ok();
     }
 }

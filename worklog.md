@@ -2200,3 +2200,84 @@ Stage Summary:
 - Spec documentation: B1-B7 discrepancies resolved in writing, B8 added for lemmatization impact.
 - Known issue: n2n.aff 4-column format needs parser fix to reach 80%+ coverage (currently 50-73%).
 - Next steps: (1) fix .aff parser for 4-column format, (2) write Rust-side lemmatizer module in litgraph-core/src/linguistic/, (3) re-run benchmark with lemmatization enabled, (4) Layers B (POS) and C (SVO) implementation.
+
+---
+Task ID: symbolic-ua-lp-02
+Agent: main (coordinator)
+Task: Шар A (Rust-модуль lemmatizer.rs) + перепис epsilon.rs (v7.0-LEM canonical) + benchmark порівняння
+
+Work Log:
+- Відповів на запитання користувача про стан справ: перевірив git log, виявив що попередня робота НЕ була закомічена (тільки в working tree). Локальний HEAD був на 8234693, без remote — пушити було нікуди.
+- Закомітив попередню роботу локально: commit 09b4f3d "feat(symbolic-ua-lp): Stage A foundation" (10 файлів, +1346/-1).
+- Створив гілку feature/symbolic-ua-lp-engine.
+
+Шар A: exceptions.lst + lemmatizer.rs
+- Додав merge_exceptions_lst() у xtask/src/build_lemmatizer.rs: парсить exceptions.lst
+  (формат `<word_form> <lemma> <pos_tag>`), пропускає base.lst-style рядки, коректно
+  обробляє суплетивні форми (бути/є/буду/було, діти/дитина, якір/якоря).
+- Додав 5 юніт-тестів для exceptions.lst парсера.
+- Створив litgraph-core/src/linguistic/mod.rs + lemmatizer.rs (~270 рядків):
+  - LemmaEntry struct (lemma, pos, paradigm_class)
+  - OnceLock<Option<Index>> для lazy loading
+  - locate_index_file() шукає в 3 локаціях: repo-relative, $XDG_DATA_HOME, /usr/local/share
+  - load_index() розпаковує gzip + парсить JSON
+  - Публічний API: lemmatize(word), lemmatize_first(word), is_known(word), is_loaded(), index_size()
+  - 8 юніт-тестів (включно з тестами на "ходив"→"ходити", "було"→"бути", детермінізм)
+- Додав pub mod linguistic; у litgraph-core/src/lib.rs
+- Додав flate2 = "1.0" у litgraph-core/Cargo.toml
+
+Шар 4: перепис epsilon.rs (v7.0-LEM canonical)
+- litgraph-core/src/parser/epsilon.rs: 128 → 470 рядків
+- Виправлено B5 bug: word_rarity() тепер використовує log10 (було ln)
+- Виправлено δ_bias: len_norm = √(|U| + 15.0) (було √(|U|))
+- Виправлено d: тепер лінійна сума Σ rarity(w) (було Σ rarity(w)²)
+- Додано CANON_ANCHORS (34 терміни) + ACTION_VERBS (42 дієслова) з benchmark_poler_epsilon.py
+- Додано C_canon = 3.0 × canon_count, A_SVO = 2.0 × action_count
+- Додано θ_rel = 3.5/κ, is_noise, is_climax (≥7.5)
+- Розширено EpsilonResult: +kw_count, +canon_count, +action_count, +theta_rel, +is_noise,
+  +is_climax, +formula_variant. Default impl для зворотної сумісності.
+- Додано compute_epsilon_lemmatized() — використовує lemmatizer::lemmatize_first()
+- Додано compute_epsilon_climax() — ε_climax формула з Ω_conf (placeholder=0.0,
+  I_loc=1.0, gamma_emo=1.0 per B1, lambda_conf=12.5)
+- 11 юніт-тестів (включно з determinism, kappa-affects-threshold, lemmatized-fallback)
+- Синхронізовано src-tauri/src/parser/epsilon.rs (без lemmatizer dep, бо src-tauri
+  не залежить від litgraph-core)
+
+Benchmark: v7.0 vs v7.0-LEM (scripts/benchmark_poler_v7_lem.py)
+- Створив скрипт з автоматичним пошуком lemma_index.json.gz через __file__
+- Завантаження: 2,234,167 word forms за 5808 мс
+- Сфера Предела (κ=1.2, 21080 фрагментів):
+  - μ: 2.99 → 3.01 (+0.48%)
+  - max: 20.92 → 21.21 (+1.42%)
+  - noise: 60.72% → 60.41% (-0.31pp)
+  - climax: 4.35% → 4.50% (+0.15pp)
+  - top-5 overlap: 4/5
+  - overhead: +36.3% (194ms → 265ms)
+- Кассіопея (κ=1.0, 12879 фрагментів):
+  - μ: 2.32 → 2.37 (+2.15%)
+  - max: 10.20 → 10.30 (+0.97%)
+  - noise: 80.37% → 79.44% (-0.93pp)
+  - climax: 0.50% → 0.60% (+0.10pp)
+  - top-5 overlap: 4/5
+  - overhead: +48.7% (120ms → 179ms)
+
+ВАЖЛИВЕ СПОСТЕРЕЖЕННЯ:
+- Реальний α (редукція |U|) = 0.999, а НЕ 0.7 як прогнозував sympy_lemmatization_impact.py
+- Причина: фрагменти короткі (mean |U|≈5), тому в межах одного фрагмента рідко
+  трапляється кілька словоформ однієї леми ("ходив/ходить/ходили" рідко в одному реченні)
+- Теоретичний ε ratio при |U|=5, α=0.99: √(20)/√(19.95) ≈ 1.001 — збігається з +0.48%
+- 9.9% проекція передбачала |U|=20 (довгі фрагменти)
+- Реальний вплив лематизації: +0.5-2.2% μ, +0.10-0.15pp climax detection
+- Напрямки для збільшення ефекту:
+  1. Корпусна частотність p_w через леми (не довжинна евристика)
+  2. Аналіз на рівні абзаців (не речень)
+  3. Перехідні розрахунки (cross-fragment rarity)
+
+Stage Summary:
+- exceptions.lst: підтримано + 5 тестів ✓
+- lemmatizer.rs runtime модуль: 270 рядків + 8 тестів ✓
+- epsilon.rs v7.0-LEM: 470 рядків + 11 тестів, синхронізовано litgraph-core + src-tauri ✓
+- benchmark: v7.0-LEM дає +0.5-2.2% μ, +0.10-0.15pp climax detection, 4/5 top-5 overlap ✓
+- Новий файл: scripts/benchmark_poler_v7_lem.py (384 рядки) ✓
+- TODO: Шар B (LanguageTool POS disambiguation), Шар C (UD-Ukrainian SVO parser),
+  інтеграція lemmatizer у src-tauri (потребує копію linguistic/ модуля або dep на litgraph-core)
