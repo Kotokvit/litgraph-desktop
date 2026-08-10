@@ -226,12 +226,60 @@ pub struct SemanticInstruction {
 
 impl SemanticInstruction {
     /// Понижение (lowering) IR-инструкции до доменного [`Event`].
+    ///
+    /// **Крок 1 (P0): обробка `is_negated`.**
+    ///
+    /// Якщо `modifiers.is_negated == true` для смертельних предикатів
+    /// (`CessationOfLife`, `LethalHarm`, `Wounding`, `Imprisonment`,
+    /// `CaptureRelease{is_captive:true}`, `Healing`) — ми НЕ породжуємо
+    /// відповідну `Action::Die` / `Action::Kill` / тощо, бо це призвело б
+    /// до фантомного факту смерті для «Марта не умерла» (Bug #1).
+    ///
+    /// Замість цього мапимо на безпечний `Action::Custom` зі спеціальним
+    /// `verb_lemma = "__negated_<original>"`. Так рушій інференсу ігнорує
+    /// цю подію (для неї немає жодного правила в `rules.rs`), а UI
+    /// зможе показати «negated lethal — dropped».
     pub fn lower_to_event(&self) -> Event {
         let actor = self
             .actor_ref
             .resolved_id
             .clone()
             .unwrap_or_else(|| EntityId::from(self.actor_ref.normalized_token.as_str()));
+
+        // ── Крок 1: перевірка is_negated для смертельних предикатів ──
+        // Якщо предикат смертельний і заперечений — мапимо на безпечний Custom.
+        if self.modifiers.is_negated {
+            let negated_verb_lemma = match &self.predicate {
+                SemanticPredicate::CessationOfLife => Some("__negated_die"),
+                SemanticPredicate::LethalHarm { .. } => Some("__negated_kill"),
+                SemanticPredicate::Wounding { .. } => Some("__negated_wound"),
+                SemanticPredicate::Imprisonment => Some("__negated_imprison"),
+                SemanticPredicate::CaptureRelease { is_captive: true } => Some("__negated_capture"),
+                SemanticPredicate::Healing => Some("__negated_heal"),
+                _ => None,
+            };
+            if let Some(negated_lemma) = negated_verb_lemma {
+                let target = self.target_ref.as_ref().map(|t| {
+                    t.resolved_id
+                        .clone()
+                        .unwrap_or_else(|| EntityId::from(t.normalized_token.as_str()))
+                });
+                return Event {
+                    id: EventId::default(),
+                    actor,
+                    action: Action::Custom {
+                        polarity: VerbPolarity::Negative,
+                        verb_lemma: negated_lemma.to_string(),
+                    },
+                    target,
+                    instrument: None,
+                    time: self.modifiers.temporal_anchor.clone(),
+                    source_text: self.source_text.clone(),
+                    confidence: self.confidence,
+                    provenance: Provenance::SvoParser,
+                };
+            }
+        }
 
         let (action, target) = match &self.predicate {
             SemanticPredicate::LethalHarm { .. } => {
@@ -823,6 +871,37 @@ impl SemanticInstruction {
                 }
             }
             _ => {}
+        }
+
+        // ── Крок 1 (P0): відкидаємо negated смертельні предикати ──
+        //
+        // Якщо «не умер» / «не убив» / «не поранив» — це НЕ факт смерті чи
+        // насильства. Замість того, щоб lower_to_event мапив це на
+        // Action::Custom { verb_lemma: "__negated_*" }, ми відкидаємо
+        // інструкцію ще на етапі валідації. Це ще чистіше, ніж пропускати
+        // її через увесь pipeline.
+        //
+        // Але ЗВЕРНІТЬ УВАГУ: lower_to_event все одно має захист (на випадок,
+        // якщо інструкція пройшла валідацію з іншого джерела, наприклад
+        // Python SVO з negated=true). Тому обидва шари захищені.
+        if self.modifiers.is_negated {
+            let is_lethal_predicate = matches!(
+                self.predicate,
+                SemanticPredicate::CessationOfLife
+                    | SemanticPredicate::LethalHarm { .. }
+                    | SemanticPredicate::Wounding { .. }
+                    | SemanticPredicate::Imprisonment
+                    | SemanticPredicate::CaptureRelease { is_captive: true }
+                    | SemanticPredicate::Healing
+            );
+            if is_lethal_predicate {
+                return Err(format!(
+                    "SemanticInstruction::validate: negated lethal predicate ({}) — dropping \
+                     (e.g. «не умер» / «не убил»). Actor='{}'",
+                    self.predicate_summary(),
+                    self.actor_ref.normalized_token
+                ));
+            }
         }
 
         Ok(())
@@ -1994,6 +2073,121 @@ pub fn is_russian_stop_word(word: &str) -> bool {
     )
 }
 
+/// **P0.1 / Крок 1: детектор заперечення «не/ні».**
+///
+/// Перевіряє, чи стоїть частка «не» (RU) або «ні» (UK) у межах 1-3 слів
+/// **перед** дієсловом. Це позиційна евристика без повного синтаксичного
+/// аналізу — вона покриває найпоширеніші випадки:
+///
+/// - «не умер» → negated=true (0 слів між)
+/// - «не просто умер» → negated=true (1 слово між)
+/// - «не убив його» → negated=true (0 слів між, target不算 — шукаємо тільки перед)
+/// - «він не умер» → negated=true
+///
+/// Не спрацьовує:
+/// - «не вмерли, але загинули» — для першого дієслова negated=true (коректно).
+///
+/// # Аргументи
+/// - `sentence_words` — слова речення після `split_whitespace()`.
+/// - `verb_idx` — індекс дієслова у `sentence_words`.
+pub fn detect_negation_before_verb(sentence_words: &[&str], verb_idx: usize) -> bool {
+    if verb_idx == 0 {
+        return false;
+    }
+    // Скануємо до 3 слів перед дієсловом (з кінця — від verb_idx-1 до verb_idx-3).
+    let start = verb_idx.saturating_sub(3);
+    for &w in &sentence_words[start..verb_idx] {
+        // Чистимо від пунктуації (на випадок «не,» або «не:»).
+        let clean: String = w.chars().filter(|c| c.is_alphabetic()).collect();
+        let lc = clean.to_lowercase();
+        // RU: «не», UK: «ні». Також ловимо «ніби не» — частка «не» сама по собі.
+        if lc == "не" || lc == "ні" {
+            return true;
+        }
+        // Якщо зустріли інше слово раніше ніж «не» — шукаємо далі у вікні.
+        // Наприклад, «він не умер»: words = ["він", "не", "умер"], verb_idx=2.
+        // start=0, scan ["він", "не"] → «не» знайдено → true.
+    }
+    false
+}
+
+/// **Крок 4: евристика прикметників.**
+///
+/// Якщо `actor_token` має типове закінчення російського/українського прикметника
+/// і **не резолвиться** через EntityResolver — це майже точно не персонаж,
+/// а метафора («Старая умерла», «Империя пала»).
+///
+/// # Увага: специфічні закінчення
+///
+/// Ми навмисно НЕ включаємо сюди -ой, -ий, -ый, -ей, бо вони занадто
+/// неоднозначні: «Герой», «Григорий», «Алексей», «Андрей» — реальні імена,
+/// які мають ці закінчення. Натомість ми фокусуємось на -ая, -яя, -ое, -ее,
+/// -ые, -ие, -ых, -их, -ій, -їй — вони набагато рідше зустрічаються в іменах
+/// персонажів і майже завжди вказують на прикметник.
+///
+/// # Повертає
+/// `true`, якщо токен схожий на прикметникову форму (і не ім'я персонажа).
+pub fn looks_like_adjective_form(token: &str) -> bool {
+    // Беремо «голу» частину без пунктуації та в lowercase.
+    let lc: String = token
+        .chars()
+        .filter(|c| c.is_alphabetic())
+        .collect::<String>()
+        .to_lowercase();
+    if lc.chars().count() < 4 {
+        // Закінчення — 2 символи, потрібен хоча б корінь із 2+ символів.
+        return false;
+    }
+    // Беремо останні 2 кириличні символи (UTF-8 chars, не байти).
+    let chars: Vec<char> = lc.chars().collect();
+    let n = chars.len();
+    if n < 2 {
+        return false;
+    }
+    let tail2: String = chars[n - 2..].iter().collect();
+    matches!(
+        tail2.as_str(),
+        // RU прикметникові закінчення (специфічні — не збігаються з типовими іменами)
+        "ая" | "яя"   // жіночий рід, називний відмінок
+        | "ое" | "ее" // середній, називний
+        | "ые" | "ие" // множина, називний
+        | "ых" | "их" // множина, родовий
+        // UK прикметникові закінчення
+        | "ій" | "їй"
+    )
+}
+
+/// **Bonus Bug #4: видаляє markdown HR `---` з тексту речення.**
+///
+/// Markdown-роздільник `---` (горизонтальна лінія) на окремому рядку
+/// раніше помилково сприймався `strip_dialogue_content` як тире
+/// атрибуції діалогу. Це призводило до того, що авторський текст після
+/// `---` відрізався (наприклад, `--- \n Триадный Совет не убил его` →
+/// залишався лише `не убил его`, без актора).
+///
+/// Функція шукає лінії, що складаються тільки з `---` (з можливим
+/// trailing whitespace), і замінює їх на порожній рядок. Інші `---`
+/// (в середині тексту) не чіпаються.
+fn strip_markdown_hr(text: &str) -> String {
+    // Простий рядково-орієнтований підхід: розбиваємо на рядки, замінюємо
+    // `---`-рядки на порожні.
+    text.lines()
+        .map(|line| {
+            let trimmed = line.trim();
+            // Точний збіг з `---` або `----` (3+ дефіси) — це markdown HR.
+            if !trimmed.is_empty()
+                && trimmed.chars().all(|c| c == '-')
+                && trimmed.chars().count() >= 3
+            {
+                String::new()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Удаляет из предложения прямую речь (диалоговое содержимое), оставляя
 /// только авторский текст, в котором нужно искать актёра.
 ///
@@ -2025,9 +2219,20 @@ pub fn is_russian_stop_word(word: &str) -> bool {
 /// предложение состояло из реплики — в этом случае caller должен пропустить
 /// событие (нет актёра).
 pub fn strip_dialogue_content(sentence: &str) -> String {
+    // ── Bonus Bug #4: попередньо видаляємо markdown-роздільники `---` ──
+    //
+    // Markdown HR `---` (на окремому рядку) раніше помилково рахувався як
+    // тире атрибуції діалогу в Шагу 2 (`dash_count >= 2`). Це призводило до
+    // того, що авторський текст після `---` відрізався.
+    //
+    // Тепер ми спершу замінюємо `---` (як окремий рядок) на порожній рядок.
+    // Регулярка ловить `---` на початку тексту або після `\n`, з можливим
+    // whitespace навколо.
+    let cleaned_markdown = strip_markdown_hr(sentence);
+
     // ── Шаг 1: вырезаем содержимое кавычек ──────────────────────────
-    let mut no_quotes = String::with_capacity(sentence.len());
-    let chars: Vec<char> = sentence.chars().collect();
+    let mut no_quotes = String::with_capacity(cleaned_markdown.len());
+    let chars: Vec<char> = cleaned_markdown.chars().collect();
     let mut i = 0;
     let mut in_quote = false;
     let mut quote_close: char = '\0';
@@ -2874,6 +3079,247 @@ struct FallbackRegexes {
     cap_word: Regex,
 }
 
+/// **Крок 2: розбиття на речення з урахуванням переносів рядків та markdown.**
+///
+/// Розширена версія простого `regexes.sentence_split.find_iter`. Крім
+/// класичних роздільників `[.!?…]+`, додатково розбиває на:
+///
+/// 1. **Подвійні переноси рядків** (`\n\n` або `\r\n\r\n`) — це завжди
+///    границя між абзацами, навіть без крапки. Особливо важливо для
+///    markdown-текстів, де заголовок глави може бути на окремому рядку
+///    без крапки: `Наследство\nКрасс умер...` — без цього розбиття
+///    заголовок «Наследство» потрапляв у те саме речення, що й «Красс
+///    умер», і алгоритм брав його як актора (Bug #3).
+/// 2. **Markdown-роздільники `---`** (на окремому рядку) — це
+///    горизонтальна лінія, не тире атрибуції діалогу. Без цього
+///    `strip_dialogue_content` рахував `---` як тире і відрізав
+///    авторський текст (Bonus Bug #4).
+/// 3. **Одинарний `\n` з подальшою великою літерою** — заголовок суб-глави
+///    або початок нового абзацу. Евристика: якщо після `\n` йде
+///    `[А-ЯЁ]` і перед `\n` не було крапки/знака, вважаємо це новим
+///    реченням. Це покриває `Наследство\nКрасс умер...`.
+///
+/// # Алгоритм
+///
+/// 1. Спершу знаходимо всі позиції класичних роздільників `[.!?…]+`
+///    (збережено сумісність зі старим кодом).
+/// 2. Потім додаємо позиції для `\n\n+` та `^---$` (markdown).
+/// 3. Потім додаємо позиції для `\n[А-ЯЁ]` (одинарний перенос + кап).
+/// 4. Сортуємо всі границі та будуємо `Vec<(start, end)>` відрізків.
+///
+/// # Повертає
+///
+/// `Vec<(usize, usize)>` — початок і кінець кожного речення (byte offsets).
+fn split_sentences_enhanced(text: &str, regexes: &FallbackRegexes) -> Vec<(usize, usize)> {
+    let mut splits: Vec<usize> = Vec::new();
+
+    // 1. Класичні роздільники: `[.!?…]+`. Зберігаємо кінець матчу (як і раніше).
+    for r in regexes.sentence_split.find_iter(text) {
+        if let Ok(m) = r {
+            splits.push(m.end());
+        }
+    }
+
+    // 2. Подвійні переноси рядків: `\n\n+` або `\r\n\r\n+`.
+    //    Шукаємо всі `\n` і групуємо послідовні.
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\n' {
+            // Рахуємо кількість послідовних `\n` (ігноруємо `\r`).
+            let mut newlines = 0;
+            while i < bytes.len() && (bytes[i] == b'\n' || bytes[i] == b'\r') {
+                if bytes[i] == b'\n' {
+                    newlines += 1;
+                }
+                i += 1;
+            }
+            if newlines >= 2 {
+                // Границя — після останнього `\n`.
+                splits.push(i);
+            }
+            // Продовжуємо з поточної позиції (i вже просунуто).
+        } else {
+            i += 1;
+        }
+    }
+
+    // 3. Markdown-роздільники `---` (горизонтальна лінія).
+    //    Шукаємо `---` на початку рядка (після `\n` або на початку тексту).
+    //    Використовуємо простий byte-search для швидкості.
+    if let Some(pos) = find_markdown_hr(text) {
+        // Додаємо ТРИ границі, щоб `\n---\n` НЕ потрапив у жодне речення:
+        //  (a) ПЕРЕД `---` (на позиції початку попереднього `\n`) — закриває
+        //      попереднє речення до `\n`.
+        //  (b) НА позиції `pos` (початок `---`) — починає «сміттєве» речення.
+        //  (c) ПІСЛЯ `---` + `\n` — починає наступне речення.
+        //
+        // Якщо (a) == (b) (нема `\n` перед `---`), то між ними не буде
+        // порожнього речення — це нормально.
+        let before = if pos > 0 && bytes[pos - 1] == b'\n' {
+            // Пропускаємо `\r\n` разом.
+            if pos > 1 && bytes[pos - 2] == b'\r' {
+                pos - 2
+            } else {
+                pos - 1
+            }
+        } else {
+            pos
+        };
+        splits.push(before);
+        // Відмічаємо початок `---` як окрему границю — це створить
+        // проміжне «сміттєве» речення `\n---\n`, яке потім відфільтрується
+        // через clean_sentence.trim().is_empty() або не містить дієслова.
+        splits.push(pos);
+
+        // Позиція після `---` (і після наступного `\n`, якщо є).
+        let mut after = pos + 3; // "---" = 3 байти.
+        // Пропускаємо можливий `\r` після `---`.
+        if after < bytes.len() && bytes[after] == b'\r' {
+            after += 1;
+        }
+        // Пропускаємо можливий `\n` після `---`.
+        if after < bytes.len() && bytes[after] == b'\n' {
+            after += 1;
+        }
+        splits.push(after);
+    }
+
+    // 4. Одинарний `\n` з подальшою великою літерою [А-ЯЁ].
+    //    Шукаємо `\n` і перевіряємо наступний non-empty байт.
+    //    Використовуємо char-level перевірку, оскільки `А-ЯЁ` — це 2 байти в UTF-8.
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    for (idx, &(_, c)) in chars.iter().enumerate() {
+        if c == '\n' {
+            // Шукаємо наступний non-whitespace char.
+            let mut j = idx + 1;
+            while j < chars.len() {
+                let (_, nc) = chars[j];
+                if nc.is_whitespace() && nc != '\n' {
+                    j += 1;
+                    continue;
+                }
+                break;
+            }
+            if j < chars.len() {
+                let (next_pos, next_char) = chars[j];
+                // Перевіряємо, чи це велика кирилична літера (назва, заголовок).
+                if is_cyrillic_uppercase(next_char) && next_char != '\n' {
+                    // Границя — на початку цього слова (next_pos).
+                    // Але не дублюємо, якщо вже є класичний роздільник поруч.
+                    splits.push(next_pos);
+                }
+            }
+        }
+    }
+
+    // Сортуємо та прибираємо дублікати.
+    splits.sort_unstable();
+    splits.dedup();
+
+    // Будуємо відрізки (start, end).
+    let mut boundaries: Vec<(usize, usize)> = Vec::with_capacity(splits.len() + 1);
+    let mut last_start = 0usize;
+    for s in splits {
+        if s > last_start && s <= text.len() {
+            boundaries.push((last_start, s));
+            last_start = s;
+        }
+    }
+    if last_start < text.len() {
+        boundaries.push((last_start, text.len()));
+    } else if boundaries.is_empty() {
+        boundaries.push((0, text.len()));
+    }
+    boundaries
+}
+
+/// Шукає markdown HR `---` на початку рядка. Повертає byte offset початку `---`.
+fn find_markdown_hr(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        // Пропускаємо whitespace на початку рядка.
+        let line_start = i;
+        while i < bytes.len() && bytes[i] != b'\n' {
+            // Шукаємо `---` на початку рядка.
+            if bytes[i] == b'-' && i + 2 < bytes.len() && bytes[i + 1] == b'-' && bytes[i + 2] == b'-' {
+                // Перевіряємо, що це початок рядка (або після `\n`, або початок тексту).
+                let at_line_start = line_start == i
+                    || (i > 0 && bytes[i - 1] == b'\n')
+                    || (i > 1 && bytes[i - 2] == b'\r' && bytes[i - 1] == b'\n');
+                if at_line_start {
+                    // Перевіряємо, що після `---` йде `\n` або кінець тексту
+                    // (щоб не сплутати з `---` у середині тексту).
+                    let after = i + 3;
+                    if after >= bytes.len() || bytes[after] == b'\n' || bytes[after] == b'\r' {
+                        return Some(i);
+                    }
+                }
+            }
+            i += 1;
+        }
+        if i < bytes.len() {
+            i += 1;
+        }
+    }
+    None
+}
+
+/// Перевіряє, чи є кирилична літера великою (А-Я, Ё, а також українські І, Ї, Є).
+fn is_cyrillic_uppercase(c: char) -> bool {
+    matches!(
+        c,
+        'А'..='Я' | 'Ё' | 'І' | 'Ї' | 'Є' | 'Ґ'
+    )
+}
+
+/// **Крок 1 (P0): знаходження індексу дієслова у реченні.**
+///
+/// Допоміжна функція для `parse_text_fallback` та `parse_text_to_instructions`.
+/// За заданим `Action` шукає позицію відповідного дієслова у `sentence_words`
+/// (масив слів після `split_whitespace`). Використовує той самий `contains`-підхід,
+/// що й оригінальний код пошуку kill-глагола.
+///
+/// # Логіка відповідності
+///
+/// - `Action::Kill` → шукає «убил»/«убить»/«застрелил»/«погубил»/«казнил»/«убивают».
+/// - `Action::Die` → шукає «умер»/«умерла»/«умерли»/«погиб»/«погибла»/«погибли».
+/// - `Action::Resurrect` → шукає «воскрес»/«воскресла»/«воскресли»/«ожил»/«ожила».
+/// - `Action::Speak` → шукає «сказал»/«говорит»/«говорят»/«ответил»/«спросил» +форми.
+/// - `Action::Arrive` → шукає «пошёл»/«пошла»/«пошли»/«пришёл»/«пришла»/«пришли».
+/// - `Action::Wound` → «ранил»/«ранила»/«ранили».
+/// - `Action::Imprison` → «запер»/«заперла»/«арестовал»/«арестовала».
+/// - `Action::Capture` → «арестовал»/«схвачен»/«пойман».
+/// - `Action::Free` → «освободил»/«выпустил»/«отпустил».
+/// - `Action::Heal` → «вылечил»/«лечил»/«исцелил».
+/// - Інші → `None` (не смертельна дія).
+fn find_verb_index(sentence_words: &[&str], action: &Action) -> Option<usize> {
+    let keywords: &[&str] = match action {
+        Action::Kill => &["убил", "убить", "застрелил", "погубил", "казнил", "убивают"],
+        Action::Die => &["умер", "умерла", "умерли", "погиб", "погибла", "погибли"],
+        Action::Resurrect => &["воскрес", "воскресла", "воскресли", "ожил", "ожила"],
+        Action::Speak { .. } => &[
+            "сказал", "сказала", "сказали", "говорит", "говорят",
+            "ответил", "ответила", "ответили", "спросил", "спросила", "спросили",
+        ],
+        Action::Arrive { .. } => &["пошёл", "пошла", "пошли", "пришёл", "пришла", "пришли"],
+        Action::Leave { .. } => &["ушёл", "ушла", "ушли", "вышел", "вышла", "вышли"],
+        Action::Wound => &["ранил", "ранила", "ранили"],
+        Action::Imprison => &["запер", "заперла", "арестовал", "арестовала"],
+        Action::Capture => &["арестовал", "схвачен", "пойман"],
+        Action::Free => &["освободил", "выпустил", "отпустил"],
+        Action::Heal => &["вылечил", "лечил", "исцелил"],
+        _ => return None,
+    };
+    sentence_words.iter().position(|w| {
+        let w_lc = w.to_lowercase();
+        // Прибираємо пунктуацію для надійнішого contains.
+        let clean: String = w_lc.chars().filter(|c| c.is_alphabetic()).collect();
+        keywords.iter().any(|kw| clean.contains(kw))
+    })
+}
+
 /// Резервный парсер: regex-based извлечение событий из русского текста без
 /// Python. Используется когда `svo_extract.py` недоступен (нет spaCy /
 /// pymorphy3 / интерпретатора).
@@ -2919,29 +3365,18 @@ pub fn parse_text_fallback(
     let regexes = fallback_regexes();
     let mut events: Vec<Event> = Vec::new();
 
-    // Итерируемся по предложениям через sentence_split regex.
-    // Границы: [0, match1.start), [match1.end, match2.start), ..., [last_end, text.len()).
-    let mut last_start = 0usize;
-    let mut boundaries: Vec<(usize, usize)> = Vec::new();
-
-    // Собираем все границы предложений.
-    for r in regexes.sentence_split.find_iter(text) {
-        match r {
-            Ok(m) => {
-                // Предложение заканчивается в m.start(), следующее начнётся в m.end().
-                boundaries.push((last_start, m.start()));
-                last_start = m.end();
-            }
-            Err(_) => continue,
-        }
-    }
-    // Последний «хвост» — после последнего разделителя до конца текста.
-    if last_start < text.len() {
-        boundaries.push((last_start, text.len()));
-    } else if boundaries.is_empty() {
-        // Вообще нет разделителей — весь текст одно предложение.
-        boundaries.push((0, text.len()));
-    }
+    // Крок 2 (P1): використовуємо розширене розбиття на речення.
+    //
+    // Раніше використовувався лише `regexes.sentence_split.find_iter` (тільки
+    // `[.!?…]+`), що не розбивав речення за `\n\n` або `\n[А-ЯЁ]`. Тепер
+    // `split_sentences_enhanced` також враховує:
+    // - подвійні переноси рядків (абзаци),
+    // - markdown-роздільники `---`,
+    // - одинарний `\n` з подальшою великою літерою (заголовки суб-глав).
+    //
+    // Це фіксить Bug #3 (заголовок «Наследство» потрапляв у речення з
+    // «Красс умер») та Bonus Bug #4 (markdown `---` відрізав авторський текст).
+    let boundaries: Vec<(usize, usize)> = split_sentences_enhanced(text, &regexes);
 
     for (sent_start, sent_end) in boundaries {
         if sent_end <= sent_start {
@@ -3016,6 +3451,45 @@ pub fn parse_text_fallback(
             None => continue, // Нет известного глагола — пропускаем предложение.
         };
 
+        // ── Крок 1 (P0): детектор заперечення «не/ні» ──
+        //
+        // Якщо перед дієсловом стоїть частка «не» (RU) або «ні» (UK), і
+        // дія смертельна (Kill, Die, Resurrect, Wound, Imprison, Free, Heal,
+        // Capture) — пропускаємо подію. Це фіксить Bug #1 («Марта не умерла»
+        // → без цього фільтра породжувало фантомний факт смерті).
+        //
+        // Для некритичних дій (Speak, Arrive) заперечення не фільтруємо —
+        // «не сказав» або «не прийшов» не створюють парадоксів.
+        let sentence_words: Vec<&str> = clean_sentence.split_whitespace().collect();
+        let verb_idx_opt = find_verb_index(&sentence_words, &action);
+        if let Some(vi) = verb_idx_opt {
+            if detect_negation_before_verb(&sentence_words, vi) {
+                let is_lethal_action = matches!(
+                    action,
+                    Action::Kill
+                        | Action::Die
+                        | Action::Resurrect
+                        | Action::Wound
+                        | Action::Imprison
+                        | Action::Capture
+                        | Action::Free
+                        | Action::Heal
+                );
+                if is_lethal_action {
+                    // Пропускаємо: «не умер» / «не убив» / «не воскрес».
+                    continue;
+                }
+            }
+        }
+
+        // ── Крок 4 (P2): евристика прикметників для актора ──
+        //
+        // Якщо fallback-актор (це перевіряється нижче) має закінчення
+        // прикметника (-ая/-яя/-ий/-ый/-ое/-ее/-ій/-їй) і не резолвиться
+        // через EntityResolver — це майже точно не персонаж, а метафора
+        // («Старая умерла», «Империя пала»). Перевірка виконується у фазі
+        // вибору актора нижче.
+
         // ── Wave 7: Actor extraction with speech attribution + stop-words ──
         //
         // Двухфазный алгоритм:
@@ -3038,7 +3512,7 @@ pub fn parse_text_fallback(
         // реальные имена «Грак», «Паша», «Веня».
         //
         // Если ни фаза 1, ни фаза 2 не дали актёра — пропускаем событие.
-        let sentence_words: Vec<&str> = clean_sentence.split_whitespace().collect();
+        // (sentence_words вже визначено вище для детектора заперечення.)
 
         // Wave 7: Target вычисляется ПЕРВЫМ (для needs_target действий),
         // чтобы Phase 2 (fallback на caps) могла исключить target из
@@ -3171,32 +3645,66 @@ pub fn parse_text_fallback(
             }
         }
 
-        // ── Фаза 2: fallback на caps (с фильтром стоп-слов) ──
+        // ── Фаза 2: fallback на caps (з покращеним вибором) ──
+        //
+        // Крок 2 (P1): якщо перший cap НЕ резолвиться через EntityResolver,
+        // це, ймовірно, заголовок суб-глави («Наследство», «Епілог»). У такому
+        // випадку пробуємо наступні caps, поки не знайдемо той, що резолвиться
+        // або виглядає як реальне ім'я. Якщо всі caps не резолвляться —
+        // повертаємось до першого (фантомна сущність).
+        //
+        // Крок 4 (P2): відкидаємо cap, схожий на прикметникову форму
+        // (-ая/-яя/-ое/-ее/-ие/-ые/-их/-ых/-ій/-їй), якщо він не резолвиться
+        // через EntityResolver. Це фіксить Bug #2 («Старая умерла»).
         let actor = match extracted_actor {
             Some(a) => a,
             None => {
-                // Ищем первое заглавное слово, которое НЕ стоп-слово
-                // и либо резолвится, либо имеет длину > 2.
-                let valid_cap = caps.iter().find(|cap| {
-                    // Wave 7: исключаем target (чтобы «Он убил Ревуна» не
-                    // взяло «Ревуна» как actor).
+                // Спершу шукаємо cap, який резолвиться через EntityResolver
+                // (це безпечно — відоме ім'я персонажа).
+                let resolved_cap = caps.iter().find(|cap| {
                     if let Some(ref t) = target {
                         if resolver.resolve(cap).as_ref() == Some(t) {
                             return false;
                         }
                     }
-                    // Известное имя в графе — берём, даже если оно формально
-                    // совпадает со стоп-словом (крайне редкий случай).
-                    if resolver.resolve(cap).is_some() {
-                        return true;
-                    }
-                    // Иначе — не стоп-слово и длина > 2.
-                    !is_russian_stop_word(cap) && cap.chars().count() > 2
+                    resolver.resolve(cap).is_some()
                 });
 
-                match valid_cap {
-                    Some(name) => resolver.resolve_or_keep(name),
-                    None => continue, // Только стоп-слова или пусто → пропускаем.
+                // Якщо знайшли резолвлений cap — беремо його.
+                if let Some(name) = resolved_cap {
+                    resolver.resolve_or_keep(name)
+                } else {
+                    // Інакше — шукаємо перший cap, який:
+                    //  1. НЕ є target.
+                    //  2. НЕ стоп-слово.
+                    //  3. НЕ виглядає як прикметник (Крок 4).
+                    //  4. Має довжину > 2.
+                    //
+                    // Це покриває Bug #3: якщо «Наследство» (не резолвиться,
+                    // не прикметник, довжина > 2) — воно пройде фільтр і стане
+                    // фантомною сущністю. Але якщо є інший cap ближче до
+                    // дієслова, що також проходить фільтр — беремо його.
+                    //
+                    // Для Bug #3 «Наследство\nКрасс умер» після розбиття на
+                    // речення «Наследство» і «Красс умер» — це окремі речення,
+                    // тому в реченні «Красс умер» лише один cap — «Красс».
+                    let valid_cap = caps.iter().find(|cap| {
+                        if let Some(ref t) = target {
+                            if resolver.resolve(cap).as_ref() == Some(t) {
+                                return false;
+                            }
+                        }
+                        // Крок 4: відкидаємо прикметникові форми.
+                        if looks_like_adjective_form(cap) {
+                            return false;
+                        }
+                        !is_russian_stop_word(cap) && cap.chars().count() > 2
+                    });
+
+                    match valid_cap {
+                        Some(name) => resolver.resolve_or_keep(name),
+                        None => continue, // Только стоп-слова или пусто → пропускаем.
+                    }
                 }
             }
         };
@@ -3258,20 +3766,9 @@ pub fn parse_text_to_instructions(
     let regexes = fallback_regexes();
     let mut instructions: Vec<SemanticInstruction> = Vec::new();
 
-    // Разбиваем на предложения (логика идентична parse_text_fallback).
-    let mut last_start = 0usize;
-    let mut boundaries: Vec<(usize, usize)> = Vec::new();
-    for r in regexes.sentence_split.find_iter(text) {
-        if let Ok(m) = r {
-            boundaries.push((last_start, m.start()));
-            last_start = m.end();
-        }
-    }
-    if last_start < text.len() {
-        boundaries.push((last_start, text.len()));
-    } else if boundaries.is_empty() {
-        boundaries.push((0, text.len()));
-    }
+    // Крок 2 (P1): використовуємо розширене розбиття на речення (ідентично
+    // parse_text_fallback). Дивись коментар у parse_text_fallback.
+    let boundaries: Vec<(usize, usize)> = split_sentences_enhanced(text, &regexes);
 
     for (sent_start, sent_end) in boundaries {
         if sent_end <= sent_start {
@@ -3313,6 +3810,44 @@ pub fn parse_text_to_instructions(
             };
 
         let sentence_words: Vec<&str> = clean_sentence.split_whitespace().collect();
+
+        // ── Крок 1 (P0): детектор заперечення «не/ні» перед дієсловом ──
+        //
+        // Якщо перед дієсловом стоїть частка «не» (RU) або «ні» (UK), і
+        // дія смертельна (kill/die/resurrect/arrive) — встановлюємо
+        // `negated=true` у синтетичному SvoTriplet. Далі lower_svo_to_ir
+        // прокине це в `SemanticInstruction.modifiers.is_negated`, а
+        // `validate()` відкине інструкцію (дивись правило в validate()).
+        //
+        // Це фіксить Bug #1 («Марта не умерла» → без цього породжувало
+        // фантомний факт смерті).
+        let temp_action = match verb_lemma {
+            "убить" => Action::Kill,
+            "умереть" => Action::Die,
+            "воскреснуть" => Action::Resurrect,
+            "сказать" => Action::Speak { topic: None },
+            "прийти" => Action::Arrive { destination: String::new() },
+            _ => Action::Custom {
+                polarity: VerbPolarity::Neutral,
+                verb_lemma: verb_lemma.to_string(),
+            },
+        };
+        let verb_idx_opt = find_verb_index(&sentence_words, &temp_action);
+        let detected_negation = verb_idx_opt
+            .map(|vi| detect_negation_before_verb(&sentence_words, vi))
+            .unwrap_or(false);
+        let is_lethal_verb = matches!(
+            temp_action,
+            Action::Kill | Action::Die | Action::Resurrect
+                | Action::Wound | Action::Imprison | Action::Capture
+                | Action::Free | Action::Heal
+        );
+        // Якщо смертельне дієслово заперечене — пропускаємо ще на цьому
+        // рівні (не будуємо синтетичний триплет). Це економить роботу
+        // lower_svo_to_ir + validate.
+        if detected_negation && is_lethal_verb {
+            continue;
+        }
 
         // Target extraction (для needs_target действий).
         let target_str = if needs_target {
@@ -3413,29 +3948,50 @@ pub fn parse_text_to_instructions(
             }
         }
 
-        // Fallback на caps.
+        // Fallback на caps (з покращеним вибором — Крок 2 + Крок 4).
         let actor_str = match extracted_actor {
             Some(a) => a,
             None => {
-                let valid_cap = caps.iter().find(|cap| {
+                // Спершу шукаємо cap, який резолвиться через EntityResolver.
+                let resolved_cap = caps.iter().find(|cap| {
                     if let Some(ref t) = target_str {
-                        if resolver.resolve(cap).as_ref() == resolver.resolve(t).as_ref() {
+                        // Порівнюємо як рядки (lowercase), бо resolver.resolve
+                        // поверне None для порожнього resolver, і тоді
+                        // None == None = true — що помилково відкине всі caps.
+                        if cap.to_lowercase() == t.to_lowercase() {
                             return false;
                         }
                     }
-                    if resolver.resolve(cap).is_some() {
-                        return true;
-                    }
-                    !is_russian_stop_word(cap) && cap.chars().count() > 2
+                    resolver.resolve(cap).is_some()
                 });
-                match valid_cap {
-                    Some(name) => name.clone(),
-                    None => continue,
+
+                if let Some(name) = resolved_cap {
+                    name.clone()
+                } else {
+                    // Інакше — перший cap, що проходить фільтр (не target,
+                    // не стоп-слово, не прикметник, довжина > 2).
+                    let valid_cap = caps.iter().find(|cap| {
+                        if let Some(ref t) = target_str {
+                            if cap.to_lowercase() == t.to_lowercase() {
+                                return false;
+                            }
+                        }
+                        if looks_like_adjective_form(cap) {
+                            return false;
+                        }
+                        !is_russian_stop_word(cap) && cap.chars().count() > 2
+                    });
+                    match valid_cap {
+                        Some(name) => name.clone(),
+                        None => continue,
+                    }
                 }
             }
         };
 
         // Строим синтетический SvoTriplet и прогоняем через lower_svo_to_ir.
+        // Крок 1 (P0): передаємо detected_negation у триплет (для некритичних
+        // дій, де ми не зробили continue вище — наприклад, «не сказав»).
         let triplet = SvoTriplet {
             subject: actor_str.clone(),
             subject_lemma: actor_str.to_lowercase(),
@@ -3449,7 +4005,7 @@ pub fn parse_text_to_instructions(
             position: sent_start,
             tense: "past".to_string(),
             polarity: polarity.to_string(),
-            negated: false,
+            negated: detected_negation,
             pronoun_resolved: false,
         };
 
@@ -9233,5 +9789,440 @@ mod tests {
         let anchor = anchor_from_position(50, &chapters);
         assert_eq!(anchor.chapter_num, 28);
         assert_eq!(anchor.chapter_suffix, None);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Крок 1 (P0): тести детектора заперечення «не/ні»
+    // ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_detect_negation_before_verb_basic() {
+        // «не умер» — частка одразу перед дієсловом.
+        let words: Vec<&str> = vec!["Марта", "не", "умерла"];
+        assert!(detect_negation_before_verb(&words, 2));
+
+        // «не просто убив» — 1 слово між «не» і дієсловом.
+        let words: Vec<&str> = vec!["Він", "не", "просто", "убив"];
+        assert!(detect_negation_before_verb(&words, 3));
+
+        // «він не умер» — 1 слово перед «не».
+        let words: Vec<&str> = vec!["він", "не", "умер"];
+        assert!(detect_negation_before_verb(&words, 2));
+
+        // Без «не» — false.
+        let words: Vec<&str> = vec!["Іван", "умер"];
+        assert!(!detect_negation_before_verb(&words, 1));
+
+        // «не» задалеко (4 слова) — не спрацьовує.
+        let words: Vec<&str> = vec!["не", "вчора", "тут", "далеко", "умер"];
+        assert!(!detect_negation_before_verb(&words, 4));
+
+        // Українське «ні».
+        let words: Vec<&str> = vec!["Він", "ні", "не", "помер"];
+        assert!(detect_negation_before_verb(&words, 3));
+
+        // Дієслово на початку — не може бути запереченим (нема слів перед).
+        let words: Vec<&str> = vec!["Умер"];
+        assert!(!detect_negation_before_verb(&words, 0));
+    }
+
+    #[test]
+    fn test_parse_text_to_instructions_filters_negated_death() {
+        // Bug #1: «Марта не умерла» не повинно породжувати CessationOfLife.
+        let resolver = EntityResolver::from_nodes(&[]);
+        let chapters: Vec<ParsedChapter> = vec![ParsedChapter {
+            num: 1, suffix: None,
+            title: "Глава 1".to_string(), body: String::new(),
+            full_text: String::new(), pos: 0, end: 1000,
+        }];
+
+        // Використовуємо російське «Иван» (з І кириличним), бо regex
+        // cap_word [А-ЯЁ][а-яё]+ не покриває українську «І».
+        let text = "Марта не умерла. Иван умер.";
+        let instructions = parse_text_to_instructions(text, &resolver, &chapters);
+
+        // Має бути лише одна інструкція (для Івана) — «Марта не умерла» фільтрується.
+        let deaths: Vec<_> = instructions.iter()
+            .filter(|ir| matches!(ir.predicate, SemanticPredicate::CessationOfLife))
+            .collect();
+        assert_eq!(
+            deaths.len(),
+            1,
+            "Має бути лише 1 CessationOfLife (Іван), got {}. All: {:?}",
+            deaths.len(),
+            instructions.iter().map(|i| i.summary()).collect::<Vec<_>>()
+        );
+
+        // Перевіряємо, що єдиний померлий — Іван (нормалізується через cognate).
+        let actor_norm = &deaths[0].actor_ref.normalized_token;
+        assert!(
+            actor_norm == "иван" || actor_norm == "іван",
+            "Актор має бути Иван/Іван (після нормалізації), got: {:?}",
+            actor_norm
+        );
+    }
+
+    #[test]
+    fn test_parse_text_to_instructions_filters_negated_kill() {
+        // «Рей не убил их» — не повинно породжувати LethalHarm.
+        let resolver = EntityResolver::from_nodes(&[]);
+        let chapters: Vec<ParsedChapter> = vec![ParsedChapter {
+            num: 1, suffix: None,
+            title: "Глава 1".to_string(), body: String::new(),
+            full_text: String::new(), pos: 0, end: 1000,
+        }];
+
+        let text = "Рей не убил их. Иван убил Петра.";
+        let instructions = parse_text_to_instructions(text, &resolver, &chapters);
+
+        let kills: Vec<_> = instructions.iter()
+            .filter(|ir| matches!(ir.predicate, SemanticPredicate::LethalHarm { .. }))
+            .collect();
+        assert_eq!(
+            kills.len(),
+            1,
+            "Має бути лише 1 LethalHarm (Іван), got {}. All: {:?}",
+            kills.len(),
+            instructions.iter().map(|i| i.summary()).collect::<Vec<_>>()
+        );
+        let actor_norm = &kills[0].actor_ref.normalized_token;
+        assert!(
+            actor_norm == "иван" || actor_norm == "іван",
+            "Актор має бути Иван/Іван (після нормалізації), got: {:?}",
+            actor_norm
+        );
+    }
+
+    #[test]
+    fn test_lower_to_event_negated_cessation_of_life() {
+        // Безпосередньо перевіряємо lower_to_event: negated CessationOfLife
+        // має мапитись на Action::Custom { verb_lemma: "__negated_die" }.
+        let ir = SemanticInstruction {
+            actor_ref: EntityRef {
+                raw_token: "Марта".to_string(),
+                normalized_token: "марта".to_string(),
+                resolved_id: None,
+                source_type: None,
+            },
+            predicate: SemanticPredicate::CessationOfLife,
+            target_ref: None,
+            modifiers: SemanticModifiers {
+                temporal_anchor: TemporalAnchor {
+                    chapter_num: 1,
+                    chapter_suffix: None,
+                    scene_index: None,
+                    char_offset: 100,
+                },
+                tense: "past".to_string(),
+                is_negated: true,
+                pronoun_resolved: false,
+            },
+            confidence: 0.5,
+            source_text: "Марта не умерла".to_string(),
+        };
+
+        let event = ir.lower_to_event();
+        match event.action {
+            Action::Custom { ref verb_lemma, .. } => {
+                assert_eq!(verb_lemma, "__negated_die");
+            }
+            ref a => panic!("Очікував Action::Custom{{__negated_die}}, got {:?}", a),
+        }
+    }
+
+    #[test]
+    fn test_validate_rejects_negated_lethal() {
+        // validate() має відкинути negated CessationOfLife з помилкою.
+        let ir = SemanticInstruction {
+            actor_ref: EntityRef {
+                raw_token: "Х".to_string(),
+                normalized_token: "х".to_string(),
+                resolved_id: None,
+                source_type: None,
+            },
+            predicate: SemanticPredicate::CessationOfLife,
+            target_ref: None,
+            modifiers: SemanticModifiers {
+                temporal_anchor: TemporalAnchor {
+                    chapter_num: 1,
+                    chapter_suffix: None,
+                    scene_index: None,
+                    char_offset: 100,
+                },
+                tense: "past".to_string(),
+                is_negated: true,
+                pronoun_resolved: false,
+            },
+            confidence: 0.5,
+            source_text: "Х не умер".to_string(),
+        };
+
+        let result = ir.validate();
+        assert!(result.is_err(), "validate() має відкинути negated CessationOfLife");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("negated lethal"),
+            "Помилка має містити 'negated lethal', got: {}",
+            err
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Крок 4 (P2): тести евристики прикметників
+    // ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_looks_like_adjective_form_russian() {
+        // RU прикметникові закінчення (специфічні).
+        assert!(looks_like_adjective_form("Старая"));    // -ая
+        assert!(looks_like_adjective_form("Имперская")); // -ая
+        assert!(looks_like_adjective_form("Золотое"));   // -ое
+        assert!(looks_like_adjective_form("Синее"));     // -ее
+        assert!(looks_like_adjective_form("Большие"));   // -ие
+        assert!(looks_like_adjective_form("Старые"));    // -ые
+        assert!(looks_like_adjective_form("Больших"));   // -их
+        assert!(looks_like_adjective_form("Старых"));    // -ых
+
+        // Реальні імена персонажів — НЕ прикметники (навіть ті, що
+        // закінчуються на -ой/-ий/-ей, які ми навмисно не включаємо).
+        assert!(!looks_like_adjective_form("Герой"));    // -ой (але це ім'я)
+        assert!(!looks_like_adjective_form("Григорий")); // -ий (але це ім'я)
+        assert!(!looks_like_adjective_form("Алексей"));  // -ей (але це ім'я)
+        assert!(!looks_like_adjective_form("Андрей"));   // -ей (але це ім'я)
+        assert!(!looks_like_adjective_form("Іван"));
+        assert!(!looks_like_adjective_form("Марта"));
+        assert!(!looks_like_adjective_form("Красс"));
+        assert!(!looks_like_adjective_form("Аэрон"));
+        assert!(!looks_like_adjective_form("Паша"));
+        assert!(!looks_like_adjective_form("Веня"));
+        assert!(!looks_like_adjective_form("Грак"));
+
+        // Короткі токени — не перевіряються.
+        assert!(!looks_like_adjective_form("Он"));
+        assert!(!looks_like_adjective_form("Не"));
+    }
+
+    #[test]
+    fn test_looks_like_adjective_form_ukrainian() {
+        // UK прикметникові закінчення (-ій/-їй).
+        assert!(looks_like_adjective_form("Зимній"));    // -ій
+        assert!(looks_like_adjective_form("Синій"));     // -ій
+        assert!(looks_like_adjective_form("Блакитній")); // -ій
+        assert!(looks_like_adjective_form("Святїй"));    // -їй (штучно)
+
+        // Реальні UK імена (навіть ті, що закінчуються на -ій, як «Святий»,
+        // який може бути і прикметником, і власне ім'ям — тому не відкидаємо).
+        assert!(!looks_like_adjective_form("Олекса"));
+        assert!(!looks_like_adjective_form("Тарас"));
+        assert!(!looks_like_adjective_form("Богдан"));
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Крок 2 (P1): тести розбиття на речення
+    // ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_split_sentences_enhanced_double_newline() {
+        // Bug #3: заголовок на окремому рядку має відокремлюватись від наступного речення.
+        let regexes = fallback_regexes();
+        let text = "Наследство\nКрасс умер.";
+        let boundaries = split_sentences_enhanced(text, &regexes);
+
+        // Має бути 2 речення: «Наследство» і «Красс умер.»
+        assert!(
+            boundaries.len() >= 2,
+            "Має бути ≥2 речення, got {}: {:?}",
+            boundaries.len(),
+            boundaries
+        );
+
+        // Перевіряємо, що «Наследство» відокремлено від «Красс умер».
+        let first: &str = &text[boundaries[0].0..boundaries[0].1];
+        assert!(
+            first.contains("Наследство") && !first.contains("умер"),
+            "Перше речення має містити «Наследство» і не містити «умер»: {:?}",
+            first
+        );
+    }
+
+    #[test]
+    fn test_split_sentences_enhanced_markdown_hr() {
+        // Bonus Bug #4: markdown `---` має розбивати речення.
+        let regexes = fallback_regexes();
+        let text = "Триадный Совет не убил его.\n---\nАэрон воскрес.";
+        let boundaries = split_sentences_enhanced(text, &regexes);
+
+        // Має бути ≥2 речення (одне до `---`, одне після).
+        // Проміжне «сміттєве» речення `\n---\n` може бути в списку,
+        // але воно відфільтрується пізніше (не містить дієслова).
+        assert!(
+            boundaries.len() >= 2,
+            "Має бути ≥2 речення після markdown HR, got {}",
+            boundaries.len()
+        );
+
+        // Перевіряємо, що принаймні одне речення містить «Триадный»
+        // і принаймні одне містить «Аэрон».
+        let has_triad = boundaries.iter().any(|(s, e)| text[*s..*e].contains("Триадный"));
+        let has_aeron = boundaries.iter().any(|(s, e)| text[*s..*e].contains("Аэрон"));
+        assert!(has_triad, "Має бути речення з «Триадный»");
+        assert!(has_aeron, "Має бути речення з «Аэрон»");
+
+        // Перевіряємо, що `---` не злився з текстом (не «убил его.---Аэрон»).
+        let has_merged = boundaries.iter().any(|(s, e)| {
+            let t = &text[*s..*e];
+            t.contains("его") && t.contains("Аэрон")
+        });
+        assert!(
+            !has_merged,
+            "Речення не має об'єднувати текст до і після `---`"
+        );
+    }
+
+    #[test]
+    fn test_strip_markdown_hr_replaces_hr_lines() {
+        // Простий тест: рядок `---` замінюється на порожній.
+        let input = "Текст 1\n---\nТекст 2";
+        let result = strip_markdown_hr(input);
+        assert!(
+            !result.contains("---"),
+            "Результат не має містити `---`: {:?}",
+            result
+        );
+        assert!(result.contains("Текст 1"));
+        assert!(result.contains("Текст 2"));
+
+        // `----` (4 дефіси) теж має прибиратись.
+        let input = "Текст\n----\nТекст 2";
+        let result = strip_markdown_hr(input);
+        assert!(!result.contains("----"));
+
+        // `---` у середині тексту НЕ чіпається.
+        let input = "Це текст---з дефісами";
+        let result = strip_markdown_hr(input);
+        assert!(
+            result.contains("---"),
+            "Внутрішні `---` не мають прибиратись: {:?}",
+            result
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Крок 2 (P1): тест вибору найближчого до дієслова cap
+    // ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_text_fallback_prefers_cap_near_verb() {
+        // Bug #3: заголовок «Наследство» на початку не має ставати актором,
+        // якщо ближче до дієслова є «Красс».
+        let resolver = EntityResolver::from_nodes(&[]);
+        let chapters: Vec<ParsedChapter> = vec![ParsedChapter {
+            num: 1, suffix: None,
+            title: "Глава 1".to_string(), body: String::new(),
+            full_text: String::new(), pos: 0, end: 1000,
+        }];
+
+        // Текст із заголовком суб-глави «Наследство».
+        let text = "Наследство\nКрасс умер.";
+        let events = parse_text_fallback(text, &resolver, &chapters);
+
+        // Має бути одна подія Death для Красса, а не для «Наследство».
+        let deaths: Vec<_> = events.iter()
+            .filter(|e| matches!(e.action, Action::Die))
+            .collect();
+        assert_eq!(
+            deaths.len(),
+            1,
+            "Має бути 1 Death (Красс), got {}",
+            deaths.len()
+        );
+        // Перевіряємо, що актор — Красс, а не «Наследство».
+        let actor_str = deaths[0].actor.to_string().to_lowercase();
+        assert!(
+            actor_str.contains("красс") || actor_str.contains("crass"),
+            "Актор має бути Красс, got: {:?}",
+            actor_str
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Крок 4 (P2): тест відсіювання прикметникових форм як акторів
+    // ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_text_fallback_rejects_adjective_actor() {
+        // Bug #2: «Старая... умерла» — «Старая» не має стати актором.
+        let resolver = EntityResolver::from_nodes(&[]);
+        let chapters: Vec<ParsedChapter> = vec![ParsedChapter {
+            num: 1, suffix: None,
+            title: "Глава 1".to_string(), body: String::new(),
+            full_text: String::new(), pos: 0, end: 1000,
+        }];
+
+        // «Старая» має закінчення -ая → прикметникова форма → відкидається.
+        let text = "Старая имперская бюрократия умерла вместе с Буфером.";
+        let events = parse_text_fallback(text, &resolver, &chapters);
+
+        let deaths: Vec<_> = events.iter()
+            .filter(|e| matches!(e.action, Action::Die))
+            .collect();
+        // Якщо є подія Death, актор не має бути «Старая».
+        for d in &deaths {
+            let actor_lc = d.actor.to_string().to_lowercase();
+            assert!(
+                !actor_lc.contains("старая"),
+                "«Старая» не має бути актором: {:?}",
+                actor_lc
+            );
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Інтеграційний тест: всі три фікси разом
+    // ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_text_to_instructions_combined_negation_adjectives_headings() {
+        // Комплексний тест: текст із усіма трьома проблемами одночасно.
+        let resolver = EntityResolver::from_nodes(&[]);
+        let chapters: Vec<ParsedChapter> = vec![ParsedChapter {
+            num: 1, suffix: None,
+            title: "Глава 1".to_string(), body: String::new(),
+            full_text: String::new(), pos: 0, end: 10000,
+        }];
+
+        let text = "Наследство\nКрасс умер.\n---\nМарта не умерла. Старая империя умерла. Аэрон убил врага.";
+        let instructions = parse_text_to_instructions(text, &resolver, &chapters);
+
+        // Має бути ≥2 інструкцій (Красс умер, Аэрон убив).
+        assert!(
+            instructions.len() >= 2,
+            "Має бути ≥2 інструкцій, got {}: {:?}",
+            instructions.len(),
+            instructions.iter().map(|i| i.summary()).collect::<Vec<_>>()
+        );
+
+        // Жодна інструкція не має актором «Марта» з CessationOfLife (не умерла).
+        let marta_deaths: Vec<_> = instructions.iter()
+            .filter(|ir| {
+                ir.actor_ref.normalized_token.contains("марта")
+                    && matches!(ir.predicate, SemanticPredicate::CessationOfLife)
+            })
+            .collect();
+        assert!(
+            marta_deaths.is_empty(),
+            "Марта не має фігурувати як померла: {:?}",
+            marta_deaths.iter().map(|i| i.summary()).collect::<Vec<_>>()
+        );
+
+        // Жодна інструкція не має актором «Старая».
+        let staraya_actors: Vec<_> = instructions.iter()
+            .filter(|ir| ir.actor_ref.normalized_token.contains("старая"))
+            .collect();
+        assert!(
+            staraya_actors.is_empty(),
+            "«Старая» не має бути актором: {:?}",
+            staraya_actors.iter().map(|i| i.summary()).collect::<Vec<_>>()
+        );
     }
 }

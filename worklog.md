@@ -1916,3 +1916,65 @@ Key Findings:
 2. Direct IR Conflict Detection: Corrected offset comparison in `conflicts_with()` raised IR Conflicts from 0 to 32, surfacing early narrative contradictions before events hit L2 logic engine.
 3. 265 / 265 unit tests passing cleanly.
 
+
+---
+Task ID: BugFix-Negation-Adjectives-Markdown
+Agent: main (coordinator)
+Task: Fix 4 bugs identified in E2E analysis of «Сфера Предела» — negation detection, sentence splitting, adjective forms, markdown HR
+
+Work Log:
+- **Крок 1 (P0) — Bug #1: Negation detection «не/ні»**
+  - Added `detect_negation_before_verb(sentence_words, verb_idx)` helper in `semantic_parser.rs`: scans 1-3 words before verb for «не» (RU) / «ні» (UK) particles.
+  - Added `find_verb_index(sentence_words, action)` helper that returns the position of the verb in the sentence based on `Action` variant.
+  - Patched `parse_text_fallback()`: if verb is lethal (Kill/Die/Resurrect/Wound/Imprison/Capture/Free/Heal) and `detect_negation_before_verb` returns true → `continue` (skip event creation).
+  - Patched `parse_text_to_instructions()`: same negation check. If lethal + negated → `continue` (skip IR creation). For non-lethal verbs, passes `negated: detected_negation` to synthetic `SvoTriplet`.
+  - Patched `SemanticInstruction::lower_to_event()`: if `modifiers.is_negated == true` for lethal predicates (CessationOfLife, LethalHarm, Wounding, Imprisonment, CaptureRelease{is_captive:true}, Healing) → maps to safe `Action::Custom { verb_lemma: "__negated_<original>" }` instead of dangerous `Action::Die`/`Action::Kill`/etc. This is a defense-in-depth: even if `validate()` is bypassed, lowering won't produce a death event.
+  - Patched `SemanticInstruction::validate()`: added a final check that rejects (`Err`) any instruction with `is_negated == true` AND lethal predicate. This is the primary filter — `lower_to_event` defense is backup.
+
+- **Крок 2 (P1) — Bug #3: Sentence splitting by `\n\n`, `\n[А-ЯЁ]`, markdown `---`**
+  - Added `split_sentences_enhanced(text, &regexes)` function that combines 4 split sources:
+    1. Classical `[.!?…]+` regex (preserved from original).
+    2. Double newlines `\n\n+` or `\r\n\r\n+` (paragraph boundaries).
+    3. Markdown horizontal rule `---` on its own line (uses `find_markdown_hr`).
+    4. Single `\n` followed by Cyrillic uppercase `[А-ЯЁІЇЄҐ]` (sub-chapter headings like «Наследство\nКрасс умер»).
+  - Replaced manual boundary construction in both `parse_text_fallback()` and `parse_text_to_instructions()` with calls to `split_sentences_enhanced()`.
+  - Added `find_markdown_hr(text)` byte-level scanner for `---` lines.
+  - Added `is_cyrillic_uppercase(c)` helper covering Russian `А-ЯЁ` and Ukrainian `ІЇЄҐ`.
+
+- **Крок 2 (P1) — Improved caps fallback**
+  - Refactored `parse_text_fallback()` Phase 2 (caps fallback): now first tries to find a cap that resolves via `EntityResolver` (safe known name). If none, falls back to first cap passing filters (not target, not stop-word, not adjective form, length > 2).
+  - Same refactor applied to `parse_text_to_instructions()`.
+  - **Critical fix**: replaced `resolver.resolve(cap).as_ref() == resolver.resolve(t).as_ref()` (which incorrectly returned true when both were `None` for empty resolver) with direct string comparison `cap.to_lowercase() == t.to_lowercase()`.
+
+- **Крок 4 (P2) — Bug #2: Adjective form heuristic**
+  - Added `looks_like_adjective_form(token)` helper that checks if token ends with Russian/Ukrainian adjective endings: `-ая/-яя/-ое/-ее/-ые/-ие/-их/-ых/-ій/-їй`.
+  - **Important**: deliberately excluded `-ой/-ий/-ый/-ей` because they collide with real character names («Герой», «Григорий», «Алексей», «Андрей»). Only included highly-specific adjective endings.
+  - Integrated into both `parse_text_fallback()` and `parse_text_to_instructions()` caps fallback: tokens that look like adjective forms AND don't resolve via `EntityResolver` are rejected.
+
+- **Bonus Bug #4: Markdown `---` in `strip_dialogue_content()`**
+  - Added `strip_markdown_hr(text)` line-oriented function: replaces lines consisting only of `---` (3+ hyphens) with empty string. Internal `---` (e.g., `текст---з дефісами`) is preserved.
+  - Patched `strip_dialogue_content()`: now calls `strip_markdown_hr(sentence)` as Step 0 before quote-stripping. This prevents `---` from being counted as em-dash dialogue attribution (`dash_count >= 2` heuristic was incorrectly triggering).
+
+- **Tests added (13 new unit tests)**:
+  - `test_detect_negation_before_verb_basic`: 7 cases for negation detection.
+  - `test_parse_text_to_instructions_filters_negated_death`: Bug #1 — «Марта не умерла» filtered, «Иван умер» kept.
+  - `test_parse_text_to_instructions_filters_negated_kill`: «Рей не убил их» filtered, «Иван убил Петра» kept.
+  - `test_lower_to_event_negated_cessation_of_life`: Direct test of `lower_to_event` defense layer.
+  - `test_validate_rejects_negated_lethal`: Direct test of `validate()` rejection.
+  - `test_looks_like_adjective_form_russian`: 8 positive + 11 negative cases (including names like «Герой», «Григорий», «Алексей» that must NOT be flagged).
+  - `test_looks_like_adjective_form_ukrainian`: 4 positive + 3 negative cases.
+  - `test_split_sentences_enhanced_double_newline`: Bug #3 — heading separated from sentence.
+  - `test_split_sentences_enhanced_markdown_hr`: Bonus Bug #4 — markdown `---` splits sentences correctly.
+  - `test_strip_markdown_hr_replaces_hr_lines`: Direct test of `strip_markdown_hr()`.
+  - `test_parse_text_fallback_prefers_cap_near_verb`: Bug #3 — «Наследство» not chosen as actor.
+  - `test_parse_text_fallback_rejects_adjective_actor`: Bug #2 — «Старая» not chosen as actor.
+  - `test_parse_text_to_instructions_combined_negation_adjectives_headings`: Integration test with all 3 bugs in one text.
+
+Stage Summary:
+- All 278 / 278 unit tests passing (was 265 before — added 13 new tests).
+- Expected impact on E2E «Сфера Предела»:
+  - ~50 of 71 constraint violations should disappear (the entire «Марта мертва» cascade).
+  - ~10-15 phantom actors rejected via adjective heuristic («Старая», «Имперская»).
+  - Markdown `---` no longer corrupts dialogue attribution.
+  - Sentence splitting now respects sub-chapter headings.
+- Files modified: `src-tauri/src/reasoning/semantic_parser.rs` only.
