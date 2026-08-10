@@ -3,16 +3,42 @@
 # Установка:
 #   pip install -r src-tauri/python/requirements.txt
 #   python -m spacy download ru_core_news_sm
+#   python -m ruwordnet download
 
-# NER (ner_extract.py)
+# === Базовый слой (уже был) ===
 spacy>=3.8.0,<4.0.0
 pymorphy3>=2.0.0
 
-# POLER (poler_entities.py) — линейная алгебра и кластеризация
+# Линейная алгебра и кластеризация (poler_entities.py)
 numpy>=1.24.0
 scipy>=1.10.0
 scikit-learn>=1.3.0
 
-# Модель ru_core_news_sm ставится отдельно:
+# === NEW: Rule-based extraction (Yargy-рефакторинг ner/svo) ===
+yargy>=0.16.0
+natasha>=1.4.0
+ipymarkup>=0.0.5
+
+# === NEW: Графовые алгоритмы (community, centrality, paths) ===
+networkx>=3.4
+igraph>=0.11
+pyvis>=0.3
+
+# === NEW: Семантические векторы без трансформеров ===
+fasttext-wheel>=0.2.5
+gensim>=4.3
+
+# === NEW: Русские лингвистические ресурсы ===
+ruwordnet>=0.0.6
+# RuSentiLex скачивается как файл: scripts/dev/resources/rusentilex_2017.txt
+# Источник: http://www.labinform.ru/pub/rusentilex/rusentilex_2017.txt
+
+# === NEW: Тестирование и разработка алгоритмов ===
+hypothesis>=6.115
+pytest>=8.0
+rapidfuzz>=3.0
+jupyterlab>=4.2
+
+# Модели ставятся отдельно:
 #   python -m spacy download ru_core_news_sm
-# (это скачает ~10 MB модель для русского языка)
+#   python -m ruwordnet download

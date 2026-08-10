@@ -48,3 +48,22 @@ resources/ua-linguistic/languagetool/
 resources/ua-linguistic/ud-ukrainian/
 resources/ua-linguistic/derivatives/*.bin
 resources/ua-linguistic/derivatives/*.json.gz
+
+# Python — dev workspace
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.ipynb_checkpoints/
+
+# Algorithm dev — vendored resources (downloaded, not committed)
+scripts/dev/resources/*.bin
+scripts/dev/resources/*.bin.gz
+scripts/dev/resources/cc.ru.300*
+scripts/dev/resources/ruwordnet*.db
+
+# Algorithm dev — generated visualizations
+scripts/dev/visualize/*.html
+
+# lib/ — vendored frontend deps, not our code
+lib/
