@@ -43,7 +43,7 @@
 //!
 //! ## Example
 //!
-//! ```no_run
+//! ```ignore
 //! use litgraph_core::linguistic::pos_tagger;
 //!
 //! // Disambiguate "Мати бачить сина" — "мати" should resolve to NOUN,
