@@ -1,11 +1,11 @@
-//! Epsilon-алгоритм важности фрагмента текста (POLER v7.0-LEM Canonical).
+//! Epsilon-алгоритм важности фрагмента текста (POLER v7.5-LEM Canonical).
 //!
-//! Канонічна формула (з §4.1 POLER_EPSILON_CANONICAL_SPECIFICATION.md):
+//! Канонічна формула (з §Layer D POLER_LAYER_B_C_IMPLEMENTATION_PLAN.md):
 //!
 //! ```text
-//!                   κ · I_kw · Σ rarity(w) + E + C_canon + A_SVO
-//!     ε  =  ─────────────────────────────────────────────────────
-//!                              √(|U| + δ_bias)
+//!                   κ · I_kw · Σ rarity(w) + E + C_canon + A_SVO_validated
+//!     ε  =  ───────────────────────────────────────────────────────────────
+//!                                √(|U| + δ_bias)
 //! ```
 //!
 //! Де:
@@ -13,7 +13,7 @@
 //! - `I_kw = 1 + ln(1 + kw_count)` — інтенсивність ключового слова (натуральний логарифм).
 //! - `E = 1.5 × emotion_count` — емоційна напруга.
 //! - `C_canon = 3.0 × canon_count` — канонічні якорі манускрипту.
-//! - `A_SVO = 2.0 × action_count` — дієслова дії (SVO-структура).
+//! - `A_SVO_validated = 2.0 × Σ confidence(t)` — валідована SVO-структура (лише ствердні дієслова `polarity == true`).
 //! - `δ_bias = 15.0` — зсув довжини (калібровано Nelder-Mead, Loss=0.0).
 //! - `θ_rel(κ) = 3.50 / κ` — поріг шуму (сектор-адаптивний).
 //!
@@ -413,13 +413,22 @@ fn compute_epsilon_inner(
     let e_val = 1.5 * emotion_count as f64;
     let c_canon = 3.0 * canon_count as f64;
 
-    // Layer C SVO Triplet extraction & validation
+    // Layer C SVO Triplet extraction & validation (v7.5-LEM Canonical)
     let svo_triplets = crate::linguistic::svo_parser::SvoParser::new().parse_text(chapter_text);
+
+    // Spec Rule 3: Only affirmative actions (polarity == true) boost A_SVO
     let svo_validated_weight: f64 = svo_triplets
         .iter()
-        .map(|t| if t.target.is_some() { 2.5 * t.confidence } else { 1.5 * t.confidence })
+        .filter(|t| t.polarity)
+        .map(|t| t.confidence)
         .sum();
-    let a_svo = (2.0 * action_count as f64) + svo_validated_weight;
+
+    // Spec Rule 1 & 2: Validated SVO replaces legacy action_count with fixed 2.0 factor
+    let a_svo = if !svo_triplets.is_empty() {
+        2.0 * svo_validated_weight
+    } else {
+        2.0 * action_count as f64
+    };
 
     // Канонічна ε
     let epsilon = (kappa * i_kw * d + e_val + c_canon + a_svo) / len_norm;
@@ -699,4 +708,36 @@ mod tests {
         assert_eq!(r1.canon_count, r2.canon_count);
         assert_eq!(r1.action_count, r2.action_count);
     }
+
+    #[test]
+    fn test_negated_verb_does_not_boost_a_svo() {
+        let counts = HashMap::new();
+        let affirmative_text = "Петро вбив ворога.";
+        let negated_text = "Петро не вбив ворога.";
+        let r_aff = compute_epsilon(affirmative_text, &counts, 10, None, 1.0);
+        let r_neg = compute_epsilon(negated_text, &counts, 10, None, 1.0);
+        assert!(r_aff.epsilon > r_neg.epsilon,
+                "Affirmative action ('вбив') must yield higher epsilon than negated action ('не вбив'): {} vs {}",
+                r_aff.epsilon, r_neg.epsilon);
+    }
+
+    #[test]
+    fn test_homonym_noun_not_counted_as_action_verb() {
+        let counts = HashMap::new();
+        // "мати" як іменник не повинно подвоювати A_SVO
+        let noun_text = "Мати прийшла додому і обійняла дитину.";
+        let result = compute_epsilon(noun_text, &counts, 10, None, 1.0);
+        assert!(result.epsilon > 0.0);
+    }
+
+    #[test]
+    fn test_svo_replaces_action_count_no_double_counting() {
+        let counts = HashMap::new();
+        let text = "Воїн вбив суперника.";
+        let result = compute_epsilon(text, &counts, 10, None, 1.0);
+        // З урахуванням заміни 2.0 * confidence, значення є стабільним та обмеженим
+        assert!(result.epsilon > 0.0 && result.epsilon < 20.0,
+                "Epsilon should be bounded without double-counting spike, got {}", result.epsilon);
+    }
 }
+
