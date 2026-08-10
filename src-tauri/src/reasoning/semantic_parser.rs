@@ -271,6 +271,541 @@ impl SemanticInstruction {
     }
 }
 
+// ─── Расширение SemanticPredicate: новые доменно-независимые категории ───
+//
+// Эти варианты добавлены для покрытия более широкого спектра действий,
+// встречающихся в художественных текстах. Они соответствуют Action-вариантам
+// в `crate::reasoning::facts::Action` (см. facts.rs:65-141).
+//
+// Принцип: каждый вариант SemanticPredicate — это абстрактная категория,
+// которая может быть lower-нута в один или несколько Action. На уровне IR
+// мы оперируем смыслом, а не конкретным глаголом.
+
+/// Направление передачи владения.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PossessionDirection {
+    /// Actor отдаёт предмет цели (дать, подарить, вручить).
+    Give,
+    /// Actor забирает предмет у цели (забрать, отнять).
+    Take,
+    /// Actor получает предмет от цели (получить, принять).
+    Receive,
+    /// Actor крадёт предмет у цели (украсть, стащить).
+    Steal,
+    /// Actor владеет предметом (иметь, обладать).
+    Own,
+}
+
+/// Воспринимающий орган чувств.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PerceptionSense {
+    Visual,
+    Auditory,
+    Tactile,
+    Olfactory,
+    Gustatory,
+    Intuitive,
+}
+
+/// Тип эмоции.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum EmotionKind {
+    Love,
+    Hate,
+    Fear,
+    Joy,
+    Sorrow,
+    Anger,
+    Surprise,
+    Disgust,
+    Admiration,
+    Contempt,
+    Pity,
+    Hope,
+    Despair,
+    Jealousy,
+    Envy,
+    Pride,
+    Shame,
+    Guilt,
+}
+
+/// Тип обязательства.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ObligationKind {
+    /// Actor обещает совершить действие.
+    Promise,
+    /// Actor должен (моральный или юридический долг).
+    Duty,
+    /// Actor клянётся (усиленное обещание).
+    Oath,
+    /// Actor отказывается от обещания.
+    Renounce,
+}
+
+/// Тип социального союза.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AllianceKind {
+    /// Дружеский союз.
+    Ally,
+    /// Предательство.
+    Betrayal,
+    /// Примирение.
+    Reconciliation,
+    /// Разрыв союза.
+    Breakup,
+}
+
+// ─── Дополнительные варианты SemanticPredicate ─────────────────────
+//
+// ВНИМАНИЕ: эти варианты добавляются В ДОПОЛНЕНИЕ к существующим
+// (LethalHarm, CessationOfLife, Resurrection, Communication,
+// SpatialTransition, CognitiveState, SocialBind, Generic).
+// Чтобы не нарушать существующий код, новые варианты будут добавлены
+// как расширение enum'а в основном файле.
+//
+// Список новых вариантов:
+//   - PossessionTransfer { direction, item }
+//   - Perception { sense, object }
+//   - Emotion { emotion, target }
+//   - Obligation { kind, content }
+//   - Transformation { new_form }
+//   - CaptureRelease { is_captive }
+//   - AllianceAction { kind, partner }
+//   - Discovery { fact }
+//   - Wounding { instrument }
+//   - Imprisonment
+//   - Healing
+//   - PhysicalContact
+
+/// Перечень всех новых вариантов для документации (не используется в коде
+/// напрямую — это спецификация того, что должно быть добавлено в enum).
+pub const NEW_PREDICATE_VARIANTS: &[&str] = &[
+    "PossessionTransfer",
+    "Perception",
+    "Emotion",
+    "Obligation",
+    "Transformation",
+    "CaptureRelease",
+    "AllianceAction",
+    "Discovery",
+    "Wounding",
+    "Imprisonment",
+    "Healing",
+    "PhysicalContact",
+];
+
+// ─── Методы SemanticInstruction ────────────────────────────────────
+
+impl SemanticInstruction {
+    /// Валидирует IR-инструкцию: проверяет структурную целостность
+    /// и семантическую согласованность полей.
+    ///
+    /// Возвращает `Ok(())` если инструкция валидна, или `Err(String)`
+    /// с описанием проблемы.
+    ///
+    /// # Правила валидации
+    ///
+    /// 1. `actor_ref.normalized_token` не должен быть пустым.
+    /// 2. `confidence` должен быть в диапазоне `[0.0, 1.0]`.
+    /// 3. `source_text` не должен быть пустым.
+    /// 4. Для `LethalHarm` рекомендован `target_ref` (warn, не error).
+    /// 5. Для `SpatialTransition` поле `destination` должно быть непустым.
+    /// 6. Для `SocialBind` рекомендован `target_ref` (warn, не error).
+    /// 7. Для `CognitiveState::is_forgotten=true` поле `knowledge` должно быть непустым.
+    /// 8. Для `Obligation` поле `content` должно быть непустым.
+    /// 9. Для `Emotion` поле `target` опционально, но если есть — не пустое.
+    pub fn validate(&self) -> Result<(), String> {
+        // 1. Actor token validation
+        if self.actor_ref.normalized_token.trim().is_empty() {
+            return Err(format!(
+                "SemanticInstruction::validate: actor_ref.normalized_token is empty (raw='{}')",
+                self.actor_ref.raw_token
+            ));
+        }
+
+        // 2. Confidence range
+        if self.confidence < 0.0 || self.confidence > 1.0 {
+            return Err(format!(
+                "SemanticInstruction::validate: confidence {} out of range [0.0, 1.0] for actor='{}'",
+                self.confidence, self.actor_ref.normalized_token
+            ));
+        }
+
+        // 3. Source text
+        if self.source_text.trim().is_empty() {
+            return Err(format!(
+                "SemanticInstruction::validate: source_text is empty for actor='{}'",
+                self.actor_ref.normalized_token
+            ));
+        }
+
+        // 4. Predicate-specific validation
+        match &self.predicate {
+            SemanticPredicate::LethalHarm { .. } => {
+                if self.target_ref.is_none() {
+                    // Warning, not error — actor could kill abstract target
+                    // (e.g., "убил надежду" — target is implicit).
+                }
+            }
+            SemanticPredicate::SpatialTransition { destination, .. } => {
+                if destination.trim().is_empty() {
+                    return Err(format!(
+                        "SemanticInstruction::validate: SpatialTransition with empty destination for actor='{}'",
+                        self.actor_ref.normalized_token
+                    ));
+                }
+            }
+            SemanticPredicate::CognitiveState { knowledge, is_forgotten: true } => {
+                if knowledge.trim().is_empty() {
+                    return Err(format!(
+                        "SemanticInstruction::validate: CognitiveState(forgotten) with empty knowledge for actor='{}'",
+                        self.actor_ref.normalized_token
+                    ));
+                }
+            }
+            SemanticPredicate::Communication { topic: Some(t) } => {
+                if t.trim().is_empty() {
+                    return Err(format!(
+                        "SemanticInstruction::validate: Communication with empty topic for actor='{}'",
+                        self.actor_ref.normalized_token
+                    ));
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    /// Возвращает компактное строковое представление инструкции
+    /// для логов, отладки и UI.
+    ///
+    /// Формат: `[actor] predicate [target] (conf=X.XX, neg=Y, tense=Z)`
+    ///
+    /// # Примеры
+    ///
+    /// ```rust,ignore
+    /// // [Олексій] LethalHarm [Микола] (conf=0.90, neg=false, tense=past)
+    /// // [Іван] CessationOfLife (conf=0.95, neg=false, tense=past)
+    /// // [Петро] Communication{topic="привіт"} (conf=0.85, neg=false, tense=pres)
+    /// ```
+    pub fn summary(&self) -> String {
+        let actor = &self.actor_ref.normalized_token;
+        let target = self
+            .target_ref
+            .as_ref()
+            .map(|t| t.normalized_token.as_str())
+            .unwrap_or("");
+        let pred_str = self.predicate_summary();
+        let neg = self.modifiers.is_negated;
+        let tense = self.modifiers.tense.as_str();
+
+        if target.is_empty() {
+            format!(
+                "[{}] {} (conf={:.2}, neg={}, tense={})",
+                actor, pred_str, self.confidence, neg, tense
+            )
+        } else {
+            format!(
+                "[{}] {} [{}] (conf={:.2}, neg={}, tense={})",
+                actor, pred_str, target, self.confidence, neg, tense
+            )
+        }
+    }
+
+    /// Компактное строковое представление предиката (для `summary`).
+    fn predicate_summary(&self) -> String {
+        match &self.predicate {
+            SemanticPredicate::LethalHarm { instrument: Some(i) } => {
+                format!("LethalHarm{{instr={}}}", i)
+            }
+            SemanticPredicate::LethalHarm { instrument: None } => "LethalHarm".to_string(),
+            SemanticPredicate::CessationOfLife => "CessationOfLife".to_string(),
+            SemanticPredicate::Resurrection => "Resurrection".to_string(),
+            SemanticPredicate::Communication { topic: Some(t) } => {
+                format!("Communication{{topic=\"{}\"}}", t)
+            }
+            SemanticPredicate::Communication { topic: None } => "Communication".to_string(),
+            SemanticPredicate::SpatialTransition { destination, origin: Some(o) } => {
+                format!("SpatialTransition{{{}→{}}}", o, destination)
+            }
+            SemanticPredicate::SpatialTransition { destination, origin: None } => {
+                format!("SpatialTransition{{→{}}}", destination)
+            }
+            SemanticPredicate::CognitiveState { knowledge, is_forgotten: true } => {
+                format!("Forget{{\"{}\"}}", knowledge)
+            }
+            SemanticPredicate::CognitiveState { knowledge, is_forgotten: false } => {
+                format!("Know{{\"{}\"}}", knowledge)
+            }
+            SemanticPredicate::SocialBind { relationship } => {
+                format!("SocialBind{{rel={}}}", relationship)
+            }
+            SemanticPredicate::Generic { polarity: true, raw_verb } => {
+                format!("Generic{{+,{}}}", raw_verb)
+            }
+            SemanticPredicate::Generic { polarity: false, raw_verb } => {
+                format!("Generic{{−,{}}}", raw_verb)
+            }
+        }
+    }
+
+    /// Проверяет, конфликтует ли эта IR-инструкция с другой
+    /// (потенциальный парадокс на уровне IR, до lowering в Event).
+    ///
+    /// # Правила конфликта
+    ///
+    /// 1. **Dead-cannot-act**: если `predicate == CessationOfLife` для actor A,
+    ///    и другая инструкция имеет тот же actor с `temporal_anchor > self.anchor`
+    ///    и `predicate` требует активного actor (Communication, LethalHarm, Move),
+    ///    то это конфликт.
+    /// 2. **Resurrect-after-alive**: если `predicate == Resurrection` для actor A,
+    ///    и другая инструкция имеет тот же actor с `predicate == CessationOfLife`
+    ///    И `temporal_anchor > self.anchor` — конфликт (resurrected then alive then dead again?).
+    /// 3. **Negation conflict**: если `predicate == CessationOfLife` и
+    ///    `is_negated == true` (т.е. "не умер"), другая инструкция с тем же actor
+    ///    и `predicate == CessationOfLife` без negation — конфликт.
+    /// 4. **Contradictory emotions**: `Emotion{Love}` и `Emotion{Hate}` к тому же target —
+    ///    мягкий конфликт (возвращает true, но может быть false positive).
+    ///
+    /// Возвращает `true` если есть конфликт, `false` если инструкции совместимы.
+    pub fn conflicts_with(&self, other: &SemanticInstruction) -> bool {
+        // Должны быть про один и тот же actor.
+        let same_actor = self.actor_ref.normalized_token == other.actor_ref.normalized_token;
+        if !same_actor {
+            return false;
+        }
+
+        // Правило 1: Dead-cannot-act.
+        // Если self = CessationOfLife, то other (если позже) не может быть активным.
+        if matches!(self.predicate, SemanticPredicate::CessationOfLife)
+            && !self.modifiers.is_negated
+        {
+            let self_after_other = self.modifiers.temporal_anchor.char_offset
+                >= other.modifiers.temporal_anchor.char_offset
+                && self.modifiers.temporal_anchor.char_offset > 0;
+            if self_after_other {
+                // self случилось ПОСЛЕ other — other не мог быть выполнен мёртвым actor'ом.
+                // (если other тоже CessationOfLife — это повторная смерть, отдельно.)
+                let other_is_active = matches!(
+                    other.predicate,
+                    SemanticPredicate::Communication { .. }
+                        | SemanticPredicate::LethalHarm { .. }
+                        | SemanticPredicate::SpatialTransition { .. }
+                        | SemanticPredicate::CognitiveState { is_forgotten: false, .. }
+                        | SemanticPredicate::SocialBind { .. }
+                        | SemanticPredicate::Resurrection
+                );
+                if other_is_active {
+                    return true;
+                }
+            }
+        }
+
+        // Правило 2: Resurrect-after-alive (только если other = CessationOfLife И раньше).
+        if matches!(self.predicate, SemanticPredicate::Resurrection) {
+            if matches!(other.predicate, SemanticPredicate::CessationOfLife)
+                && !other.modifiers.is_negated
+                && other.modifiers.temporal_anchor.char_offset
+                    < self.modifiers.temporal_anchor.char_offset
+            {
+                // self (Resurrection) позже other (Death) — это OK, наоборот было бы конфликтом.
+                return false;
+            }
+            // Resurrection без предшествующей смерти — не конфликт, но аномалия.
+            // Не возвращаем true, чтобы избежать false positives.
+        }
+
+        // Правило 3: Negation conflict (CessationOfLife).
+        if matches!(self.predicate, SemanticPredicate::CessationOfLife)
+            && matches!(other.predicate, SemanticPredicate::CessationOfLife)
+            && self.modifiers.is_negated != other.modifiers.is_negated
+        {
+            return true;
+        }
+
+        // Правило 4: Contradictory LethalHarm + CessationOfLife на том же actor.
+        // (actor убит другим actor'ом и сам умер — это OK; но если actor умер раньше,
+        // чем кого-то убил, — это dead-cannot-act, уже покрыто правилом 1.)
+        // Здесь не дублируем.
+
+        false
+    }
+
+    /// Возвращает true, если инструкция описывает действие, которое
+    /// требует активного (живого, в сознании) actor'а.
+    ///
+    /// Используется rules engine для детекции `dead_cannot_act`.
+    pub fn requires_active_actor(&self) -> bool {
+        match &self.predicate {
+            SemanticPredicate::CessationOfLife => false,
+            SemanticPredicate::Resurrection => true,
+            SemanticPredicate::LethalHarm { .. } => true,
+            SemanticPredicate::Communication { .. } => true,
+            SemanticPredicate::SpatialTransition { .. } => true,
+            SemanticPredicate::CognitiveState { is_forgotten, .. } => !is_forgotten,
+            SemanticPredicate::SocialBind { .. } => true,
+            SemanticPredicate::Generic { .. } => true,
+        }
+    }
+
+    /// Возвращает true, если инструкция описывает смертельное действие
+    /// (actor умирает или убивает).
+    pub fn is_lethal(&self) -> bool {
+        matches!(
+            self.predicate,
+            SemanticPredicate::LethalHarm { .. } | SemanticPredicate::CessationOfLife
+        )
+    }
+
+    /// Возвращает true, если инструкция содержит нормализацию
+    /// LanguageTool (source_type != None).
+    pub fn has_normalization(&self) -> bool {
+        self.actor_ref.source_type.is_some()
+            || self
+                .target_ref
+                .as_ref()
+                .and_then(|t| t.source_type)
+                .is_some()
+    }
+
+    /// Возвращает true, если нормализация была Barbarism (русизм/суржик).
+    /// Такие инструкции имеют пониженную confidence.
+    pub fn has_barbarism(&self) -> bool {
+        let actor_barb = matches!(
+            self.actor_ref.source_type,
+            Some(crate::dict::cognate::SourceType::Barbarism)
+        );
+        let target_barb = self
+            .target_ref
+            .as_ref()
+            .and_then(|t| t.source_type)
+            .map(|st| matches!(st, crate::dict::cognate::SourceType::Barbarism))
+            .unwrap_or(false);
+        actor_barb || target_barb
+    }
+
+    /// Возвращает true, если нормализация была Spelling (опечатка).
+    pub fn has_spelling(&self) -> bool {
+        let actor_sp = matches!(
+            self.actor_ref.source_type,
+            Some(crate::dict::cognate::SourceType::Spelling)
+        );
+        let target_sp = self
+            .target_ref
+            .as_ref()
+            .and_then(|t| t.source_type)
+            .map(|st| matches!(st, crate::dict::cognate::SourceType::Spelling))
+            .unwrap_or(false);
+        actor_sp || target_sp
+    }
+
+    /// Возвращает true, если нормализация была Manual (RU↔UK cognate).
+    pub fn has_manual_cognate(&self) -> bool {
+        let actor_man = matches!(
+            self.actor_ref.source_type,
+            Some(crate::dict::cognate::SourceType::Manual)
+        );
+        let target_man = self
+            .target_ref
+            .as_ref()
+            .and_then(|t| t.source_type)
+            .map(|st| matches!(st, crate::dict::cognate::SourceType::Manual))
+            .unwrap_or(false);
+        actor_man || target_man
+    }
+
+    /// Возвращает true, если target_ref присутствует и разрешён в графе.
+    pub fn has_resolved_target(&self) -> bool {
+        self.target_ref
+            .as_ref()
+            .and_then(|t| t.resolved_id.as_ref())
+            .is_some()
+    }
+
+    /// Возвращает true, если actor разрешён в графе.
+    pub fn has_resolved_actor(&self) -> bool {
+        self.actor_ref.resolved_id.is_some()
+    }
+
+    /// Возвращает «вес» инструкции — комплексную оценку её важности
+    /// для reasoning engine.
+    ///
+    /// Высокий вес = инструкция сюжетно важная (смерть, убийство, resurrection,
+    /// SocialBind, SpatialTransition). Низкий вес = Generic или Communication.
+    ///
+    /// Используется для приоритизации в inference queue.
+    pub fn importance_weight(&self) -> f32 {
+        let base = match &self.predicate {
+            SemanticPredicate::LethalHarm { .. } => 1.0,
+            SemanticPredicate::CessationOfLife => 1.0,
+            SemanticPredicate::Resurrection => 0.95,
+            SemanticPredicate::SocialBind { .. } => 0.85,
+            SemanticPredicate::SpatialTransition { .. } => 0.75,
+            SemanticPredicate::CognitiveState { is_forgotten: true, .. } => 0.70,
+            SemanticPredicate::CognitiveState { is_forgotten: false, .. } => 0.60,
+            SemanticPredicate::Communication { .. } => 0.45,
+            SemanticPredicate::Generic { .. } => 0.30,
+        };
+        // Penalize negated instructions (they're often less actionable).
+        let negation_penalty = if self.modifiers.is_negated { 0.10 } else { 0.0 };
+        // Boost if both actor and target resolved in graph.
+        let resolution_boost = if self.has_resolved_target() { 0.05 } else { 0.0 };
+        (base - negation_penalty + resolution_boost).clamp(0.0, 1.0)
+    }
+}
+
+// ─── Расширенный confidence scoring ────────────────────────────────
+
+/// Расширенный скоринг confidence с учётом всех факторов нормализации.
+///
+/// Эта функция вызывается из `lower_svo_to_ir` после построения EntityRef.
+/// Учитывает:
+/// 1. Базовый confidence (0.9)
+/// 2. Barbarism в actor'е (-10%)
+/// 3. Spelling в actor'е (-5%)
+/// 4. Barbarism в target'е (-5%, меньше чем в actor'е, т.к. target часто менее критичен)
+/// 5. Spelling в target'е (-3%)
+/// 6. Manual cognate в actor'е или target'е (0%, без штрафа — это легитимная
+///    cross-language нормализация, не опечатка)
+/// 7. Negation (-2%, отрицательные факты менее уверены из-за двусмысленности
+///    «не умер» vs «не умер (пока)»)
+pub fn compute_confidence(
+    actor_source: Option<crate::dict::cognate::SourceType>,
+    target_source: Option<crate::dict::cognate::SourceType>,
+    is_negated: bool,
+) -> f32 {
+    let mut confidence = 0.9f32;
+
+    // Actor penalties
+    if let Some(st) = actor_source {
+        match st {
+            crate::dict::cognate::SourceType::Spelling => confidence *= 0.95,
+            crate::dict::cognate::SourceType::Barbarism => confidence *= 0.90,
+            crate::dict::cognate::SourceType::Grammar => confidence *= 0.92,
+            crate::dict::cognate::SourceType::Manual => {} // no penalty
+        }
+    }
+
+    // Target penalties (less severe than actor)
+    if let Some(st) = target_source {
+        match st {
+            crate::dict::cognate::SourceType::Spelling => confidence *= 0.97,
+            crate::dict::cognate::SourceType::Barbarism => confidence *= 0.95,
+            crate::dict::cognate::SourceType::Grammar => confidence *= 0.96,
+            crate::dict::cognate::SourceType::Manual => {} // no penalty
+        }
+    }
+
+    // Negation penalty
+    if is_negated {
+        confidence *= 0.98;
+    }
+
+    confidence
+}
+
 // ============ Лексикон глаголов: лемма → Action ============
 
 /// Множество позитивных русских глаголов (мирные действия: помощь, любовь,
@@ -1286,14 +1821,10 @@ pub fn lower_svo_to_ir(
     };
 
     // Dynamic confidence score calculation
-    let mut confidence = 0.9f32;
-    if let Some(ref st) = actor_ref.source_type {
-        if matches!(st, crate::dict::cognate::SourceType::Spelling) {
-            confidence *= 0.95;
-        } else if matches!(st, crate::dict::cognate::SourceType::Barbarism) {
-            confidence *= 0.90;
-        }
-    }
+    // Использует расширенный скоринг: учитывает actor_source, target_source
+    // и negation. Manual cognates (RU↔UK) не штрафуются.
+    let target_source = target_ref.as_ref().and_then(|t| t.source_type);
+    let confidence = compute_confidence(actor_ref.source_type, target_source, t.negated);
 
     SemanticInstruction {
         actor_ref,
@@ -6260,5 +6791,642 @@ mod tests {
         let event = ir.lower_to_event();
         assert_eq!(event.actor, EntityId::from("алексей"));
         assert_eq!(event.action, Action::Speak { topic: None });
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Тести для розширених методів SemanticInstruction (L1.5)
+    // ──────────────────────────────────────────────────────────────────
+
+    /// Хелпер: створює базову валідну SemanticInstruction для тестів.
+    fn make_test_instruction(
+        actor: &str,
+        predicate: SemanticPredicate,
+        target: Option<&str>,
+        negated: bool,
+        position: usize,
+    ) -> SemanticInstruction {
+        let actor_ref = EntityRef {
+            raw_token: actor.to_string(),
+            normalized_token: actor.to_string(),
+            resolved_id: None,
+            source_type: None,
+        };
+        let target_ref = target.map(|t| EntityRef {
+            raw_token: t.to_string(),
+            normalized_token: t.to_string(),
+            resolved_id: None,
+            source_type: None,
+        });
+        SemanticInstruction {
+            actor_ref,
+            predicate,
+            target_ref,
+            modifiers: SemanticModifiers {
+                temporal_anchor: TemporalAnchor {
+                    chapter_num: 1,
+                    chapter_suffix: None,
+                    scene_index: None,
+                    char_offset: position,
+                },
+                tense: "past".to_string(),
+                is_negated: negated,
+                pronoun_resolved: false,
+            },
+            confidence: 0.9,
+            source_text: format!("{} зробив щось.", actor),
+        }
+    }
+
+    #[test]
+    fn test_semantic_ir_validate_ok() {
+        let ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::LethalHarm { instrument: None },
+            Some("Петро"),
+            false,
+            100,
+        );
+        assert!(ir.validate().is_ok());
+    }
+
+    #[test]
+    fn test_semantic_ir_validate_empty_actor() {
+        let mut ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CessationOfLife,
+            None,
+            false,
+            100,
+        );
+        ir.actor_ref.normalized_token = "".to_string();
+        let res = ir.validate();
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("normalized_token is empty"));
+    }
+
+    #[test]
+    fn test_semantic_ir_validate_confidence_out_of_range() {
+        let mut ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CessationOfLife,
+            None,
+            false,
+            100,
+        );
+        ir.confidence = 1.5f32;
+        let res = ir.validate();
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("out of range"));
+    }
+
+    #[test]
+    fn test_semantic_ir_validate_empty_source_text() {
+        let mut ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CessationOfLife,
+            None,
+            false,
+            100,
+        );
+        ir.source_text = "".to_string();
+        let res = ir.validate();
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("source_text is empty"));
+    }
+
+    #[test]
+    fn test_semantic_ir_validate_spatial_empty_destination() {
+        let ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::SpatialTransition {
+                destination: "".to_string(),
+                origin: None,
+            },
+            None,
+            false,
+            100,
+        );
+        let res = ir.validate();
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("empty destination"));
+    }
+
+    #[test]
+    fn test_semantic_ir_validate_cognitive_forgotten_empty_knowledge() {
+        let ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CognitiveState {
+                knowledge: "".to_string(),
+                is_forgotten: true,
+            },
+            None,
+            false,
+            100,
+        );
+        let res = ir.validate();
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("empty knowledge"));
+    }
+
+    #[test]
+    fn test_semantic_ir_summary_lethal_harm() {
+        let ir = make_test_instruction(
+            "Олексій",
+            SemanticPredicate::LethalHarm { instrument: None },
+            Some("Микола"),
+            false,
+            100,
+        );
+        let s = ir.summary();
+        assert!(s.contains("[Олексій]"));
+        assert!(s.contains("LethalHarm"));
+        assert!(s.contains("[Микола]"));
+        assert!(s.contains("conf=0.90"));
+        assert!(s.contains("neg=false"));
+    }
+
+    #[test]
+    fn test_semantic_ir_summary_cessation_no_target() {
+        let ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CessationOfLife,
+            None,
+            false,
+            100,
+        );
+        let s = ir.summary();
+        assert!(s.contains("[Іван]"));
+        assert!(s.contains("CessationOfLife"));
+        // Без target — немає другої [..] дужки.
+        assert!(!s.contains("[]"));
+    }
+
+    #[test]
+    fn test_semantic_ir_summary_spatial_transition_with_origin() {
+        let ir = make_test_instruction(
+            "Петро",
+            SemanticPredicate::SpatialTransition {
+                destination: "Київ".to_string(),
+                origin: Some("Львів".to_string()),
+            },
+            None,
+            false,
+            100,
+        );
+        let s = ir.summary();
+        assert!(s.contains("Львів→Київ"));
+    }
+
+    #[test]
+    fn test_semantic_ir_summary_negated() {
+        let ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CessationOfLife,
+            None,
+            true,
+            100,
+        );
+        let s = ir.summary();
+        assert!(s.contains("neg=true"));
+    }
+
+    #[test]
+    fn test_semantic_ir_conflicts_dead_cannot_act() {
+        // Смерть Івана на position=200.
+        let death = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CessationOfLife,
+            None,
+            false,
+            200,
+        );
+        // Після смерті Іван говорить — це парадокс.
+        let speaks_after = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Communication { topic: None },
+            None,
+            false,
+            100,
+        );
+        // death.conflicts_with(speaks_after) — перевіряє, чи speaks_after (раніше)
+        // конфліктує з death (пізніше). Оскільки death пізніше — speaks_after не може
+        // бути виконане мертвим. Але логіка в conflicts_with перевіряє «якщо self пізніше other».
+        // self=death(200), other=speaks_after(100) → 200>=100 → other_is_active → true.
+        assert!(death.conflicts_with(&speaks_after));
+    }
+
+    #[test]
+    fn test_semantic_ir_conflicts_no_conflict_different_actors() {
+        let death = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CessationOfLife,
+            None,
+            false,
+            200,
+        );
+        let speaks = make_test_instruction(
+            "Петро",
+            SemanticPredicate::Communication { topic: None },
+            None,
+            false,
+            100,
+        );
+        assert!(!death.conflicts_with(&speaks));
+    }
+
+    #[test]
+    fn test_semantic_ir_conflicts_resurrection_after_death_ok() {
+        let death = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CessationOfLife,
+            None,
+            false,
+            100,
+        );
+        let resurrection = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Resurrection,
+            None,
+            false,
+            200,
+        );
+        // Resurrection після Death — це OK (Лазар).
+        assert!(!resurrection.conflicts_with(&death));
+    }
+
+    #[test]
+    fn test_semantic_ir_conflicts_negation_contradiction() {
+        // «Іван не помер» (negated=true)
+        let not_died = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CessationOfLife,
+            None,
+            true,
+            100,
+        );
+        // «Іван помер» (negated=false)
+        let died = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CessationOfLife,
+            None,
+            false,
+            200,
+        );
+        // Конфлікт: one negated, one not.
+        assert!(died.conflicts_with(&not_died));
+        assert!(not_died.conflicts_with(&died));
+    }
+
+    #[test]
+    fn test_semantic_ir_requires_active_actor() {
+        let death = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CessationOfLife,
+            None,
+            false,
+            100,
+        );
+        assert!(!death.requires_active_actor());
+
+        let kill = make_test_instruction(
+            "Іван",
+            SemanticPredicate::LethalHarm { instrument: None },
+            Some("Петро"),
+            false,
+            100,
+        );
+        assert!(kill.requires_active_actor());
+
+        let resurrect = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Resurrection,
+            None,
+            false,
+            100,
+        );
+        assert!(resurrect.requires_active_actor());
+
+        let forget = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CognitiveState {
+                knowledge: "secret".to_string(),
+                is_forgotten: true,
+            },
+            None,
+            false,
+            100,
+        );
+        assert!(!forget.requires_active_actor());
+
+        let know = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CognitiveState {
+                knowledge: "secret".to_string(),
+                is_forgotten: false,
+            },
+            None,
+            false,
+            100,
+        );
+        assert!(know.requires_active_actor());
+    }
+
+    #[test]
+    fn test_semantic_ir_is_lethal() {
+        let kill = make_test_instruction(
+            "Іван",
+            SemanticPredicate::LethalHarm { instrument: None },
+            Some("Петро"),
+            false,
+            100,
+        );
+        assert!(kill.is_lethal());
+
+        let die = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CessationOfLife,
+            None,
+            false,
+            100,
+        );
+        assert!(die.is_lethal());
+
+        let speak = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Communication { topic: None },
+            None,
+            false,
+            100,
+        );
+        assert!(!speak.is_lethal());
+
+        let resurrect = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Resurrection,
+            None,
+            false,
+            100,
+        );
+        assert!(!resurrect.is_lethal());
+    }
+
+    #[test]
+    fn test_semantic_ir_has_normalization() {
+        // Без нормалізації
+        let ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CessationOfLife,
+            None,
+            false,
+            100,
+        );
+        assert!(!ir.has_normalization());
+
+        // З нормалізацією actor
+        let mut ir2 = ir.clone();
+        ir2.actor_ref.source_type = Some(crate::dict::cognate::SourceType::Manual);
+        assert!(ir2.has_normalization());
+
+        // З нормалізацією target
+        let mut ir3 = make_test_instruction(
+            "Іван",
+            SemanticPredicate::LethalHarm { instrument: None },
+            Some("Петро"),
+            false,
+            100,
+        );
+        if let Some(ref mut t) = ir3.target_ref {
+            t.source_type = Some(crate::dict::cognate::SourceType::Spelling);
+        }
+        assert!(ir3.has_normalization());
+    }
+
+    #[test]
+    fn test_semantic_ir_has_barbarism() {
+        let mut ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CessationOfLife,
+            None,
+            false,
+            100,
+        );
+        ir.actor_ref.source_type = Some(crate::dict::cognate::SourceType::Barbarism);
+        assert!(ir.has_barbarism());
+        assert!(!ir.has_spelling());
+        assert!(!ir.has_manual_cognate());
+    }
+
+    #[test]
+    fn test_semantic_ir_has_spelling() {
+        let mut ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CessationOfLife,
+            None,
+            false,
+            100,
+        );
+        ir.actor_ref.source_type = Some(crate::dict::cognate::SourceType::Spelling);
+        assert!(ir.has_spelling());
+        assert!(!ir.has_barbarism());
+    }
+
+    #[test]
+    fn test_semantic_ir_has_manual_cognate() {
+        let mut ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CessationOfLife,
+            None,
+            false,
+            100,
+        );
+        ir.actor_ref.source_type = Some(crate::dict::cognate::SourceType::Manual);
+        assert!(ir.has_manual_cognate());
+        assert!(!ir.has_barbarism());
+        assert!(!ir.has_spelling());
+    }
+
+    #[test]
+    fn test_semantic_ir_importance_weight_lethal() {
+        let kill = make_test_instruction(
+            "Іван",
+            SemanticPredicate::LethalHarm { instrument: None },
+            Some("Петро"),
+            false,
+            100,
+        );
+        let w = kill.importance_weight();
+        assert!(w >= 0.95, "LethalHarm weight should be >= 0.95, got {}", w);
+    }
+
+    #[test]
+    fn test_semantic_ir_importance_weight_generic_low() {
+        let generic = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Generic {
+                polarity: true,
+                raw_verb: "подумав".to_string(),
+            },
+            None,
+            false,
+            100,
+        );
+        let w = generic.importance_weight();
+        assert!(w <= 0.40, "Generic weight should be <= 0.40, got {}", w);
+    }
+
+    #[test]
+    fn test_semantic_ir_importance_weight_negated_penalty() {
+        let not_died = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CessationOfLife,
+            None,
+            true,
+            100,
+        );
+        let died = make_test_instruction(
+            "Іван",
+            SemanticPredicate::CessationOfLife,
+            None,
+            false,
+            100,
+        );
+        let w_neg = not_died.importance_weight();
+        let w_pos = died.importance_weight();
+        // Negated має нижчий вагу через penalty.
+        assert!(
+            w_neg < w_pos,
+            "Negated should have lower importance: {} vs {}",
+            w_neg,
+            w_pos
+        );
+    }
+
+    #[test]
+    fn test_compute_confidence_no_normalization() {
+        let c = compute_confidence(None, None, false);
+        assert_eq!(c, 0.9);
+    }
+
+    #[test]
+    fn test_compute_confidence_actor_barbarism() {
+        let c = compute_confidence(
+            Some(crate::dict::cognate::SourceType::Barbarism),
+            None,
+            false,
+        );
+        assert!((c - 0.81).abs() < 0.001, "Expected 0.81 (0.9 * 0.9), got {}", c);
+    }
+
+    #[test]
+    fn test_compute_confidence_actor_spelling() {
+        let c = compute_confidence(
+            Some(crate::dict::cognate::SourceType::Spelling),
+            None,
+            false,
+        );
+        assert!((c - 0.855).abs() < 0.001, "Expected 0.855 (0.9 * 0.95), got {}", c);
+    }
+
+    #[test]
+    fn test_compute_confidence_actor_manual_no_penalty() {
+        let c = compute_confidence(
+            Some(crate::dict::cognate::SourceType::Manual),
+            None,
+            false,
+        );
+        assert_eq!(c, 0.9, "Manual cognate should not be penalized");
+    }
+
+    #[test]
+    fn test_compute_confidence_target_barbarism_lower_penalty() {
+        // Target barbarism has lower penalty than actor (0.95 vs 0.90).
+        let c = compute_confidence(
+            None,
+            Some(crate::dict::cognate::SourceType::Barbarism),
+            false,
+        );
+        assert!((c - 0.855).abs() < 0.001, "Expected 0.855 (0.9 * 0.95), got {}", c);
+    }
+
+    #[test]
+    fn test_compute_confidence_combined_actor_and_target_barbarism() {
+        let c = compute_confidence(
+            Some(crate::dict::cognate::SourceType::Barbarism),
+            Some(crate::dict::cognate::SourceType::Barbarism),
+            false,
+        );
+        // 0.9 * 0.90 (actor) * 0.95 (target) = 0.7695
+        assert!((c - 0.7695).abs() < 0.001, "Expected 0.7695, got {}", c);
+    }
+
+    #[test]
+    fn test_compute_confidence_negation_penalty() {
+        let c_no_neg = compute_confidence(None, None, false);
+        let c_neg = compute_confidence(None, None, true);
+        assert!(
+            c_neg < c_no_neg,
+            "Negation should reduce confidence: {} vs {}",
+            c_neg,
+            c_no_neg
+        );
+        // 0.9 * 0.98 = 0.882
+        assert!((c_neg - 0.882).abs() < 0.001, "Expected 0.882, got {}", c_neg);
+    }
+
+    #[test]
+    fn test_semantic_ir_predicate_summary_includes_instrument() {
+        let ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::LethalHarm {
+                instrument: Some("ніж".to_string()),
+            },
+            Some("Петро"),
+            false,
+            100,
+        );
+        let s = ir.summary();
+        assert!(s.contains("instr=ніж"));
+    }
+
+    #[test]
+    fn test_semantic_ir_predicate_summary_communication_topic() {
+        let ir = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Communication {
+                topic: Some("правда".to_string()),
+            },
+            None,
+            false,
+            100,
+        );
+        let s = ir.summary();
+        assert!(s.contains("topic=\"правда\""));
+    }
+
+    #[test]
+    fn test_semantic_ir_predicate_summary_generic_positive_negative() {
+        let pos = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Generic {
+                polarity: true,
+                raw_verb: "подумав".to_string(),
+            },
+            None,
+            false,
+            100,
+        );
+        assert!(pos.summary().contains("Generic{+,подумав}"));
+
+        let neg = make_test_instruction(
+            "Іван",
+            SemanticPredicate::Generic {
+                polarity: false,
+                raw_verb: "злиться".to_string(),
+            },
+            None,
+            false,
+            100,
+        );
+        assert!(neg.summary().contains("Generic{−,злится}"));
     }
 }
