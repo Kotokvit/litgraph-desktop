@@ -42,12 +42,17 @@ mod tests {
 
     #[test]
     fn test_normalize_manual_cognates() {
-        let res = normalize_token("Олексій");
+        let res = normalize_token("Алексей");
         assert!(res.is_some());
         let (tgt, w, st) = res.unwrap();
         assert_eq!(tgt, "олексій");
         assert_eq!(w, 1.0);
         assert_eq!(st, SourceType::Manual);
+
+        let res_rev = normalize_token("Олексій");
+        assert!(res_rev.is_some());
+        let (tgt_rev, _, _) = res_rev.unwrap();
+        assert_eq!(tgt_rev, "алексей");
     }
 
     #[test]

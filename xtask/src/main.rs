@@ -46,8 +46,6 @@ fn main() -> Result<()> {
             },
         );
         // Bidirectional mapping for cross-language resolution
-        // (RU↔UK cognates — both directions are valid; unlike LT replace.txt
-        // where reverse direction would "normalize" correct word into error)
         if src != tgt {
             entries.insert(
                 tgt.to_string(),
