@@ -2281,3 +2281,43 @@ Stage Summary:
 - Новий файл: scripts/benchmark_poler_v7_lem.py (384 рядки) ✓
 - TODO: Шар B (LanguageTool POS disambiguation), Шар C (UD-Ukrainian SVO parser),
   інтеграція lemmatizer у src-tauri (потребує копію linguistic/ модуля або dep на litgraph-core)
+
+---
+Task ID: v7.5-audit-strengthen-tests
+Agent: Super Z (main, deep analysis mode)
+Task: Verify commit 3f29450 (Epsilon v7.5 spec alignment) and strengthen weak unit tests that were passing for wrong reasons.
+
+Work Log:
+- Pulled origin/main → 3f29450 (fast-forward from 90f5bd4)
+- Inspected 3f29450 diff: confirmed all 4 spec fixes present in epsilon.rs:
+  1. SVO-validated weight REPLACES action_count (not additive) — epsilon.rs:427-431
+  2. Polarity filter: `.filter(|t| t.polarity)` — epsilon.rs:419-424
+  3. Unified coefficient to 2.0 (removed 2.5/1.5) — epsilon.rs:428
+  4. Updated doc header to "v7.5-LEM Canonical" — epsilon.rs:1
+- Ran cargo test --release --lib: 81/81 PASS (0.10s)
+- Analyzed test QUALITY — found 3 weak tests passing for wrong reasons:
+  * test_negated_verb_does_not_boost_a_svo: compared 3-token vs 4-token texts; length-normalization confound masked the actual polarity-filter effect
+  * test_homonym_noun_not_counted_as_action_verb: only asserted `epsilon > 0.0` — true for ANY non-empty text, proved nothing
+  * test_svo_replaces_action_count_no_double_counting: only asserted `epsilon < 20.0` — magical number, any reasonable ε passes
+- Ran diagnostic test (diag_epsilon_values.rs, since removed) to capture actual ε values:
+  * affirmative "Петро вбив ворога.": ε=1.7209, SVO conf=1.0, polarity=true
+  * negated "Петро не вбив ворога.": ε=1.2495, SVO conf=0.95, polarity=false
+  * Difference = 0.4714 = exactly 2.0/√18 (A_SVO contribution) — polarity filter WORKS
+  * Homonym "Мати бачить сина.": SVO correctly extracts (Мати, бачить, сина) — "мати" tagged as NOUN
+  * "Воїн вбити.": action_count=1 (infinitive in lexicon) + SVO triplet conf=0.90 → ε=1.6065
+  * "вбити.": no SVO (1 token), fallback path → ε=1.3807
+- Rewrote all 3 tests with mathematically-grounded assertions:
+  * test_negated_verb_does_not_boost_a_svo: asserts ε difference ≈ 2.0/√(3+DELTA_BIAS) with ±0.02 tolerance — verifies polarity filter at the byte level
+  * test_homonym_noun_not_counted_as_action_verb: calls SvoParser directly, asserts exactly 1 triplet with actor="Мати" and verb="бачить" (not "мати"), plus relative-ε comparison vs control "Батько бачить сина."
+  * test_svo_replaces_action_count_no_double_counting: uses "Воїн вбити." (action_count=1 + SVO conf=0.90) — replacement gives ε≈1.61, additive would give ε≈2.09; threshold 1.85 cleanly separates. Also verifies fallback path with "вбити." (ε≈1.38).
+- Re-ran cargo test --release --lib: 81/81 PASS (0.10s) — strengthened tests all green
+- Ran cargo test --release --test parser_test: 3/3 PASS
+
+Stage Summary:
+- Commit 3f29450 spec fixes: VERIFIED CORRECT via byte-level test assertions
+- 3 weak tests replaced with mathematically-grounded versions that fail if:
+  (a) polarity filter is removed — test 1 fails (diff ≠ 2.0/√18)
+  (b) homonym "Мати" mis-tagged as verb — test 2 fails (SVO triplet count ≠ 1 or verb="мати")
+  (c) replacement changed back to additive — test 3 fails (ε > 1.85)
+- All 81 lib tests pass; no production code changed (only test assertions strengthened)
+- Files modified: litgraph-core/src/parser/epsilon.rs (test module only)

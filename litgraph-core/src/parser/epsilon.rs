@@ -712,32 +712,100 @@ mod tests {
     #[test]
     fn test_negated_verb_does_not_boost_a_svo() {
         let counts = HashMap::new();
-        let affirmative_text = "Петро вбив ворога.";
-        let negated_text = "Петро не вбив ворога.";
-        let r_aff = compute_epsilon(affirmative_text, &counts, 10, None, 1.0);
-        let r_neg = compute_epsilon(negated_text, &counts, 10, None, 1.0);
+        // Both texts have unique_words=3 (the "не" token is filtered as len<=2 stop word),
+        // so len_norm is identical. The ONLY difference in ε must come from the polarity
+        // filter excluding the negated SVO triplet from A_SVO.
+        //
+        // Affirmative: SVO triplet (Петро, вбити, ворога, polarity=true, conf=1.0)
+        //   → a_svo = 2.0 * 1.0 = 2.0
+        // Negated: SVO triplet (Петро, вбити, ворога, polarity=false, conf=0.95)
+        //   → filtered out by `.filter(|t| t.polarity)` → a_svo = 0.0
+        //
+        // Expected ε difference = 2.0 / √(3 + δ_bias) = 2.0 / √18 ≈ 0.4714
+        let r_aff = compute_epsilon("Петро вбив ворога.", &counts, 10, None, 1.0);
+        let r_neg = compute_epsilon("Петро не вбив ворога.", &counts, 10, None, 1.0);
         assert!(r_aff.epsilon > r_neg.epsilon,
-                "Affirmative action ('вбив') must yield higher epsilon than negated action ('не вбив'): {} vs {}",
+                "Affirmative ('вбив') must yield higher ε than negated ('не вбив'): {} vs {}",
                 r_aff.epsilon, r_neg.epsilon);
+        let expected_diff = 2.0_f64 / (3.0_f64 + DELTA_BIAS).sqrt();
+        let actual_diff = r_aff.epsilon - r_neg.epsilon;
+        assert!((actual_diff - expected_diff).abs() < 0.02,
+                "ε difference ({:.4}) must match removed A_SVO contribution (~{:.4} = 2.0/√18). \
+                This verifies the polarity filter actually excludes negated triplets. aff={}, neg={}",
+                actual_diff, expected_diff, r_aff.epsilon, r_neg.epsilon);
     }
 
     #[test]
     fn test_homonym_noun_not_counted_as_action_verb() {
+        use crate::linguistic::svo_parser::SvoParser;
         let counts = HashMap::new();
-        // "мати" як іменник не повинно подвоювати A_SVO
-        let noun_text = "Мати прийшла додому і обійняла дитину.";
-        let result = compute_epsilon(noun_text, &counts, 10, None, 1.0);
-        assert!(result.epsilon > 0.0);
+        // "Мати" is a homonym: noun ("mother") or verb infinitive ("to have").
+        // In "Мати бачить сина", context (verb "бачить" follows) must disambiguate
+        // "Мати" as NOUN (actor), not as VERB.
+        //
+        // If POS-tagger correctly identifies "Мати" as noun:
+        //   → SVO extracts 1 triplet (Мати, бачить, сина, polarity=true)
+        // If mis-tagged as verb:
+        //   → SVO might extract 2 triplets (spurious verb="мати" + real verb="бачить"),
+        //     artificially inflating A_SVO via double-counting.
+        let parser = SvoParser::new();
+        let triplets = parser.parse_text("Мати бачить сина.");
+        assert_eq!(triplets.len(), 1,
+                "Homonym 'Мати' as NOUN must yield exactly 1 SVO triplet (not 2). Got {}: {:?}",
+                triplets.len(), triplets);
+        let t = &triplets[0];
+        assert_eq!(t.actor, "Мати",
+                "Actor must be 'Мати' (the noun), got {:?}", t.actor);
+        assert_ne!(t.verb, "мати",
+                "Verb must NOT be 'мати' — homonym must not be mis-tagged as verb. Got {:?}", t.verb);
+        assert_eq!(t.verb, "бачить",
+                "Verb must be 'бачить' (the real action), got {:?}", t.verb);
+        assert!(t.polarity, "Triplet should be affirmative (polarity=true)");
+        // Compare ε to control text with unambiguous noun "Батько" — should be similar.
+        let r_hom = compute_epsilon("Мати бачить сина.", &counts, 10, None, 1.0);
+        let r_ctrl = compute_epsilon("Батько бачить сина.", &counts, 10, None, 1.0);
+        let delta = (r_hom.epsilon - r_ctrl.epsilon).abs();
+        let avg = (r_hom.epsilon + r_ctrl.epsilon).max(1e-9) / 2.0;
+        assert!(delta / avg < 0.20,
+                "Homonym 'мати' must not inflate ε vs control 'Батько'. hom={}, ctrl={}, rel_delta={:.4}",
+                r_hom.epsilon, r_ctrl.epsilon, delta / avg);
     }
 
     #[test]
     fn test_svo_replaces_action_count_no_double_counting() {
         let counts = HashMap::new();
-        let text = "Воїн вбив суперника.";
-        let result = compute_epsilon(text, &counts, 10, None, 1.0);
-        // З урахуванням заміни 2.0 * confidence, значення є стабільним та обмеженим
-        assert!(result.epsilon > 0.0 && result.epsilon < 20.0,
-                "Epsilon should be bounded without double-counting spike, got {}", result.epsilon);
+        // "Воїн вбити." contains "вбити" (infinitive) which IS in ACTION_VERBS lexicon.
+        // → action_count = 1
+        // SVO also extracts triplet (Воїн, вбити, None, conf≈0.90, polarity=true).
+        //
+        // Spec v7.5 (REPLACEMENT): a_svo = 2.0 * 0.90 = 1.80 → ε ≈ 1.61
+        // Old buggy ADDITIVE with 2.0 factor: a_svo = 2.0*1 + 2.0*0.90 = 3.80 → ε ≈ 2.09
+        // Original buggy ADDITIVE with 2.5 factor: a_svo = 2.0*1 + 2.5*0.90 = 4.25 → ε ≈ 2.20
+        //
+        // The ~0.48 ε gap between replacement (1.61) and additive-2.0 (2.09) clearly
+        // distinguishes the two behaviors. This test fails if action_count is added
+        // on top of SVO weight instead of being replaced.
+        let r = compute_epsilon("Воїн вбити.", &counts, 10, None, 1.0);
+        assert_eq!(r.action_count, 1,
+                "action_count must be 1 for 'вбити' (infinitive in ACTION_VERBS lexicon). Got {}",
+                r.action_count);
+        assert!(r.epsilon < 1.85,
+                "ε ({:.4}) indicates ADDITIVE double-counting (expected ~2.09 with 2.0 factor, \
+                ~2.20 with 2.5 factor). Spec v7.5 REPLACEMENT should give ε ≈ 1.61. \
+                This means action_count IS being added on top of SVO weight.",
+                r.epsilon);
+        assert!(r.epsilon > 1.50,
+                "ε ({:.4}) is too low — SVO triplet contribution missing. Expected ~1.61.",
+                r.epsilon);
+
+        // Fallback path: when no SVO triplet (single token), a_svo = 2.0 * action_count
+        let r_fallback = compute_epsilon("вбити.", &counts, 10, None, 1.0);
+        // No SVO triplet (need ≥2 tokens), action_count=1
+        // a_svo = 2.0 * 1 = 2.0 (fallback)
+        // ε = (rarity("вбити") + 2.0) / √(1 + 15) = (3.5229 + 2.0) / 4.0 = 1.3807
+        assert!(r_fallback.epsilon > 1.30 && r_fallback.epsilon < 1.45,
+                "Fallback path (no SVO): ε should be ~1.38 (a_svo = 2.0 * action_count). Got {}",
+                r_fallback.epsilon);
     }
 }
 
