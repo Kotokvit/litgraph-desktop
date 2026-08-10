@@ -653,7 +653,7 @@ mod tests {
 
         let dto = EpsilonClimaxDto::from_layers(eps, &report);
         assert!(dto.omega_conf >= 0.0);
-        assert!(dto.node_count >= 0);
+        assert!(dto.node_count > 0, "node_count must be > 0 for parsed character graph");
     }
 
     #[test]
