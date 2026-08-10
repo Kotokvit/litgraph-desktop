@@ -615,5 +615,6 @@ impl WorldStateDelta {
 - Дорожная карта интеграции: [`docs/poler_math/INTEGRATION_ROADMAP.md`](poler_math/INTEGRATION_ROADMAP.md)
 - **Пісочниця LLM (математика замкненого контуру)**: [`docs/llm-sandbox.md`](llm-sandbox.md)
 - **Навчальна серія з математики**: [`docs/education/README.md`](education/README.md)
+- **Довідник правил російської та української мов**: [`docs/language-rules/README.md`](language-rules/README.md)
 - NLP-кандидаты: anno (Rust), CoReNer, MAVEN-ERE dataset
 - Библиотеки: petgraph, z3 0.20.2, tokenizers, candle/ONNX
