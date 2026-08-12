@@ -165,11 +165,10 @@ fn entity_from_parsed(c: &ParsedCharacter, text: &str) -> Entity {
 fn run(text: &str) -> NerResult {
     let parsed = detect(text);
 
-    // Use ALL detected characters (not just eligible ones) — teaching loop
-    // needs both correct and incorrect examples to learn from.
+    // Use ALL detected candidates (Characters, Concepts, Organizations) — teaching loop
+    // needs both true positives and false positives (confidence 0.3/0.7/1.0) to train Burn MLP.
     let entities: Vec<Entity> = parsed
         .iter()
-        .filter(|c| c.entity_type == EntityType::Character)
         .map(|c| entity_from_parsed(c, text))
         .collect();
 

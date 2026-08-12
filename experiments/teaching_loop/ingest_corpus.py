@@ -74,8 +74,13 @@ def main():
     parser = argparse.ArgumentParser(description="Ingest corpus through Rust NER CLI")
     parser.add_argument("corpus_dir", type=Path, help="Directory with .md/.txt files")
     parser.add_argument("output", type=Path, help="Output JSON path (rust_nodes.json)")
+    
+    release_cli = Path(__file__).resolve().parents[2] / "litgraph-core" / "target" / "release" / "rust_ner_cli"
+    debug_cli = Path(__file__).resolve().parents[2] / "litgraph-core" / "target" / "debug" / "rust_ner_cli"
+    default_cli = release_cli if release_cli.exists() else debug_cli
+
     parser.add_argument("--rust-cli", type=Path,
-                        default=Path(__file__).resolve().parents[2] / "litgraph-core" / "target" / "debug" / "rust_ner_cli",
+                        default=default_cli,
                         help="Path to rust_ner_cli binary")
     args = parser.parse_args()
 
