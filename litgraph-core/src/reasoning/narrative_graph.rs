@@ -229,6 +229,8 @@ mod tests {
             entity_type: EntityType::Character,
             evidence_signals: signals,
             confidence: ParsedCharacter::confidence_from_signals(signals, true),
+                mention_starts: vec![],
+                first_mention: None,
         }
     }
 
@@ -399,6 +401,8 @@ mod tests {
                 entity_type: EntityType::Concept,
                 evidence_signals: crate::parser::characters::SIGNAL_CAPITALIZED,
                 confidence: 0.3,
+                mention_starts: vec![],
+                first_mention: None,
             },
         ];
         let triplets = vec![make_triplet("Петро", "бачити", Some("Бездна"), 0.9, true)];

@@ -66,6 +66,12 @@ pub struct ParsedCharacter {
     ///   1 сигнал  → 0.3  (только cap) → Python fallback обязателен
     ///   0 сигналов → 0.0
     pub confidence: f32,
+    /// v0.5.1 / Phase 2: Byte offsets for mentions (start positions in text).
+    /// Используется в Phase 2 Step 2 для восстановления positions/mentions
+    /// в `NerResult` и для реализации 4-way merge policy.
+    pub mention_starts: Vec<usize>,
+    /// Byte index of the first mention if any.
+    pub first_mention: Option<usize>,
 }
 
 /// v0.5.0 / Phase 2: Битовые флаги evidence signals для `ParsedCharacter::evidence_signals`.
@@ -603,6 +609,9 @@ pub fn detect(text: &str) -> Vec<ParsedCharacter> {
             let confidence =
                 ParsedCharacter::confidence_from_signals(evidence_signals, is_single_token);
 
+            let mention_positions = collect_mention_starts(&forms_vec, text);
+            let first_mention = mention_positions.get(0).copied();
+
             ParsedCharacter {
                 name: rep,
                 aliases: forms_vec,
@@ -614,6 +623,8 @@ pub fn detect(text: &str) -> Vec<ParsedCharacter> {
                 entity_type: EntityType::Character,
                 evidence_signals,
                 confidence,
+                mention_starts: mention_positions,
+                first_mention,
             }
         })
         .collect();
@@ -675,6 +686,8 @@ pub fn detect(text: &str) -> Vec<ParsedCharacter> {
                 count, aliases_str
             )
         };
+        let mention_positions = collect_mention_starts(&forms_vec, text);
+        let first_mention = mention_positions.get(0).copied();
         result.push(ParsedCharacter {
             name: rep,
             aliases: forms_vec,
@@ -689,6 +702,8 @@ pub fn detect(text: &str) -> Vec<ParsedCharacter> {
             // morphological context для подтверждения concept vs character).
             evidence_signals: SIGNAL_CAPITALIZED,
             confidence: ParsedCharacter::confidence_from_signals(SIGNAL_CAPITALIZED, true),
+            mention_starts: mention_positions,
+            first_mention,
         });
     }
 
@@ -882,6 +897,32 @@ pub fn count_in_text(aliases: &[String], text: &str) -> usize {
     total
 }
 
+/// Собирает стартовые byte-offsets всех упоминаний alias'ов в тексте.
+/// Возвращает отсортированный уникальный список позиций (byte index).
+pub fn collect_mention_starts(aliases: &[String], text: &str) -> Vec<usize> {
+    let lower = text.to_lowercase();
+    let mut positions: Vec<usize> = Vec::new();
+    for alias in aliases {
+        let alias_lower = alias.to_lowercase();
+        let mut start = 0;
+        while let Some(pos) = lower[start..].find(&alias_lower) {
+            let abs_pos = start + pos;
+            let before = if abs_pos == 0 { b' ' } else { lower.as_bytes()[abs_pos - 1] };
+            let after_pos = abs_pos + alias_lower.len();
+            let after = if after_pos >= lower.len() { b' ' } else { lower.as_bytes()[after_pos] };
+            let is_boundary_before = !is_word_char(before);
+            let is_boundary_after = !is_word_char(after);
+            if is_boundary_before && is_boundary_after {
+                positions.push(abs_pos);
+            }
+            start = abs_pos + alias_lower.len();
+        }
+    }
+    positions.sort_unstable();
+    positions.dedup();
+    positions
+}
+
 fn is_word_char(b: u8) -> bool {
     b.is_ascii_alphanumeric() || (0xC0..=0xFF).contains(&b) || b >= 0xC0
 }
@@ -1060,6 +1101,8 @@ mod phase2_confidence_tests {
             entity_type: EntityType::Character,
             evidence_signals: SIGNAL_CAPITALIZED,
             confidence: 0.3,
+            mention_starts: vec![],
+            first_mention: None,
         };
         assert!(single.is_single_token());
 
@@ -1074,6 +1117,8 @@ mod phase2_confidence_tests {
             entity_type: EntityType::Character,
             evidence_signals: SIGNAL_CAPITALIZED,
             confidence: 0.3,
+            mention_starts: vec![],
+            first_mention: None,
         };
         assert!(!multi.is_single_token());
 
@@ -1088,6 +1133,8 @@ mod phase2_confidence_tests {
             entity_type: EntityType::Character,
             evidence_signals: SIGNAL_CAPITALIZED,
             confidence: 0.3,
+            mention_starts: vec![],
+            first_mention: None,
         };
         assert!(!hyphen.is_single_token());
     }
