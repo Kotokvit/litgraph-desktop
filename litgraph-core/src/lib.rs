@@ -10,4 +10,5 @@ pub mod ukrainian_semantic_categories;
 pub mod dict;
 pub mod linguistic;
 pub mod reasoning;
+pub mod scorer;
 
