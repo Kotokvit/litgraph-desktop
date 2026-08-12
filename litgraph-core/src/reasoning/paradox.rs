@@ -231,6 +231,8 @@ mod tests {
             entity_type: EntityType::Character,
             evidence_signals: signals,
             confidence: ParsedCharacter::confidence_from_signals(signals, true),
+            mention_starts: vec![],
+            first_mention: None,
         }
     }
 
