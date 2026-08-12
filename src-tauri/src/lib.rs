@@ -69,6 +69,8 @@ pub fn run() {
             commands::reasoning::reasoning_run_cycle_with_ir,
             commands::reasoning::reasoning_get_world_state,
             commands::reasoning::reasoning_validate_text,
+            // reasoning v0.7+: full 7-stage pipeline (Burn weights + case validation + diagnostics)
+            commands::reasoning::reasoning_run_full_pipeline,
             // poler — Layer F: POLER v7.5-LEM (Rust-native, no Python dep)
             commands::poler::cmd_compute_epsilon_climax,
             commands::poler::cmd_extract_svo,

@@ -398,6 +398,62 @@ pub async fn reasoning_validate_text(
 }
 
 // ============================================================================
+// Команда 5: reasoning_run_full_pipeline (ReasoningEngine v0.7+)
+// ============================================================================
+
+/// Полный 7-стадийный pipeline Reasoning Engine (без LLM):
+///   1. Rust NER → character candidates
+///   2. Burn Scorer (weights.json) → refined confidence + decision
+///   3. SVO Parser → triplets
+///   4. Case Validation (UA/RU падежи) → penalty for mismatched cases
+///   5. POLER ε_climax → climax detection
+///   6. Narrative Graph (Ω_conf, paradoxes)
+///   7. Diagnostics (class imbalance, underfitting, pollution)
+///
+/// Возвращает `litgraph_core::reasoning::ReasoningReport` (сериализуется
+/// as-is через serde). Это **новый** движок, который потребляет обученные
+/// Burn-веса. Старые команды (`reasoning_run_cycle` и др.) используют
+/// символьный цикл (`src-tauri/src/reasoning/cycle.rs`) и НЕ затронуты.
+///
+/// # Weights loading
+///
+/// Веса вкомпиливаются в бинарник через `include_str!` из
+/// `litgraph-core/data/scorer_weights.json` — это надёжнее чем чтение
+/// с диска (не зависит от CWD, не падает если файл удалён/перемещён).
+/// Чтобы обновить веса — перезалей файл и пересобери (`cargo build`).
+///
+/// # Arguments
+///
+/// * `text` — фрагмент текста (глава, сцена) для анализа
+/// * `kappa` — sector-adaptive коэффициент для ε_climax (1.0 = general prose,
+///   2.0 = high-density conflict). Если 0.0 или отрицательный — default 1.0.
+#[tauri::command]
+pub async fn reasoning_run_full_pipeline(
+    text: String,
+    kappa: Option<f64>,
+) -> Result<litgraph_core::reasoning::ReasoningReport, String> {
+    if text.trim().is_empty() {
+        return Err("Пустой текст — нечего анализировать".to_string());
+    }
+
+    // 1. Загружаем weights.json (вкомпилирован в бинарник).
+    const WEIGHTS_JSON: &str =
+        include_str!("../../litgraph-core/data/scorer_weights.json");
+
+    let weights_file = litgraph_core::scorer::WeightsFile::from_json(WEIGHTS_JSON)
+        .map_err(|e| format!("Не удалось загрузить weights.json: {}", e))?;
+
+    // 2. Строим движок (один раз — weights вкомпилированы, I/O нет).
+    let engine = litgraph_core::reasoning::ReasoningEngine::with_weights_file(weights_file);
+
+    // 3. Запускаем анализ. kappa по умолчанию = 1.0 (general prose).
+    let k = kappa.unwrap_or(1.0).max(0.1);
+    let report = engine.analyze(&text, k);
+
+    Ok(report)
+}
+
+// ============================================================================
 // Юнит-тесты
 // ============================================================================
 
@@ -575,5 +631,61 @@ mod tests {
                 // Парсер не извлёк события — Retry. Тоже допустимо.
             }
         }
+    }
+
+    // ========================================================================
+    // Тесты для новой команды reasoning_run_full_pipeline
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_full_pipeline_returns_report_on_simple_text() {
+        let text = "Петро сказав Марті: йдемо у ліс. Веня відповів: добре.".to_string();
+        let report = reasoning_run_full_pipeline(text, None).await
+            .expect("pipeline should succeed on non-empty text");
+        // Должен извлечь хотя бы одного персонажа-кандидата.
+        assert!(report.total_characters >= 1,
+            "expected >=1 character candidate, got {}", report.total_characters);
+        // Decision tallies should sum to total
+        assert_eq!(
+            report.approved_count + report.rejected_count + report.review_count,
+            report.total_characters
+        );
+        // Weights metadata populated
+        assert!(!report.weights_version.is_empty());
+        assert!(!report.weights_architecture.is_empty());
+        // Diagnostics always present
+        assert!(!report.diagnostics.overall_health.is_empty());
+        // 11 features per character (case-aware MLP)
+        for c in &report.characters {
+            assert_eq!(c.features.len(), 11,
+                "expected 11 features (case-aware MLP), got {}", c.features.len());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_full_pipeline_rejects_empty_text() {
+        let result = reasoning_run_full_pipeline("   ".to_string(), None).await;
+        assert!(result.is_err(), "empty text must error");
+    }
+
+    #[tokio::test]
+    async fn test_full_pipeline_kappa_does_not_panic_on_zero() {
+        // kappa=0.0 → engine uses max(0.1, 0.0)=0.1 — must not divide by zero.
+        let text = "Марта пішла додому.".to_string();
+        let report = reasoning_run_full_pipeline(text, Some(0.0)).await
+            .expect("kappa=0.0 must be clamped, not panic");
+        assert!(report.text_length > 0);
+    }
+
+    #[tokio::test]
+    async fn test_full_pipeline_report_is_serializable() {
+        let text = "Іван вбив ворога.".to_string();
+        let report = reasoning_run_full_pipeline(text, Some(1.0)).await.unwrap();
+        let json = serde_json::to_string(&report).expect("serialize");
+        assert!(json.contains("characters"));
+        assert!(json.contains("triplets"));
+        assert!(json.contains("epsilon"));
+        assert!(json.contains("conflict"));
+        assert!(json.contains("diagnostics"));
     }
 }

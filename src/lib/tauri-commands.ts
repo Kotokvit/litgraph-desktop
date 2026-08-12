@@ -274,6 +274,182 @@ export async function reasoningValidateText(
   return invoke("reasoning_validate_text", { project, events, proposedText });
 }
 
+// ====== Reasoning Engine v0.7+ — Full 7-stage Pipeline ======
+//
+// Type mirrors for `litgraph_core::reasoning::ReasoningReport` and friends.
+// Source of truth: litgraph-core/src/reasoning/engine.rs (and diagnostics.rs,
+// narrative_graph.rs, case_validation.rs, svo_parser.rs, paradox.rs).
+//
+// The full pipeline consumes Burn-trained weights.json (compiled into the
+// binary) and runs: Rust NER → MLP scorer → SVO parser → case validation →
+// POLER ε_climax → narrative graph (Ω_conf + paradoxes) → diagnostics.
+// All deterministic, no LLM, no network.
+
+export type Decision = "approve" | "reject" | "review";
+export type Script = "cyrillic" | "latin" | "mixed" | "other";
+
+/** Scored character candidate. Mirrors `ScoredCharacter` (Rust). */
+export interface ScoredCharacter {
+  // ParsedCharacter fields (flattened in Rust via #[serde(flatten)]):
+  name: string;
+  aliases: string[];
+  count: number;
+  description: string;
+  speechCount: number;
+  directCount: number;
+  reason: string;
+  entityType: "Character" | "Concept" | "Organization";
+  evidenceSignals: number;
+  confidence: number;
+  mentionStarts: number[];
+  firstMention: number | null;
+  nominativeCount: number;
+  accusativeCount: number;
+  genitiveNegatedCount: number;
+  // ScoredCharacter fields:
+  features: number[]; // length 11 (case-aware MLP)
+  rawConfidence: number;
+  refinedConfidence: number;
+  decision: Decision;
+  script: Script;
+}
+
+/** Case-validation verdict per SVO role. Mirrors `CaseValidationResult`. */
+export interface CaseValidationResult {
+  overall: "Valid" | "Invalid" | "Partial" | "Unknown";
+  // Per-role verdicts (may be empty if role is absent):
+  [key: string]: unknown;
+}
+
+/** SVO triplet with case-validation attached. Mirrors `ValidatedTriplet`. */
+export interface ValidatedTriplet {
+  // SvoTriplet fields (flattened):
+  actor: string;
+  verb: string;
+  target: string | null;
+  instrument: string | null;
+  location: string | null;
+  polarity: boolean;
+  confidence: number;
+  // ValidatedTriplet fields:
+  caseValidation: CaseValidationResult;
+  isActorCharacter: boolean;
+  isTargetCharacter: boolean;
+}
+
+/** Serializable subset of EpsilonResult. Mirrors `EpsilonSummary`. */
+export interface EpsilonSummary {
+  epsilon: number;
+  normalized: number;
+  wordCount: number;
+  uniqueWords: number;
+  emotionCount: number;
+  isClimax: boolean;
+  isNoise: boolean;
+  thetaRel: number;
+  formulaVariant: string;
+}
+
+/** Conflict report. Mirrors `ConflictReport`. */
+export interface ConflictReport {
+  omegaConf: number;
+  spectralRadius: number;
+  nodeCount: number;
+  edgeCount: number;
+  paradoxes: unknown[]; // Paradox enum — rendered as JSON
+}
+
+/** Diagnostics on algorithm health. Mirrors `DiagnosticsReport`. */
+export interface DiagnosticsReport {
+  overallHealth: string;
+  classImbalance: {
+    approveCount: number;
+    rejectCount: number;
+    reviewCount: number;
+    approveRejectRatio: number;
+    isImbalanced: boolean;
+    recommendation: string;
+  };
+  scoreDistribution: {
+    mean: number;
+    std: number;
+    min: number;
+    max: number;
+    approveMean: number;
+    rejectMean: number;
+    separation: number;
+    underfittingDetected: boolean;
+    recommendation: string;
+  };
+  scriptAnalysis: {
+    cyrillicCount: number;
+    latinCount: number;
+    mixedCount: number;
+    otherCount: number;
+    total: number;
+    latinFraction: number;
+    parallelTextDetected: boolean;
+    recommendation: string;
+  };
+  featureInformativeness: {
+    perFeatureStd: number[];
+    lowInformationFeatures: number[];
+    featureNames: string[];
+    recommendation: string;
+  };
+  weightMagnitude: {
+    fc1WeightMean: number;
+    fc1WeightStd: number;
+    fc1WeightMin: number;
+    fc1WeightMax: number;
+    fc2WeightMean: number;
+    fc2WeightStd: number;
+    collapseDetected: boolean;
+    explosionDetected: boolean;
+    recommendation: string;
+  };
+  recommendations: string[];
+}
+
+/** Full ReasoningReport returned by `reasoning_run_full_pipeline`. */
+export interface ReasoningReport {
+  characters: ScoredCharacter[];
+  triplets: ValidatedTriplet[];
+  epsilon: EpsilonSummary;
+  conflict: ConflictReport;
+  diagnostics: DiagnosticsReport;
+  approvedCount: number;
+  rejectedCount: number;
+  reviewCount: number;
+  totalCharacters: number;
+  totalTriplets: number;
+  tripletsValidCases: number;
+  tripletsInvalidCases: number;
+  textLength: number;
+  weightsVersion: string;
+  weightsArchitecture: string;
+}
+
+/**
+ * Run the full 7-stage Reasoning Engine pipeline (v0.7+) on a text fragment.
+ *
+ * This is the **new** engine that consumes Burn-trained weights.json
+ * (11-feature case-aware MLP) + case validation + diagnostics. The old
+ * `reasoningRunCycle` calls the symbolic cycle without weights — both
+ * coexist, this one is the modern path.
+ *
+ * @param text    chapter / scene text to analyze
+ * @param kappa   optional sector-adaptive coefficient for ε_climax
+ *                (1.0 = general prose, 2.0 = high-density conflict).
+ *                If omitted or null, defaults to 1.0.
+ */
+export async function reasoningRunFullPipeline(
+  text: string,
+  kappa?: number | null
+): Promise<ReasoningReport> {
+  return invoke("reasoning_run_full_pipeline", { text, kappa: kappa ?? null });
+}
+
 // ====== POLER Layer F — v7.5-LEM Canonical Symbolic Engine ======
 //
 // Tauri IPC wrappers for the Rust-native POLER commands defined in
