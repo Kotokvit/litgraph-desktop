@@ -144,6 +144,51 @@ impl<B: burn::tensor::backend::Backend> BurnScorerModel<B> {
         let x = self.fc2.forward(x);
         self.sigmoid.forward(x)
     }
+
+    /// v0.6.1 / Step 4: Extract weights into serializable format for `weights.json`.
+    ///
+    /// Returns weights as flat 2D arrays matching `WeightsData` schema.
+    /// Used by `train_scorer` binary to save trained model.
+    pub fn extract_weights_flat(&self) -> crate::scorer::weights::WeightsData {
+        use crate::scorer::weights::WeightsData;
+
+        // fc1.weight has shape [FEATURE_COUNT, HIDDEN_DIM] in Burn (transposed)
+        // We extract as [HIDDEN_DIM, FEATURE_COUNT] (rows = output neurons)
+        let fc1_weight_data = self.fc1.weight.val().into_data();
+        let fc1_weight_slice: Vec<f32> = fc1_weight_data.as_slice::<f32>()
+            .unwrap_or(&[])
+            .to_vec();
+        let mut fc1_weight_2d: Vec<Vec<f32>> = Vec::with_capacity(HIDDEN_DIM);
+        for h in 0..HIDDEN_DIM {
+            let mut row = Vec::with_capacity(FEATURE_COUNT);
+            for f in 0..FEATURE_COUNT {
+                row.push(fc1_weight_slice.get(f * HIDDEN_DIM + h).copied().unwrap_or(0.0));
+            }
+            fc1_weight_2d.push(row);
+        }
+
+        let fc1_bias: Vec<f32> = self.fc1.bias.as_ref()
+            .map(|b| b.val().into_data().as_slice::<f32>().unwrap_or(&[]).to_vec())
+            .unwrap_or_default();
+
+        let fc2_weight_data = self.fc2.weight.val().into_data();
+        let fc2_weight_slice: Vec<f32> = fc2_weight_data.as_slice::<f32>()
+            .unwrap_or(&[])
+            .to_vec();
+        // fc2 weight shape [HIDDEN_DIM, 1] → 1 row of HIDDEN_DIM values
+        let fc2_weight_2d: Vec<Vec<f32>> = vec![fc2_weight_slice.clone()];
+
+        let fc2_bias: Vec<f32> = self.fc2.bias.as_ref()
+            .map(|b| b.val().into_data().as_slice::<f32>().unwrap_or(&[]).to_vec())
+            .unwrap_or_default();
+
+        WeightsData {
+            fc1_weight: fc1_weight_2d,
+            fc1_bias,
+            fc2_weight: fc2_weight_2d,
+            fc2_bias,
+        }
+    }
 }
 
 /// High-level wrapper: holds the model + scaler, provides simple API.

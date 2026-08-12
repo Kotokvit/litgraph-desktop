@@ -24,7 +24,24 @@ petgraph = "0.6"
 # Backend: ndarray (pure Rust, no BLAS) for portability + cross-platform.
 # When training matures we may switch to a faster backend (tch-cpu / wgpu).
 burn = { version = "0.14", default-features = false, features = ["ndarray"] }
+burn-core = "0.14"
+burn-ndarray = "0.14"
+burn-autodiff = "0.14"
+
+[features]
+# Enable autodiff for training binary (train_scorer). Production inference
+# uses the default (no autodiff) for smaller binary size.
+autodiff = ["burn/autodiff"]
 
 [lib]
 name = "litgraph_core"
 path = "src/lib.rs"
+
+[[bin]]
+name = "rust_ner_cli"
+path = "src/bin/rust_ner_cli.rs"
+
+[[bin]]
+name = "train_scorer"
+path = "src/bin/train_scorer.rs"
+required-features = ["autodiff"]
