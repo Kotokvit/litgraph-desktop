@@ -233,6 +233,9 @@ mod tests {
             confidence: ParsedCharacter::confidence_from_signals(signals, true),
             mention_starts: vec![],
             first_mention: None,
+            nominative_count: 0,
+            accusative_count: 0,
+            genitive_negated_count: 0,
         }
     }
 

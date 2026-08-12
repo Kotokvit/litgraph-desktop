@@ -74,9 +74,33 @@ def make_training_examples(diffs: List[Dict]) -> List[Dict]:
                 "llm_count": 0,
             })
 
-        # Note: "extra" entities (LLM found, Rust didn't) are NOT training examples
-        # for Burn — Burn only scores Rust's existing detections. They're candidates
-        # for future Rust-парсер expansions.
+    approve_count = sum(1 for e in examples if e["label"] == 1.0)
+    reject_count = sum(1 for e in examples if e["label"] == 0.0)
+
+    target_min_rejects = (approve_count + 2) // 3
+    if reject_count < target_min_rejects:
+        needed = target_min_rejects - reject_count
+        synthetic_rejects = [
+            {"lemma": "Бездна", "features": [1.0, 0.0, 0.0, 1.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.1, 0.2], "decision": "reject_concept"},
+            {"lemma": "ковальня", "features": [0.0, 0.0, 0.0, 1.0, 0.05, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], "decision": "reject_common_noun"},
+            {"lemma": "Львів", "features": [1.0, 0.0, 0.0, 1.0, 0.05, 0.0, 0.0, 1.0, 0.1, 0.0, 0.0], "decision": "reject_location"},
+            {"lemma": "Таких Слів", "features": [1.0, 0.0, 0.0, 0.0, 0.05, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], "decision": "reject_multi_token_non_char"},
+            {"lemma": "Марті", "features": [1.0, 0.0, 0.0, 1.0, 0.1, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], "decision": "reject_dative_object"},
+        ]
+        for i in range(needed):
+            tmpl = synthetic_rejects[i % len(synthetic_rejects)]
+            examples.append({
+                "source": "synthetic_rebalance",
+                "text_sha256": "",
+                "text_length": 0,
+                "lemma": tmpl["lemma"],
+                "features": tmpl["features"],
+                "rust_confidence": 0.3,
+                "label": 0.0,
+                "decision": tmpl["decision"],
+                "rust_count": 1,
+                "llm_count": 0,
+            })
 
     return examples
 

@@ -231,9 +231,9 @@ mod tests {
         // Verify key fields are present in JSON
         assert!(json.contains("\"version\""));
         assert!(json.contains("\"trained_at\""));
-        assert!(json.contains("\"feature_count\": 8"));
+        assert!(json.contains(&format!("\"feature_count\": {}", FEATURE_COUNT)));
         assert!(json.contains("\"hidden_dim\": 16"));
-        assert!(json.contains("\"architecture\": \"mlp_8_16_1_sigmoid\""));
+        assert!(json.contains(&format!("\"architecture\": \"mlp_{}_16_1_sigmoid\"", FEATURE_COUNT)));
         assert!(json.contains("\"scaler\""));
         assert!(json.contains("\"weights\""));
         assert!(json.contains("\"fc1_weight\""));

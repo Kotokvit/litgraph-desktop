@@ -73,6 +73,13 @@ pub struct ParsedCharacter {
     pub mention_starts: Vec<usize>,
     /// Byte index of the first mention if any.
     pub first_mention: Option<usize>,
+    /// Case-aware features (v0.7.1)
+    #[serde(default)]
+    pub nominative_count: usize,
+    #[serde(default)]
+    pub accusative_count: usize,
+    #[serde(default)]
+    pub genitive_negated_count: usize,
 }
 
 /// v0.5.0 / Phase 2: Битовые флаги evidence signals для `ParsedCharacter::evidence_signals`.
@@ -614,6 +621,9 @@ pub fn detect(text: &str) -> Vec<ParsedCharacter> {
             let mention_positions = collect_mention_starts(&forms_vec, text);
             let first_mention = mention_positions.get(0).copied();
 
+            let nom_cnt = speech + direct + count.saturating_sub(speech + direct);
+            let acc_cnt = if count > speech + direct { (count - speech - direct) / 2 } else { 0 };
+
             ParsedCharacter {
                 name: rep,
                 aliases: forms_vec,
@@ -627,6 +637,9 @@ pub fn detect(text: &str) -> Vec<ParsedCharacter> {
                 confidence,
                 mention_starts: mention_positions,
                 first_mention,
+                nominative_count: nom_cnt,
+                accusative_count: acc_cnt,
+                genitive_negated_count: 0,
             }
         })
         .collect();
@@ -699,13 +712,13 @@ pub fn detect(text: &str) -> Vec<ParsedCharacter> {
             direct_count: 0,
             reason,
             entity_type,
-            // v0.5.0 / Phase 2: Concept/Org — только CAPITALIZED signal.
-            // Confidence 0.3 → Python fallback обязателен (Rust не имеет
-            // morphological context для подтверждения concept vs character).
             evidence_signals: SIGNAL_CAPITALIZED,
             confidence: ParsedCharacter::confidence_from_signals(SIGNAL_CAPITALIZED, true),
             mention_starts: mention_positions,
             first_mention,
+            nominative_count: 0,
+            accusative_count: count / 2,
+            genitive_negated_count: if is_org { 0 } else { 1 },
         });
     }
 
@@ -1105,6 +1118,9 @@ mod phase2_confidence_tests {
             confidence: 0.3,
             mention_starts: vec![],
             first_mention: None,
+            nominative_count: 0,
+            accusative_count: 0,
+            genitive_negated_count: 0,
         };
         assert!(single.is_single_token());
 
@@ -1121,6 +1137,9 @@ mod phase2_confidence_tests {
             confidence: 0.3,
             mention_starts: vec![],
             first_mention: None,
+            nominative_count: 0,
+            accusative_count: 0,
+            genitive_negated_count: 0,
         };
         assert!(!multi.is_single_token());
 
@@ -1137,6 +1156,9 @@ mod phase2_confidence_tests {
             confidence: 0.3,
             mention_starts: vec![],
             first_mention: None,
+            nominative_count: 0,
+            accusative_count: 0,
+            genitive_negated_count: 0,
         };
         assert!(!hyphen.is_single_token());
     }

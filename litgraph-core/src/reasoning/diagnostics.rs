@@ -150,7 +150,7 @@ pub struct FeatureInformativeness {
     pub recommendation: String,
 }
 
-/// Names of the 8 features (must match `scorer::features`).
+/// Names of the 11 features (must match `scorer::features`).
 pub const FEATURE_NAMES: [&str; FEATURE_COUNT] = [
     "is_capitalized",
     "has_speech_verb",
@@ -160,6 +160,9 @@ pub const FEATURE_NAMES: [&str; FEATURE_COUNT] = [
     "speech_count_norm",
     "direct_count_norm",
     "is_character_type",
+    "nominative_case_norm",
+    "accusative_case_norm",
+    "genitive_under_negation_norm",
 ];
 
 /// Report on weight magnitude distribution (detects collapse or explosion).
@@ -418,10 +421,9 @@ fn analyze_scripts(candidate_names: &[String]) -> ScriptAnalysis {
 
 fn analyze_feature_informativeness(weights_file: &WeightsFile) -> FeatureInformativeness {
     let per_feature_std = weights_file.scaler.std.clone();
-    // train_scorer.rs floors std at 0.5 to avoid division by tiny numbers.
-    // A feature at the 0.5 floor is effectively constant (zero information).
+    // A feature at the 0.01 floor is effectively constant (zero information).
     let low_information_features: Vec<usize> = (0..FEATURE_COUNT)
-        .filter(|&i| per_feature_std.get(i).copied().unwrap_or(0.0) <= 0.5)
+        .filter(|&i| per_feature_std.get(i).copied().unwrap_or(0.0) <= 0.01)
         .collect();
 
     let recommendation = if !low_information_features.is_empty() {
@@ -622,9 +624,9 @@ mod tests {
 
     #[test]
     fn test_feature_informativeness_detects_constant_features() {
-        // Build a weights file where 4 features have std=0.5 (floored = constant)
+        // Build a weights file where 4 features have std=0.01 (floored = constant)
         let mut wf = WeightsFile::new_default();
-        wf.scaler.std = vec![0.5, 0.7, 0.5, 0.6, 0.5, 0.8, 0.5, 0.9];
+        wf.scaler.std = vec![0.01, 0.7, 0.01, 0.6, 0.01, 0.8, 0.01, 0.9, 0.7, 0.8, 0.9];
         let report = analyze_feature_informativeness(&wf);
         assert_eq!(report.low_information_features.len(), 4);
         assert!(report.low_information_features.contains(&0));

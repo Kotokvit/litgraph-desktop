@@ -55,7 +55,7 @@ fn compute_scaler(examples: &[TrainingExample]) -> ScalerParams {
     for (i, ex) in examples.iter().enumerate() {
         let i_f = (i + 1) as f32;
         for j in 0..FEATURE_COUNT {
-            let x = ex.features[j];
+            let x = ex.features.get(j).copied().unwrap_or(0.0);
             let delta = x - mean[j];
             mean[j] += delta / i_f;
             let delta2 = x - mean[j];
@@ -66,11 +66,8 @@ fn compute_scaler(examples: &[TrainingExample]) -> ScalerParams {
     let std: Vec<f32> = (0..FEATURE_COUNT)
         .map(|j| {
             let variance = m2[j] / n;
-            // Use larger minimum std (0.5) to avoid division by tiny number → NaN.
-            // Features that are constant across all examples (e.g. is_capitalized
-            // is always 1.0 for Characters) effectively get zeroed out
-            // (mean=1.0, std=0.5 → scaled to 0.0).
-            variance.sqrt().max(0.5)
+            // Use small minimum std (0.01) to avoid division by tiny number → NaN.
+            variance.sqrt().max(0.01)
         })
         .collect();
 
@@ -81,7 +78,8 @@ fn compute_scaler(examples: &[TrainingExample]) -> ScalerParams {
 fn scale_features(features: &[f32], scaler: &ScalerParams) -> [f32; FEATURE_COUNT] {
     let mut out = [0.0f32; FEATURE_COUNT];
     for i in 0..FEATURE_COUNT {
-        out[i] = (features[i] - scaler.mean[i]) / scaler.std[i];
+        let x = features.get(i).copied().unwrap_or(0.0);
+        out[i] = (x - scaler.mean[i]) / scaler.std[i];
     }
     out
 }

@@ -75,7 +75,7 @@ fn main() {
     println!("  {:<3} {:<15} {:<8} {:<8} {:<25}",
         "#", "lemma", "label", "scaled[0]", "decision");
     for (i, ex) in examples.iter().take(10).enumerate() {
-        let feat_arr: [f32; 8] = ex.features.clone().try_into().unwrap_or([0.0; 8]);
+        let feat_arr: [f32; 11] = ex.features.clone().try_into().unwrap_or([0.0; 11]);
         let scaled = scaler.transform(&feat_arr);
         println!("  {:<3} {:<15} {:<8.1} {:<8.3} {:<25}",
             i,

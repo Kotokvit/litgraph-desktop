@@ -448,7 +448,7 @@ mod tests {
         // Feature informativeness should always have 8 features
         assert_eq!(
             report.diagnostics.feature_informativeness.per_feature_std.len(),
-            8
+            crate::scorer::FEATURE_COUNT
         );
     }
 

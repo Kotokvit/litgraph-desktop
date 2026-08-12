@@ -298,6 +298,9 @@ mod tests {
             confidence: 0.7,
             mention_starts: (0..mentions).map(|i| i * 10).collect(),
             first_mention: if mentions > 0 { Some(0) } else { None },
+            nominative_count: 0,
+            accusative_count: 0,
+            genitive_negated_count: 0,
         }
     }
 
@@ -364,7 +367,7 @@ mod tests {
     #[test]
     fn test_feature_count_constant_matches_architecture() {
         // Sanity: architecture must match feature count
-        assert_eq!(FEATURE_COUNT, 8);
+        assert_eq!(FEATURE_COUNT, 11);
         assert_eq!(BurnScorerConfig::new_default().input_dim, FEATURE_COUNT);
     }
 

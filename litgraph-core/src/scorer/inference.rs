@@ -321,7 +321,7 @@ mod tests {
     #[test]
     fn test_score_deterministic() {
         let scorer = make_test_scorer();
-        let features: FeatureVector = [0.3, 0.7, 0.1, 0.9, 0.5, 0.2, 0.8, 0.4];
+        let features: FeatureVector = [0.3, 0.7, 0.1, 0.9, 0.5, 0.2, 0.8, 0.4, 0.6, 0.3, 0.1];
         let s1 = scorer.score(&features);
         let s2 = scorer.score(&features);
         let s3 = scorer.score(&features);

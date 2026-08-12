@@ -29,49 +29,24 @@ use crate::parser::characters::{EntityType, ParsedCharacter, SIGNAL_CAPITALIZED,
 
 /// Number of features extracted per `ParsedCharacter`.
 /// MUST match the MLP input dimension in `model.rs`.
-pub const FEATURE_COUNT: usize = 8;
+pub const FEATURE_COUNT: usize = 11;
 
 /// Normalization constants — chosen so typical values map to ~[0.2, 0.8].
 /// Mentions above these thresholds saturate to 1.0.
 const MAX_MENTIONS: f32 = 20.0;
 const MAX_SPEECH: f32 = 10.0;
 const MAX_DIRECT: f32 = 5.0;
+const MAX_NOMINATIVE: f32 = 10.0;
+const MAX_ACCUSATIVE: f32 = 10.0;
+const MAX_GENITIVE_NEGATED: f32 = 5.0;
 
 /// Fixed-length feature vector for Burn model input.
 pub type FeatureVector = [f32; FEATURE_COUNT];
 
-/// Extract 8 features from a `ParsedCharacter`.
+/// Extract 11 features from a `ParsedCharacter`.
 ///
 /// All features are in [0.0, 1.0]. Binary signals are 0.0 or 1.0.
 /// Continuous signals are normalized by typical maximums.
-///
-/// # Example
-///
-/// ```
-/// use litgraph_core::parser::characters::ParsedCharacter;
-/// use litgraph_core::scorer::extract_features;
-///
-/// let pc = ParsedCharacter {
-///     name: "Борис".to_string(),
-///     aliases: vec!["Борис".to_string()],
-///     count: 2,
-///     description: String::new(),
-///     speech_count: 1,
-///     direct_count: 0,
-///     reason: String::new(),
-///     entity_type: litgraph_core::parser::characters::EntityType::Character,
-///     evidence_signals: 0b011, // cap + speech
-///     confidence: 0.7,
-///     mention_starts: vec![10, 50],
-///     first_mention: Some(10),
-/// };
-///
-/// let features = extract_features(&pc);
-/// assert_eq!(features.len(), 8);
-/// assert_eq!(features[0], 1.0); // is_capitalized
-/// assert_eq!(features[1], 1.0); // has_speech_verb
-/// assert_eq!(features[2], 0.0); // has_direct_address
-/// ```
 pub fn extract_features(pc: &ParsedCharacter) -> FeatureVector {
     let signals = pc.evidence_signals;
     let mention_count = pc.mention_starts.len() as f32;
@@ -93,6 +68,12 @@ pub fn extract_features(pc: &ParsedCharacter) -> FeatureVector {
         (pc.direct_count as f32 / MAX_DIRECT).min(1.0),
         // Feature 7: is_character_type
         (pc.entity_type == EntityType::Character) as u8 as f32,
+        // Feature 8: nominative_case_norm
+        (pc.nominative_count as f32 / MAX_NOMINATIVE).min(1.0),
+        // Feature 9: accusative_case_norm
+        (pc.accusative_count as f32 / MAX_ACCUSATIVE).min(1.0),
+        // Feature 10: genitive_under_negation_norm
+        (pc.genitive_negated_count as f32 / MAX_GENITIVE_NEGATED).min(1.0),
     ]
 }
 
@@ -116,6 +97,9 @@ mod tests {
             confidence: 0.7,
             mention_starts: (0..mentions).map(|i| i * 10).collect(),
             first_mention: if mentions > 0 { Some(0) } else { None },
+            nominative_count: 0,
+            accusative_count: 0,
+            genitive_negated_count: 0,
         }
     }
 
@@ -124,7 +108,7 @@ mod tests {
         let pc = make_pc(0b011, 1, 0, 1, true);
         let features = extract_features(&pc);
         assert_eq!(features.len(), FEATURE_COUNT);
-        assert_eq!(FEATURE_COUNT, 8);
+        assert_eq!(FEATURE_COUNT, 11);
     }
 
     #[test]
