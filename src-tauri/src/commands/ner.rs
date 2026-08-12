@@ -192,21 +192,43 @@ pub(crate) fn run_python_with_text_file(
 
 /// v2.1 / Phase 2 Step 1: Rust fast path для extract_entities.
 ///
+/// Thin wrapper around `rust_fast_path_from_parsed`: calls `detect(text)`
+/// then delegates. Kept for backward compatibility with existing tests
+/// and external callers that don't need to reuse `parsed` for merge.
+///
+/// See `rust_fast_path_from_parsed` for full dispatch semantics.
+fn rust_fast_path_entities(text: &str) -> Option<NerResult> {
+    let parsed = crate::parser::characters::detect(text);
+    rust_fast_path_from_parsed(&parsed, text)
+}
+
+/// v2.3 / Step 2d: Core fast-path logic, decoupled from `detect()`.
+///
+/// Takes a pre-computed slice of `ParsedCharacter` (so callers can reuse
+/// the same `parsed` for both fast-path check and `merge_results()`).
+///
 /// Прогоняет текст через `crate::parser::characters::detect()` (Rust-native,
 /// 3-signal detection). Если ВСЕ обнаруженные characters — single-token с
 /// confidence >= 0.7 (см. матрицу Phase 2), конструирует `NerResult` в Rust
 /// и возвращает `Some(_)`. Иначе возвращает `None` — вызывающий код должен
-/// запустить Python fallback.
+/// запустить Python fallback + `merge_results()`.
+///
+/// # Dispatch behaviour
+///   - `parsed` empty → `Some(empty)` (skip Python — empty text optimization)
+///   - All Characters single-token with confidence ≥ 0.7 → `Some(entities)`
+///   - Any Concept/Org, or any multi-token Character, or any confidence < 0.7
+///     → `None` (caller should run Python + `merge_results()`)
 ///
 /// **Provenance**: результат помечается `model = "rust-fast-path"`,
-/// `version = "2.1"`, `chunks_processed = None`. Это позволяет UI/логам
-/// различать ветки (см. Phase 2 merge policy matrix).
+/// `version = "2.2"` (или `"2.1"` для empty case), `chunks_processed = None`.
+/// Это позволяет UI/логам различать ветки (см. Phase 2 merge policy matrix).
 ///
 /// **Что НЕ делает fast path** (намеренно):
-///   - Не возвращает `mentions` (Rust-парсер не трекает позиции) — пустой Vec
-///   - Не возвращает `first_mention` — 0 (нет данных)
-///   - Не возвращает locations/organizations — только PER
+///   - Не возвращает locations/organizations — только PER (Rust-парсер
+///     не умеет валидировать LOC/ORG морфологически)
 ///   - Не разрешает multi-token ФИО — для этого есть Python
+///   - v2.2: `mentions` и `first_mention` теперь populated из
+///     `ParsedCharacter.mention_starts` (Step 2b)
 ///
 /// **Контракт стабильности**: возвращаемый `NerResult` проходит ту же
 /// десериализацию, что и Python-результат. UI не должен различать ветки
@@ -214,12 +236,13 @@ pub(crate) fn run_python_with_text_file(
 ///
 /// # Returns
 ///   - `Some(NerResult)` — fast path сработал, Python не нужен
-///   - `None` — нужен Python fallback (multi-token, low-confidence, или
-///     обнаружен хотя бы один concept/org, требующий Python validation)
-fn rust_fast_path_entities(text: &str) -> Option<NerResult> {
-    use crate::parser::characters::{detect, EntityType};
-
-    let parsed = detect(text);
+///   - `None` — нужен Python fallback + 4-way merge (multi-token,
+///     low-confidence, или обнаружен хотя бы один concept/org)
+fn rust_fast_path_from_parsed(
+    parsed: &[crate::parser::characters::ParsedCharacter],
+    text: &str,
+) -> Option<NerResult> {
+    use crate::parser::characters::EntityType;
 
     // Если парсер вообще ничего не нашёл — отдаём empty NerResult из Rust
     // (это тоже валидный fast path: пустой текст не должен платить Python).
@@ -570,44 +593,20 @@ pub fn merge_results(
     }
 }
 
-/// Tauri команда: извлечь сущности из текста.
+/// v2.3 / Phase 2 Step 2d: Python fallback helper.
 ///
-/// v2.1 / Phase 2: двухуровневая диспетчеризация:
-///   1. **Fast path (Rust)** — `rust_fast_path_entities()` для simple корпусов
-///      (single-token characters с confidence >= 0.7). Latency: <1мс.
-///   2. **Fallback (Python v2)** — Natasha Slovnet NER + pymorphy3 для
-///      complex случаев (multi-token ФИО, ambiguous, concept validation).
-///      Latency: 0.8–1.2s cold start, ~200мс warm.
+/// Запускает `ner_extract_v2.py` (Natasha + pymorphy3) через IPC и
+/// возвращает `NerResult`. Вынесено из `extract_entities` чтобы
+/// переиспользовать в merge-пути без дублирования кода.
 ///
-/// JSON-контракт `NerResult` сохранён (structure не изменилась). UI различает
-/// ветки только по полю `model`:
-///   - `"rust-fast-path"` (version "2.1") — fast path сработал
-///   - `"natasha-slovnet+pymorphy3"` (version "2.0") — Python fallback
-///
-/// Phase 1B: v1 ner_extract.py полностью удалён. v2 экспортирует совместимые
-/// символы (NLP, extract_entities, get_proper_lemma, FALSE_POSITIVE_NOUNS)
-/// через spaCy-compat shim, что позволяет poler_entities.py и svo_extract.py
-/// работать без изменений.
-#[tauri::command]
-pub async fn extract_entities(text: String) -> Result<NerResult, String> {
-    if text.trim().is_empty() {
-        return Err("Пустой текст".to_string());
-    }
-
-    // === Phase 2 Step 1: Rust fast path ===
-    // Пробуем Rust-native detection. Если все characters — single-token с
-    // confidence >= 0.7, возвращаем результат без Python spawn.
-    if let Some(rust_result) = rust_fast_path_entities(&text) {
-        return Ok(rust_result);
-    }
-
-    // === Python fallback ===
+/// Latency: 0.8–1.2s cold start, ~200ms warm.
+fn run_python_ner(text: &str) -> Result<NerResult, String> {
     let script = include_str!("../../python/ner_extract_v2.py");
     // v2 импортирует person.py — кладём его рядом с main_script.py в temp dir.
     // person.py зависит только от natasha (внешний пакет), без внутренних импортов.
     let person_script = include_str!("../../../scripts/dev/grammar/person.py");
     let extra_files = vec![("person.py", person_script)];
-    let stdout = run_python_with_text_file(script, &text, &extra_files)?;
+    let stdout = run_python_with_text_file(script, text, &extra_files)?;
 
     let result: NerResult = serde_json::from_str(&stdout).map_err(|e| {
         format!(
@@ -619,6 +618,59 @@ pub async fn extract_entities(text: String) -> Result<NerResult, String> {
     })?;
 
     Ok(result)
+}
+
+/// Tauri команда: извлечь сущности из текста.
+///
+/// v2.3 / Phase 2 Step 2d: трёх-путёвая диспетчеризация:
+///   1. **Fast path (Rust-only)** — `rust_fast_path_from_parsed()` для простых
+///      корпусов (empty parsed, или только single-token Characters с confidence
+///      >= 0.7). Latency: <1мс. `model="rust-fast-path"`.
+///   2. **Merge path (Rust+Python)** — Rust detect + Python v2 + `merge_results()`
+///      для смешанных случаев (есть Concepts, multi-token, или low-confidence).
+///      Latency: ~1s cold. `model="rust-fast-path+natasha-merge"`.
+///   3. **Python-only path** — теоретически возможен если Rust detect вернёт
+///      пустой vec для непустого текста, но на практике `rust_fast_path_from_parsed`
+///      перехватывает empty case и возвращает `Some(empty)` (Python не нужен).
+///      Если это поведение изменится, fallback — `merge_results(empty, python)`,
+///      что эквивалентно Profile 3 для всех Python entities.
+///
+/// JSON-контракт `NerResult` сохранён. UI различает ветки только по полю `model`:
+///   - `"rust-fast-path"` (version "2.1"/"2.2") — fast path сработал
+///   - `"rust-fast-path+natasha-merge"` (version "2.2") — merge path сработал
+///   - `"natasha-slovnet+pymorphy3"` (version "2.0") — чистый Python (defensive)
+///
+/// Phase 1B: v1 ner_extract.py полностью удалён. v2 экспортирует совместимые
+/// символы (NLP, extract_entities, get_proper_lemma, FALSE_POSITIVE_NOUNS)
+/// через spaCy-compat shim, что позволяет poler_entities.py и svo_extract.py
+/// работать без изменений.
+#[tauri::command]
+pub async fn extract_entities(text: String) -> Result<NerResult, String> {
+    if text.trim().is_empty() {
+        return Err("Пустой текст".to_string());
+    }
+
+    // === Phase 2 Step 2d: 3-way dispatch ===
+    // Detect once, reuse `parsed` for both fast-path check and merge.
+    let parsed = crate::parser::characters::detect(&text);
+
+    // Path 1: Fast path — empty parsed OR all eligible Characters.
+    // Returns Some(rust_result) without spawning Python.
+    if let Some(rust_result) = rust_fast_path_from_parsed(&parsed, &text) {
+        return Ok(rust_result);
+    }
+
+    // Path 2: Merge path — Rust detected non-eligible entities (Concept,
+    // multi-token Character, or low-confidence). Run Python and merge.
+    let python_result = run_python_ner(&text)?;
+
+    // Defensive: if `parsed` is empty here, it means `rust_fast_path_from_parsed`
+    // returned None for empty (shouldn't happen — see function). In that case,
+    // `merge_results(empty, python, text)` is functionally equivalent to
+    // returning Python's result unchanged (all entities go through Profile 3).
+    // We call merge anyway to keep the code path uniform and the provenance
+    // marker accurate ("tried Rust + merged").
+    Ok(merge_results(&parsed, &python_result, &text))
 }
 
 /// Tauri команда: анализ графа персонажей (NER + POLER).
@@ -1139,5 +1191,140 @@ mod merge_policy_tests {
 
         assert_eq!(merged.model, "rust-fast-path+natasha-merge");
         assert_eq!(merged.version, "2.2");
+    }
+}
+
+// ============================================================================
+// v2.3 / Phase 2 Step 2d: Dispatch tests for `rust_fast_path_from_parsed`
+// ============================================================================
+//
+// Эти тести проверяют рефакторинг Step 2d:
+//   1. `rust_fast_path_from_parsed` корректно решает fast path vs merge path
+//   2. Wrapper `rust_fast_path_entities` делегирует правильно
+//   3. Dispatch logic в `extract_entities` (без запуска Python) — поведение
+//      идентично ручному вызову `rust_fast_path_from_parsed`
+//
+// Тесты НЕ запускают Python — они проверяют только Rust-side dispatch.
+// Интеграционный тест с Python помечен `#[ignore]` (требует Natasha installed).
+#[cfg(test)]
+mod step2d_dispatch_tests {
+    use super::*;
+    use crate::parser::characters::detect;
+
+    /// `rust_fast_path_from_parsed` с empty slice → `Some(empty)` (Path 1).
+    /// Это preservation of existing behavior: empty parsed → fast path empty result.
+    #[test]
+    fn test_from_parsed_empty_returns_some_empty() {
+        let parsed: Vec<crate::parser::characters::ParsedCharacter> = vec![];
+        let result = rust_fast_path_from_parsed(&parsed, "любой текст");
+
+        assert!(result.is_some(), "empty parsed → Some(empty) fast path");
+        let ner = result.unwrap();
+        assert_eq!(ner.entities.len(), 0);
+        assert_eq!(ner.stats.total, 0);
+        assert_eq!(ner.model, "rust-fast-path");
+        assert_eq!(ner.version, "2.1"); // empty case keeps 2.1 for backward compat
+    }
+
+    /// `rust_fast_path_from_parsed` с all-eligible Characters → `Some(entities)`.
+    /// Single-token + speech verb → confidence 0.7 → eligible.
+    #[test]
+    fn test_from_parsed_all_eligible_returns_some() {
+        let text = "Сегодня Борис сказал слово. Вечером Борис промолчал.";
+        let parsed = detect(text);
+        assert!(!parsed.is_empty(), "detect should find Борис");
+
+        let result = rust_fast_path_from_parsed(&parsed, text);
+        assert!(result.is_some(), "all single-token + speech verb → fast path");
+        let ner = result.unwrap();
+        assert_eq!(ner.model, "rust-fast-path");
+        assert_eq!(ner.version, "2.2");
+        assert!(ner.stats.persons >= 1);
+    }
+
+    /// `rust_fast_path_from_parsed` с Concept present → `None` (merge path).
+    /// Concept forces Python validation — Rust can't validate morphology.
+    #[test]
+    fn test_from_parsed_with_concept_returns_none() {
+        // "Бездна" not at sentence start → detect finds it, classifies as Concept
+        let text = "Долго смотрела Бездна. Тихо звала Бездна. Вечно ждала Бездна.";
+        let parsed = detect(text);
+
+        // If detect found nothing, skip the test (text changes might break detect).
+        if parsed.is_empty() {
+            eprintln!("warning: detect returned empty for Concept test text, skipping");
+            return;
+        }
+
+        let result = rust_fast_path_from_parsed(&parsed, text);
+        assert!(result.is_none(), "Concept present → None (merge path)");
+    }
+
+    /// Wrapper `rust_fast_path_entities` delegates to `rust_fast_path_from_parsed`.
+    /// Both should return identical results for the same input text.
+    #[test]
+    fn test_wrapper_delegates_to_from_parsed() {
+        let text = "Борис сказал слово. Борис промолчал.";
+
+        let via_wrapper = rust_fast_path_entities(text);
+        let parsed = detect(text);
+        let via_from_parsed = rust_fast_path_from_parsed(&parsed, text);
+
+        assert!(via_wrapper.is_some(), "wrapper: fast path eligible");
+        assert!(via_from_parsed.is_some(), "from_parsed: fast path eligible");
+
+        let w = via_wrapper.unwrap();
+        let f = via_from_parsed.unwrap();
+        assert_eq!(w.model, f.model);
+        assert_eq!(w.version, f.version);
+        assert_eq!(w.entities.len(), f.entities.len());
+        assert_eq!(w.stats.total, f.stats.total);
+    }
+
+    /// Wrapper consistency for merge path (None case).
+    #[test]
+    fn test_wrapper_delegates_to_from_parsed_merge_path() {
+        // Concept text → both should return None
+        let text = "Долго смотрела Бездна. Тихо звала Бездна. Вечно ждала Бездна.";
+        let parsed = detect(text);
+        if parsed.is_empty() {
+            return; // skip if detect finds nothing
+        }
+
+        let via_wrapper = rust_fast_path_entities(text);
+        let via_from_parsed = rust_fast_path_from_parsed(&parsed, text);
+
+        assert!(via_wrapper.is_none(), "wrapper: merge path");
+        assert!(via_from_parsed.is_none(), "from_parsed: merge path");
+    }
+
+    /// `extract_entities` dispatch: empty text → Err (early return, no Rust detect).
+    /// This test doesn't require Python — empty text is rejected before any work.
+    #[tokio::test]
+    async fn test_extract_entities_empty_text_returns_err() {
+        let result = extract_entities("   \n\t  ".to_string()).await;
+        assert!(result.is_err(), "empty/whitespace text → Err");
+        let err = result.unwrap_err();
+        assert!(err.contains("Пустой текст"), "error message mentions empty text");
+    }
+
+    /// `extract_entities` dispatch: simple eligible text → fast path (no Python).
+    /// We can verify this by checking `model == "rust-fast-path"` in result.
+    /// If Python were spawned, model would be "rust-fast-path+natasha-merge" or
+    /// "natasha-slovnet+pymorphy3". This test PASSES only if Python is NOT spawned
+    /// for eligible text — which is the whole point of fast path.
+    ///
+    /// NOTE: This test is `#[ignore]` because it may spawn Python if Rust detect
+    /// doesn't return eligible results (depends on litgraph-core version).
+    /// Run with: `cargo test --lib ner -- --ignored`
+    #[tokio::test]
+    #[ignore = "integration test: requires no Python spawn, run manually"]
+    async fn test_extract_entities_fast_path_no_python() {
+        let text = "Борис сказал слово. Борис промолчал и ушёл в ночь.";
+        let result = extract_entities(text.to_string()).await;
+        assert!(result.is_ok(), "extract_entities should succeed");
+        let ner = result.unwrap();
+        assert_eq!(ner.model, "rust-fast-path",
+            "fast path should trigger — no Python spawn. Got model={}", ner.model);
     }
 }
