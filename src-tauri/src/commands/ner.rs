@@ -503,7 +503,9 @@ pub fn merge_results(
             // Profile 1: Rust X, Python X — Confirmed
             // Merge: take Python's lemma/label/forms (morphologically validated),
             // but use Rust's mentions/positions (Rust keeps positions).
-            let mut merged_entity = py_entity.clone();
+            // Note: py_entity is &&Entity (HashMap<String, &Entity>), so we need
+            // explicit deref to clone the Entity itself, not the reference.
+            let mut merged_entity = (*py_entity).clone();
             // Override with Rust positional data if Rust has any
             if !rust_char.mention_starts.is_empty() {
                 let rust_entity = entity_from_parsed(rust_char, text);

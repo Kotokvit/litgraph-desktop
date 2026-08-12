@@ -1133,6 +1133,8 @@ mod phase2_confidence_tests {
             entity_type: EntityType::Character,
             evidence_signals: SIGNAL_CAPITALIZED,
             confidence: 0.3,
+            mention_starts: vec![],
+            first_mention: None,
         };
         assert!(!hyphen.is_single_token());
     }
