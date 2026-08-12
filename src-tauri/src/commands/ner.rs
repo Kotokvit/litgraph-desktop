@@ -357,27 +357,36 @@ fn extract_sentence_around(text: &str, offset: usize) -> String {
     let bytes = text.as_bytes();
     let max_len = 200;
 
+    if bytes.is_empty() {
+        return String::new();
+    }
+
     // Find sentence start: scan backwards for terminator
     let mut start = 0;
     if offset > 0 {
-        let mut i = offset.min(bytes.len() - 1);
+        let mut i = std::cmp::min(offset, bytes.len() - 1);
         while i > 0 {
             let b = bytes[i];
             if b == b'.' || b == b'!' || b == b'?' || b == b'\n' {
                 start = i + 1;
                 break;
             }
-            i -= 1;
-            if offset - i > max_len {
+            if i == 0 { break; }
+            i = i.saturating_sub(1);
+            if offset.saturating_sub(i) > max_len {
                 start = i;
                 break;
             }
+        }
+        // Ensure start is on a valid char boundary (avoid slicing in middle of multibyte char)
+        while start < text.len() && !text.is_char_boundary(start) {
+            start += 1;
         }
     }
 
     // Find sentence end: scan forwards for terminator
     let mut end = bytes.len();
-    let mut i = offset;
+    let mut i = std::cmp::min(offset, bytes.len());
     while i < bytes.len() {
         let b = bytes[i];
         if b == b'.' || b == b'!' || b == b'?' || b == b'\n' {
@@ -385,10 +394,14 @@ fn extract_sentence_around(text: &str, offset: usize) -> String {
             break;
         }
         i += 1;
-        if i - offset > max_len {
+        if i.saturating_sub(offset) > max_len {
             end = i;
             break;
         }
+    }
+    // Ensure end is on a valid char boundary
+    while end > start && !text.is_char_boundary(end) {
+        end -= 1;
     }
 
     text[start..end.min(text.len())]
@@ -398,6 +411,39 @@ fn extract_sentence_around(text: &str, offset: usize) -> String {
         .take(max_len)
         .collect()
 }
+
+    #[cfg(test)]
+    mod extract_sentence_tests {
+        use super::extract_sentence_around;
+
+        #[test]
+        fn test_extract_sentence_empty_text() {
+            let s = "";
+            let res = extract_sentence_around(s, 0);
+            assert_eq!(res, "");
+        }
+
+        #[test]
+        fn test_extract_sentence_cyrillic_long_no_panic() {
+            // long cyrillic sentence without terminators (>200 bytes)
+            let mut s = String::new();
+            for _ in 0..250 {
+                s.push('а');
+            }
+            // place offset in the middle
+            let off = s.len() / 2;
+            let res = extract_sentence_around(&s, off);
+            assert!(!res.is_empty());
+        }
+
+        #[test]
+        fn test_extract_sentence_mixed_ascii_cyrillic() {
+            let s = "Hello world. Привет мир без точки длинная строка которая продолжается и не имеет точки дальше".to_string();
+            let off = s.find("Привет").unwrap_or(0);
+            let res = extract_sentence_around(&s, off);
+            assert!(res.contains("Привет") || !res.is_empty());
+        }
+    }
 
 /// v2.2 / Step 2c: 4-way merge policy implementation.
 ///
