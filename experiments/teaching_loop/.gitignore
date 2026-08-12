@@ -1,0 +1,7 @@
+out/
+corpus/
+corpus_test/
+__pycache__/
+*.pyc
+dataset.jsonl
+weights.json
