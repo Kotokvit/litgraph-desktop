@@ -26,9 +26,10 @@
 //! существительные (Город, Время, Свет, Тень и т.д.).
 
 use fancy_regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParsedCharacter {
     pub name: String,
     pub aliases: Vec<String>,

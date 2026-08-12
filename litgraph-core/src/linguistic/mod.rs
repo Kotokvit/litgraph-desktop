@@ -24,6 +24,7 @@
 //! Each layer is a self-contained module with deterministic behavior.
 //! No layer depends on ML training or stochastic weights.
 
+pub mod case_validation;
 pub mod lemmatizer;
 pub mod pos_tagger;
 pub mod svo_parser;

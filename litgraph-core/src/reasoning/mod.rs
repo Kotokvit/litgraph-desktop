@@ -34,10 +34,14 @@
 //!                                   └─────────────────────────────┘
 //! ```
 
+pub mod diagnostics;
+pub mod engine;
 pub mod narrative_graph;
 pub mod paradox;
 pub mod stub;
 
+pub use diagnostics::{DiagnosticsReport, Script};
+pub use engine::{ReasoningEngine, ReasoningReport, ScoredCharacter, ValidatedTriplet};
 pub use narrative_graph::NarrativeGraph;
 pub use paradox::{Paradox, ParadoxDetector, ParadoxKind};
 pub use stub::StubConflictAnalyzer;

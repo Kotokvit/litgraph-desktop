@@ -45,3 +45,7 @@ path = "src/bin/rust_ner_cli.rs"
 name = "train_scorer"
 path = "src/bin/train_scorer.rs"
 required-features = ["autodiff"]
+
+[[bin]]
+name = "reasoning_cli"
+path = "src/bin/reasoning_cli.rs"

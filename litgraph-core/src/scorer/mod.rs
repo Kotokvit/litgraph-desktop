@@ -25,9 +25,11 @@
 //! Real training happens in `experiments/teaching_loop/` (Phase 2 Step 4).
 
 pub mod features;
+pub mod inference;
 pub mod model;
 pub mod weights;
 
 pub use features::{extract_features, FEATURE_COUNT, FeatureVector};
+pub use inference::{Decision, InferenceScorer};
 pub use model::{BurnScorer, BurnScorerConfig, BurnScorerModel, ScalerParams, HIDDEN_DIM, Backend};
 pub use weights::{WeightsFile, WeightsError, WeightsData};

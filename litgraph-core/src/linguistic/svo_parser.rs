@@ -141,6 +141,34 @@ impl SvoParser {
         self.extract_triplets(&tagged)
     }
 
+    /// Tokenize + POS-tag the input text, returning the tagged tokens.
+    ///
+    /// This is the same pipeline used by [`parse_text`](Self::parse_text),
+    /// but stops before triplet extraction. The Reasoning Engine uses this
+    /// to get tagged tokens for case validation without re-running the
+    /// tokenizer + lemmatizer + POS tagger.
+    ///
+    /// # Returns
+    /// A `Vec<TaggedToken>` aligned with the tokenized input. Each token has
+    /// its disambiguated `PosTag` (including grammatical case, gender, etc.).
+    pub fn tag_text(&self, sentence_text: &str) -> Vec<TaggedToken> {
+        let tokens: Vec<&str> = sentence_text
+            .split(|c: char| !c.is_alphanumeric() && c != '\'' && c != '\u{2019}')
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        if tokens.is_empty() {
+            return Vec::new();
+        }
+
+        let candidates: Vec<Vec<PosTag>> = tokens
+            .iter()
+            .map(|&w| candidates_for_word(w))
+            .collect();
+
+        pos_tagger::tag_sentence(&tokens, &candidates)
+    }
+
     /// Extract SVO triplets from pre-tagged tokens
     pub fn extract_triplets(&self, tokens: &[TaggedToken]) -> Vec<SvoTriplet> {
         let mut triplets = Vec::new();
