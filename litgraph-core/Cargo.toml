@@ -20,6 +20,11 @@ phf = "0.11"
 flate2 = "1.0"
 petgraph = "0.6"
 
+# v0.6.0 / Phase 2 Step 3: Burn scorer — lightweight MLP for refined confidence.
+# Backend: ndarray (pure Rust, no BLAS) for portability + cross-platform.
+# When training matures we may switch to a faster backend (tch-cpu / wgpu).
+burn = { version = "0.14", default-features = false, features = ["ndarray"] }
+
 [lib]
 name = "litgraph_core"
 path = "src/lib.rs"
