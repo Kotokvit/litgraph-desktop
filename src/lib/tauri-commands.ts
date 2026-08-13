@@ -288,28 +288,31 @@ export async function reasoningValidateText(
 export type Decision = "approve" | "reject" | "review";
 export type Script = "cyrillic" | "latin" | "mixed" | "other";
 
-/** Scored character candidate. Mirrors `ScoredCharacter` (Rust). */
+/** Scored character candidate. Mirrors `ScoredCharacter` (Rust).
+ * Wire format is snake_case because the Rust struct does NOT carry
+ * `#[serde(rename_all = "camelCase")]` and `#[serde(flatten)]` on the
+ * inner `ParsedCharacter` would not be renamed by an outer attribute anyway. */
 export interface ScoredCharacter {
   // ParsedCharacter fields (flattened in Rust via #[serde(flatten)]):
   name: string;
   aliases: string[];
   count: number;
   description: string;
-  speechCount: number;
-  directCount: number;
+  speech_count: number;
+  direct_count: number;
   reason: string;
-  entityType: "Character" | "Concept" | "Organization";
-  evidenceSignals: number;
+  entity_type: "Character" | "Concept" | "Organization";
+  evidence_signals: number;
   confidence: number;
-  mentionStarts: number[];
-  firstMention: number | null;
-  nominativeCount: number;
-  accusativeCount: number;
-  genitiveNegatedCount: number;
+  mention_starts: number[];
+  first_mention: number | null;
+  nominative_count: number;
+  accusative_count: number;
+  genitive_negated_count: number;
   // ScoredCharacter fields:
   features: number[]; // length 11 (case-aware MLP)
-  rawConfidence: number;
-  refinedConfidence: number;
+  raw_confidence: number;
+  refined_confidence: number;
   decision: Decision;
   script: Script;
 }
@@ -321,7 +324,8 @@ export interface CaseValidationResult {
   [key: string]: unknown;
 }
 
-/** SVO triplet with case-validation attached. Mirrors `ValidatedTriplet`. */
+/** SVO triplet with case-validation attached. Mirrors `ValidatedTriplet`.
+ * snake_case on the wire (Rust struct has no serde rename). */
 export interface ValidatedTriplet {
   // SvoTriplet fields (flattened):
   actor: string;
@@ -332,102 +336,105 @@ export interface ValidatedTriplet {
   polarity: boolean;
   confidence: number;
   // ValidatedTriplet fields:
-  caseValidation: CaseValidationResult;
-  isActorCharacter: boolean;
-  isTargetCharacter: boolean;
+  case_validation: CaseValidationResult;
+  is_actor_character: boolean;
+  is_target_character: boolean;
 }
 
-/** Serializable subset of EpsilonResult. Mirrors `EpsilonSummary`. */
+/** Serializable subset of EpsilonResult. Mirrors `EpsilonSummary`.
+ * snake_case on the wire. */
 export interface EpsilonSummary {
   epsilon: number;
   normalized: number;
-  wordCount: number;
-  uniqueWords: number;
-  emotionCount: number;
-  isClimax: boolean;
-  isNoise: boolean;
-  thetaRel: number;
-  formulaVariant: string;
+  word_count: number;
+  unique_words: number;
+  emotion_count: number;
+  is_climax: boolean;
+  is_noise: boolean;
+  theta_rel: number;
+  formula_variant: string;
 }
 
-/** Conflict report. Mirrors `ConflictReport`. */
+/** Conflict report. Mirrors `ConflictReport`. snake_case on the wire. */
 export interface ConflictReport {
-  omegaConf: number;
-  spectralRadius: number;
-  nodeCount: number;
-  edgeCount: number;
+  omega_conf: number;
+  spectral_radius: number;
+  node_count: number;
+  edge_count: number;
   paradoxes: unknown[]; // Paradox enum — rendered as JSON
 }
 
-/** Diagnostics on algorithm health. Mirrors `DiagnosticsReport`. */
+/** Diagnostics on algorithm health. Mirrors `DiagnosticsReport`.
+ * snake_case on the wire (all nested sub-structs also snake_case). */
 export interface DiagnosticsReport {
-  overallHealth: string;
-  classImbalance: {
-    approveCount: number;
-    rejectCount: number;
-    reviewCount: number;
-    approveRejectRatio: number;
-    isImbalanced: boolean;
+  overall_health: string;
+  class_imbalance: {
+    approve_count: number;
+    reject_count: number;
+    review_count: number;
+    approve_reject_ratio: number;
+    is_imbalanced: boolean;
     recommendation: string;
   };
-  scoreDistribution: {
+  score_distribution: {
     mean: number;
     std: number;
     min: number;
     max: number;
-    approveMean: number;
-    rejectMean: number;
+    approve_mean: number;
+    reject_mean: number;
     separation: number;
-    underfittingDetected: boolean;
+    underfitting_detected: boolean;
     recommendation: string;
   };
-  scriptAnalysis: {
-    cyrillicCount: number;
-    latinCount: number;
-    mixedCount: number;
-    otherCount: number;
+  script_analysis: {
+    cyrillic_count: number;
+    latin_count: number;
+    mixed_count: number;
+    other_count: number;
     total: number;
-    latinFraction: number;
-    parallelTextDetected: boolean;
+    latin_fraction: number;
+    parallel_text_detected: boolean;
     recommendation: string;
   };
-  featureInformativeness: {
-    perFeatureStd: number[];
-    lowInformationFeatures: number[];
-    featureNames: string[];
+  feature_informativeness: {
+    per_feature_std: number[];
+    low_information_features: number[];
+    feature_names: string[];
     recommendation: string;
   };
-  weightMagnitude: {
-    fc1WeightMean: number;
-    fc1WeightStd: number;
-    fc1WeightMin: number;
-    fc1WeightMax: number;
-    fc2WeightMean: number;
-    fc2WeightStd: number;
-    collapseDetected: boolean;
-    explosionDetected: boolean;
+  weight_magnitude: {
+    fc1_weight_mean: number;
+    fc1_weight_std: number;
+    fc1_weight_min: number;
+    fc1_weight_max: number;
+    fc2_weight_mean: number;
+    fc2_weight_std: number;
+    collapse_detected: boolean;
+    explosion_detected: boolean;
     recommendation: string;
   };
   recommendations: string[];
 }
 
-/** Full ReasoningReport returned by `reasoning_run_full_pipeline`. */
+/** Full ReasoningReport returned by `reasoning_run_full_pipeline`.
+ * snake_case on the wire. */
 export interface ReasoningReport {
   characters: ScoredCharacter[];
   triplets: ValidatedTriplet[];
   epsilon: EpsilonSummary;
   conflict: ConflictReport;
   diagnostics: DiagnosticsReport;
-  approvedCount: number;
-  rejectedCount: number;
-  reviewCount: number;
-  totalCharacters: number;
-  totalTriplets: number;
-  tripletsValidCases: number;
-  tripletsInvalidCases: number;
-  textLength: number;
-  weightsVersion: string;
-  weightsArchitecture: string;
+  approved_count: number;
+  rejected_count: number;
+  review_count: number;
+  total_characters: number;
+  total_triplets: number;
+  triplets_valid_cases: number;
+  triplets_invalid_cases: number;
+  text_length: number;
+  weights_version: string;
+  weights_architecture: string;
 }
 
 /**

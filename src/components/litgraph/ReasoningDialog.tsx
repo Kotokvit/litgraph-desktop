@@ -276,15 +276,15 @@ function ScoredCharacterRow({ c }: { c: ScoredCharacter }) {
         </span>
       </div>
       <div className="mt-1 grid grid-cols-3 gap-x-3 gap-y-0.5 text-[10px] font-mono text-stone-600">
-        <div>raw: <span className="text-stone-800">{c.rawConfidence.toFixed(3)}</span></div>
-        <div>refined: <span className="text-indigo-700 font-semibold">{c.refinedConfidence.toFixed(4)}</span></div>
+        <div>raw: <span className="text-stone-800">{c.raw_confidence.toFixed(3)}</span></div>
+        <div>refined: <span className="text-indigo-700 font-semibold">{c.refined_confidence.toFixed(4)}</span></div>
         <div>script: <span className={scriptColor}>{c.script}</span></div>
-        <div>speech: <span className="text-stone-800">{c.speechCount}</span></div>
-        <div>direct: <span className="text-stone-800">{c.directCount}</span></div>
-        <div>mentions: <span className="text-stone-800">{c.mentionStarts.length}</span></div>
-        <div>nom: <span className="text-stone-800">{c.nominativeCount}</span></div>
-        <div>acc: <span className="text-stone-800">{c.accusativeCount}</span></div>
-        <div>gen-neg: <span className="text-stone-800">{c.genitiveNegatedCount}</span></div>
+        <div>speech: <span className="text-stone-800">{c.speech_count}</span></div>
+        <div>direct: <span className="text-stone-800">{c.direct_count}</span></div>
+        <div>mentions: <span className="text-stone-800">{c.mention_starts.length}</span></div>
+        <div>nom: <span className="text-stone-800">{c.nominative_count}</span></div>
+        <div>acc: <span className="text-stone-800">{c.accusative_count}</span></div>
+        <div>gen-neg: <span className="text-stone-800">{c.genitive_negated_count}</span></div>
       </div>
       <div className="mt-1.5 text-[10px] text-stone-400 font-mono break-all">
         features: [{c.features.map((f) => f.toFixed(2)).join(", ")}]
@@ -300,11 +300,11 @@ function ScoredCharacterRow({ c }: { c: ScoredCharacter }) {
 
 function TripletRow({ t }: { t: ValidatedTriplet }) {
   const caseColor =
-    t.caseValidation.overall === "Valid"
+    t.case_validation.overall === "Valid"
       ? "text-emerald-700 bg-emerald-50 border-emerald-300"
-      : t.caseValidation.overall === "Invalid"
+      : t.case_validation.overall === "Invalid"
         ? "text-red-700 bg-red-50 border-red-300"
-        : t.caseValidation.overall === "Partial"
+        : t.case_validation.overall === "Partial"
           ? "text-amber-700 bg-amber-50 border-amber-300"
           : "text-stone-500 bg-stone-50 border-stone-300";
 
@@ -320,14 +320,14 @@ function TripletRow({ t }: { t: ValidatedTriplet }) {
           {t.location && <span className="text-stone-500"> @ {t.location}</span>}
         </span>
         <span className={`px-1.5 py-0.5 rounded border text-[10px] font-mono ${caseColor}`}>
-          {t.caseValidation.overall}
+          {t.case_validation.overall}
         </span>
       </div>
       <div className="mt-1 text-[10px] text-stone-500 flex gap-3 font-mono">
         <span>conf={t.confidence.toFixed(3)}</span>
         <span>polarity={t.polarity ? "affirm" : "negated"}</span>
-        <span>actor_is_char={String(t.isActorCharacter)}</span>
-        <span>target_is_char={String(t.isTargetCharacter)}</span>
+        <span>actor_is_char={String(t.is_actor_character)}</span>
+        <span>target_is_char={String(t.is_target_character)}</span>
       </div>
     </div>
   );
@@ -336,9 +336,9 @@ function TripletRow({ t }: { t: ValidatedTriplet }) {
 function DiagnosticsBlock({ report }: { report: ReasoningReport }) {
   const d = report.diagnostics;
   const healthColor =
-    d.overallHealth === "healthy"
+    d.overall_health === "healthy"
       ? "text-emerald-700 bg-emerald-50 border-emerald-300"
-      : d.overallHealth === "degraded"
+      : d.overall_health === "degraded"
         ? "text-amber-700 bg-amber-50 border-amber-300"
         : "text-red-700 bg-red-50 border-red-300";
 
@@ -347,7 +347,7 @@ function DiagnosticsBlock({ report }: { report: ReasoningReport }) {
       <div className="flex items-center justify-between gap-2">
         <span className="font-medium text-stone-800">Diagnostics</span>
         <span className={`px-2 py-0.5 rounded border text-[10px] font-mono ${healthColor}`}>
-          {d.overallHealth}
+          {d.overall_health}
         </span>
       </div>
 
@@ -356,11 +356,11 @@ function DiagnosticsBlock({ report }: { report: ReasoningReport }) {
         <div className="rounded border border-stone-200 bg-stone-50 p-2">
           <div className="text-stone-500 uppercase tracking-wide mb-1">Class imbalance</div>
           <div className="font-mono text-stone-800">
-            approve: {d.classImbalance.approveCount}, reject: {d.classImbalance.rejectCount}, review: {d.classImbalance.reviewCount}
+            approve: {d.class_imbalance.approve_count}, reject: {d.class_imbalance.reject_count}, review: {d.class_imbalance.review_count}
           </div>
           <div className="font-mono text-stone-700">
-            ratio: {d.classImbalance.approveRejectRatio.toFixed(2)}:1
-            {d.classImbalance.isImbalanced && (
+            ratio: {d.class_imbalance.approve_reject_ratio.toFixed(2)}:1
+            {d.class_imbalance.is_imbalanced && (
               <span className="text-red-600 ml-1">⚠ imbalanced</span>
             )}
           </div>
@@ -370,11 +370,11 @@ function DiagnosticsBlock({ report }: { report: ReasoningReport }) {
         <div className="rounded border border-stone-200 bg-stone-50 p-2">
           <div className="text-stone-500 uppercase tracking-wide mb-1">Score distribution</div>
           <div className="font-mono text-stone-800">
-            mean={d.scoreDistribution.mean.toFixed(4)} std={d.scoreDistribution.std.toFixed(4)}
+            mean={d.score_distribution.mean.toFixed(4)} std={d.score_distribution.std.toFixed(4)}
           </div>
           <div className="font-mono text-stone-700">
-            separation={d.scoreDistribution.separation.toFixed(4)}
-            {d.scoreDistribution.underfittingDetected && (
+            separation={d.score_distribution.separation.toFixed(4)}
+            {d.score_distribution.underfitting_detected && (
               <span className="text-red-600 ml-1">⚠ underfit</span>
             )}
           </div>
@@ -384,11 +384,11 @@ function DiagnosticsBlock({ report }: { report: ReasoningReport }) {
         <div className="rounded border border-stone-200 bg-stone-50 p-2">
           <div className="text-stone-500 uppercase tracking-wide mb-1">Script analysis</div>
           <div className="font-mono text-stone-800">
-            cyr={d.scriptAnalysis.cyrillicCount}, lat={d.scriptAnalysis.latinCount}, mix={d.scriptAnalysis.mixedCount}
+            cyr={d.script_analysis.cyrillic_count}, lat={d.script_analysis.latin_count}, mix={d.script_analysis.mixed_count}
           </div>
           <div className="font-mono text-stone-700">
-            latin_frac={(d.scriptAnalysis.latinFraction * 100).toFixed(1)}%
-            {d.scriptAnalysis.parallelTextDetected && (
+            latin_frac={(d.script_analysis.latin_fraction * 100).toFixed(1)}%
+            {d.script_analysis.parallel_text_detected && (
               <span className="text-red-600 ml-1">⚠ polluted</span>
             )}
           </div>
@@ -398,12 +398,12 @@ function DiagnosticsBlock({ report }: { report: ReasoningReport }) {
         <div className="rounded border border-stone-200 bg-stone-50 p-2">
           <div className="text-stone-500 uppercase tracking-wide mb-1">Weight magnitude</div>
           <div className="font-mono text-stone-800">
-            fc1_std={d.weightMagnitude.fc1WeightStd.toFixed(3)} fc1_max={d.weightMagnitude.fc1WeightMax.toFixed(3)}
+            fc1_std={d.weight_magnitude.fc1_weight_std.toFixed(3)} fc1_max={d.weight_magnitude.fc1_weight_max.toFixed(3)}
           </div>
           <div className="font-mono text-stone-700">
-            fc2_std={d.weightMagnitude.fc2WeightStd.toFixed(3)}
-            {d.weightMagnitude.collapseDetected && <span className="text-red-600 ml-1">⚠ collapse</span>}
-            {d.weightMagnitude.explosionDetected && <span className="text-amber-600 ml-1">⚠ explosion</span>}
+            fc2_std={d.weight_magnitude.fc2_weight_std.toFixed(3)}
+            {d.weight_magnitude.collapse_detected && <span className="text-red-600 ml-1">⚠ collapse</span>}
+            {d.weight_magnitude.explosion_detected && <span className="text-amber-600 ml-1">⚠ explosion</span>}
           </div>
         </div>
       </div>
@@ -412,11 +412,11 @@ function DiagnosticsBlock({ report }: { report: ReasoningReport }) {
       <div className="rounded border border-stone-200 bg-stone-50 p-2">
         <div className="text-stone-500 uppercase tracking-wide mb-1">Feature informativeness</div>
         <div className="font-mono text-[10px] text-stone-800 break-all">
-          std: [{d.featureInformativeness.perFeatureStd.map((s) => s.toFixed(2)).join(", ")}]
+          std: [{d.feature_informativeness.per_feature_std.map((s) => s.toFixed(2)).join(", ")}]
         </div>
-        {d.featureInformativeness.lowInformationFeatures.length > 0 && (
+        {d.feature_informativeness.low_information_features.length > 0 && (
           <div className="mt-1 text-[10px] text-amber-700 font-mono">
-            low-info features (indices): [{d.featureInformativeness.lowInformationFeatures.join(", ")}]
+            low-info features (indices): [{d.feature_informativeness.low_information_features.join(", ")}]
           </div>
         )}
       </div>
@@ -446,8 +446,12 @@ function ReasoningDialogInner({ open, text, onClose }: ReasoningDialogProps) {
   const [events, setEvents] = useState<Event[] | null>(null);
   const [worldView, setWorldView] = useState<WorldStateView | null>(null);
   const [report, setReport] = useState<CycleReport | null>(null);
-  // v0.7+ Full Pipeline state
-  const [mode, setMode] = useState<"symbolic" | "full">("full");
+  // v0.7+ Full Pipeline state.
+  // S2-fix: mode switcher removed from UI; dialog now always runs Full Pipeline.
+  // `mode` is kept as a constant "full" so the symbolic code paths below remain
+  // as dead-code reference for future re-integration. `setMode` is intentionally
+  // dropped from the destructuring to keep `noUnusedLocals` happy.
+  const [mode] = useState<"symbolic" | "full">("full");
   const [fullReport, setFullReport] = useState<ReasoningReport | null>(null);
 
   const exportProject = useLitStore((s) => s.exportProject);
@@ -477,8 +481,9 @@ function ReasoningDialogInner({ open, text, onClose }: ReasoningDialogProps) {
         // S1-D: publish case-validated triplets to the shared Zustand store.
         // Rust-side `ReasoningReport.triplets` is `ValidatedTriplet[]` with fields
         // { actor, verb, target, instrument, location, polarity, confidence,
-        //   caseValidation: { overall: "Valid"|...|"Unknown" }, isActorCharacter,
-        //   isTargetCharacter }.
+        //   case_validation: { overall: "Valid"|...|"Unknown" }, is_actor_character,
+        //   is_target_character } — all snake_case on the wire (Rust struct has no
+        //   serde rename).
         // Here we project to the simplified UI `SvoTriplet` shape expected by
         // Inspector.tsx (subject/verb/object/confidence/caseValid/sentence).
         if (result?.triplets && Array.isArray(result.triplets)) {
@@ -488,7 +493,7 @@ function ReasoningDialogInner({ open, text, onClose }: ReasoningDialogProps) {
               verb: t.verb ?? "",
               object: t.target ?? "",
               confidence: typeof t.confidence === "number" ? t.confidence : undefined,
-              caseValid: t.caseValidation?.overall === "Valid",
+              caseValid: t.case_validation?.overall === "Valid",
               // Rust-side `ValidatedTriplet` не несёт исходного предложения —
               // оставляем sentence undefined (поле опциональное в SvoTriplet).
             }))
@@ -550,31 +555,9 @@ function ReasoningDialogInner({ open, text, onClose }: ReasoningDialogProps) {
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto lit-scroll space-y-3">
-          {/* Mode switcher — Full Pipeline (v0.7+) vs Symbolic (v0.1) */}
-          <div className="flex items-center gap-1 rounded-md bg-stone-100 p-1 text-xs">
-            <button
-              type="button"
-              onClick={() => { setMode("full"); setFullReport(null); setEvents(null); setWorldView(null); setReport(null); setError(null); }}
-              className={`px-3 py-1.5 rounded font-medium transition-colors ${
-                mode === "full"
-                  ? "bg-white text-indigo-700 shadow-sm"
-                  : "text-stone-500 hover:text-stone-700"
-              }`}
-            >
-              🧠 Full Pipeline (v0.7+) — Burn weights + case validation + diagnostics
-            </button>
-            <button
-              type="button"
-              onClick={() => { setMode("symbolic"); setFullReport(null); setEvents(null); setWorldView(null); setReport(null); setError(null); }}
-              className={`px-3 py-1.5 rounded font-medium transition-colors ${
-                mode === "symbolic"
-                  ? "bg-white text-purple-700 shadow-sm"
-                  : "text-stone-500 hover:text-stone-700"
-              }`}
-            >
-              ⚙️ Symbolic Engine (v0.1) — events + world state + hypotheses
-            </button>
-          </div>
+          {/* Mode switcher removed in S2-fix: dialog now always uses Full Pipeline (v0.7+).
+              The `mode` state is kept as a constant "full" so the old symbolic code
+              paths below remain as dead-code reference for future re-integration. */}
 
           {!events && !fullReport && !loading && (
             <>
@@ -795,11 +778,11 @@ function ReasoningDialogInner({ open, text, onClose }: ReasoningDialogProps) {
             <div className="space-y-3">
               {/* Top metrics */}
               <div className="grid grid-cols-5 gap-2">
-                <MetricBox label="Characters" value={fullReport.totalCharacters} color="#7C3AED" />
-                <MetricBox label="Approved" value={fullReport.approvedCount} color="#10B981" />
-                <MetricBox label="Rejected" value={fullReport.rejectedCount} color="#DC2626" />
-                <MetricBox label="Triplets" value={fullReport.totalTriplets} color="#0EA5E9" />
-                <MetricBox label="Invalid cases" value={fullReport.tripletsInvalidCases} color="#F59E0B" />
+                <MetricBox label="Characters" value={fullReport.total_characters} color="#7C3AED" />
+                <MetricBox label="Approved" value={fullReport.approved_count} color="#10B981" />
+                <MetricBox label="Rejected" value={fullReport.rejected_count} color="#DC2626" />
+                <MetricBox label="Triplets" value={fullReport.total_triplets} color="#0EA5E9" />
+                <MetricBox label="Invalid cases" value={fullReport.triplets_invalid_cases} color="#F59E0B" />
               </div>
 
               {/* POLER ε + Conflict */}
@@ -811,31 +794,31 @@ function ReasoningDialogInner({ open, text, onClose }: ReasoningDialogProps) {
                   </div>
                   <div className="text-[10px] text-stone-500 font-mono mt-1">
                     normalized={fullReport.epsilon.normalized.toFixed(2)} ·
-                    words={fullReport.epsilon.wordCount} ·
-                    unique={fullReport.epsilon.uniqueWords} ·
-                    emotions={fullReport.epsilon.emotionCount}
+                    words={fullReport.epsilon.word_count} ·
+                    unique={fullReport.epsilon.unique_words} ·
+                    emotions={fullReport.epsilon.emotion_count}
                   </div>
                   <div className="mt-1 text-[10px]">
-                    {fullReport.epsilon.isClimax ? (
+                    {fullReport.epsilon.is_climax ? (
                       <span className="text-red-600 font-medium">⚡ climax detected</span>
-                    ) : fullReport.epsilon.isNoise ? (
+                    ) : fullReport.epsilon.is_noise ? (
                       <span className="text-stone-400">silence</span>
                     ) : (
                       <span className="text-stone-500">no climax</span>
                     )}
-                    <span className="ml-2 text-stone-400">θ_rel={fullReport.epsilon.thetaRel.toFixed(3)}</span>
-                    <span className="ml-2 text-stone-400 font-mono">{fullReport.epsilon.formulaVariant}</span>
+                    <span className="ml-2 text-stone-400">θ_rel={fullReport.epsilon.theta_rel.toFixed(3)}</span>
+                    <span className="ml-2 text-stone-400 font-mono">{fullReport.epsilon.formula_variant}</span>
                   </div>
                 </div>
                 <div className="rounded-md border bg-white p-2.5 text-xs">
                   <div className="text-[10px] text-stone-500 uppercase tracking-wide">Conflict (Ω_conf)</div>
                   <div className="text-base font-bold text-amber-700">
-                    {fullReport.conflict.omegaConf.toFixed(4)}
+                    {fullReport.conflict.omega_conf.toFixed(4)}
                   </div>
                   <div className="text-[10px] text-stone-500 font-mono mt-1">
-                    ρ(A)={fullReport.conflict.spectralRadius.toFixed(4)} ·
-                    nodes={fullReport.conflict.nodeCount} ·
-                    edges={fullReport.conflict.edgeCount} ·
+                    ρ(A)={fullReport.conflict.spectral_radius.toFixed(4)} ·
+                    nodes={fullReport.conflict.node_count} ·
+                    edges={fullReport.conflict.edge_count} ·
                     paradoxes={fullReport.conflict.paradoxes.length}
                   </div>
                 </div>
@@ -861,7 +844,7 @@ function ReasoningDialogInner({ open, text, onClose }: ReasoningDialogProps) {
                 <div className="space-y-1.5">
                   <div className="text-xs font-medium text-stone-700 flex items-center gap-1.5">
                     <Lucide.Zap className="w-3.5 h-3.5" />
-                    SVO triplets ({fullReport.totalTriplets}, valid_cases={fullReport.tripletsValidCases}, invalid={fullReport.tripletsInvalidCases})
+                    SVO triplets ({fullReport.total_triplets}, valid_cases={fullReport.triplets_valid_cases}, invalid={fullReport.triplets_invalid_cases})
                   </div>
                   <div className="space-y-1">
                     {fullReport.triplets.map((t, i) => (
@@ -876,7 +859,7 @@ function ReasoningDialogInner({ open, text, onClose }: ReasoningDialogProps) {
 
               {/* Weights metadata */}
               <div className="rounded-md bg-stone-50 border border-stone-200 p-2 text-[10px] text-stone-500 font-mono">
-                weights: {fullReport.weightsArchitecture} · version={fullReport.weightsVersion} · text_length={fullReport.textLength}
+                weights: {fullReport.weights_architecture} · version={fullReport.weights_version} · text_length={fullReport.text_length}
               </div>
             </div>
           )}
@@ -896,7 +879,7 @@ function ReasoningDialogInner({ open, text, onClose }: ReasoningDialogProps) {
               size="sm"
               onClick={handleRunReasoning}
               disabled={loading || !text.trim()}
-              className={mode === "full" ? "bg-indigo-600 hover:bg-indigo-700 text-white" : "bg-purple-600 hover:bg-purple-700 text-white"}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
             >
               {loading ? (
                 <>
@@ -906,7 +889,7 @@ function ReasoningDialogInner({ open, text, onClose }: ReasoningDialogProps) {
               ) : (
                 <>
                   <Lucide.Brain className="w-4 h-4 mr-1.5" />
-                  {mode === "full" ? "Запустить Full Pipeline" : "Запустить reasoning"}
+                  Запустить Reasoning
                 </>
               )}
             </Button>

@@ -354,3 +354,40 @@ Stage Summary:
 - Confidence Heatmap на холсте: пунктир + alpha для low-conf
 - SVO-триплеты кэшируются в Zustand и доступны из Inspector
 - Следующий спринт (S2): Hypothesis Inbox + Subgraphs/Folding + Timeline-режим
+
+---
+Task ID: S2-fix
+Agent: sub-agent (general-purpose)
+Task: Fix snake_case/camelCase mismatch (ReasoningDialog crash) + remove mode switcher (always Full Pipeline)
+
+Work Log:
+- Прочитал worklog.md (понял контекст reasoning-engine-v0.7 + wire-full-pipeline-to-ui + S1-D SvoTriplet mapping).
+- Прочитал src/lib/tauri-commands.ts — нашёл 6 интерфейсов (ScoredCharacter, ValidatedTriplet, EpsilonSummary, ConflictReport, DiagnosticsReport, ReasoningReport), которые зеркалируют Rust-структуры БЕЗ `#[serde(rename_all = "camelCase")]` — значит на проводе snake_case, а TS-типы были camelCase.
+- Прочитал src/components/litgraph/ReasoningDialog.tsx целиком — нашёл все accessor'ы, требующие конвертации.
+- **File 1: tauri-commands.ts** — MultiEdit'ом перевёл все multi-word поля в snake_case:
+  * ScoredCharacter: speech_count, direct_count, entity_type, evidence_signals, mention_starts, first_mention, nominative_count, accusative_count, genitive_negated_count, raw_confidence, refined_confidence (+ комментарий про flatten + serde rename_all)
+  * ValidatedTriplet: case_validation, is_actor_character, is_target_character
+  * EpsilonSummary: word_count, unique_words, emotion_count, is_climax, is_noise, theta_rel, formula_variant
+  * ConflictReport: omega_conf, spectral_radius, node_count, edge_count
+  * DiagnosticsReport: overall_health, class_imbalance.*, score_distribution.*, script_analysis.*, feature_informativeness.*, weight_magnitude.* (всего 28 вложенных полей)
+  * ReasoningReport: approved_count, rejected_count, review_count, total_characters, total_triplets, triplets_valid_cases, triplets_invalid_cases, text_length, weights_version, weights_architecture
+  * НЕ трогал EpsilonClimaxDto / SvoTripletDto / ParadoxDto / ChapterBreakdownDto / ParadoxReportDto — они зеркалируют Rust DTOs с `#[serde(rename_all = "camelCase")]` (комментарий в строке ~470).
+- **File 2: ReasoningDialog.tsx** — MultiEdit'ом (17 атомарных edit-операций) обновил все field access'ы:
+  * ScoredCharacterRow: c.raw_confidence, c.refined_confidence, c.speech_count, c.direct_count, c.mention_starts, c.nominative_count, c.accusative_count, c.genitive_negated_count
+  * TripletRow: t.case_validation.overall (4 места), t.is_actor_character, t.is_target_character
+  * DiagnosticsBlock: d.overall_health (3 места), d.class_imbalance.{approve_count,reject_count,review_count,approve_reject_ratio,is_imbalanced}, d.score_distribution.{mean,std,separation,underfitting_detected}, d.script_analysis.{cyrillic_count,latin_count,mixed_count,latin_fraction,parallel_text_detected}, d.weight_magnitude.{fc1_weight_std,fc1_weight_max,fc2_weight_std,collapse_detected,explosion_detected}, d.feature_informativeness.{per_feature_std,low_information_features}
+  * fullReport: total_characters, approved_count, rejected_count, total_triplets, triplets_invalid_cases, epsilon.{word_count,unique_words,emotion_count,is_climax,is_noise,theta_rel,formula_variant}, conflict.{omega_conf,spectral_radius,node_count,edge_count}, triplets_valid_cases, weights_architecture, weights_version, text_length
+- **File 2 (S1-D mapping)**: в блоке `result.triplets.map(...)` обновил `t.caseValidation?.overall` → `t.case_validation?.overall` и переписал комментарий выше (теперь корректно описывает snake_case wire format).
+- **File 2 (mode switcher removal)**: удалил весь `<div>` блок (строки ~553-577) с двумя кнопками "🧠 Full Pipeline (v0.7+)" / "⚙️ Symbolic Engine (v0.1)". Заменил explanatory комментарием про S2-fix.
+- **File 2 (Run button)**: упростил className с тернарника на `"bg-indigo-600 hover:bg-indigo-700 text-white"`, текст кнопки — константный `"Запустить Reasoning"`.
+- **File 2 (mode state)**: оставил `const [mode] = useState<"symbolic" | "full">("full")` — убрал `setMode` из деструктуризации, т.к. tsconfig.json имеет `noUnusedLocals: true` и `setMode` больше нигде не вызывается. Условные рендеры `mode === "full"` оставлены как harmless dead-code guards (всегда true).
+- **Verification**: `npx tsc --noEmit` — 0 errors, 0 warnings, exit code 0.
+
+Stage Summary:
+- Изменённые файлы (2):
+  * src/lib/tauri-commands.ts — 6 интерфейсов конвертированы в snake_case (~75 field renames)
+  * src/components/litgraph/ReasoningDialog.tsx — ~35 field-access renames + 1 S1-D mapping fix + удалён mode switcher block (~25 строк) + упрощён Run button
+- Корневая причина краша устранена: `fullReport.epsilon.thetaRel` → `fullReport.epsilon.theta_rel` (поле теперь совпадает с wire format). Все остальные `.toFixed()` / `.length` / `.map()` вызовы на полях ReasoningReport теперь тоже указывают на реальные snake_case ключи.
+- Mode switcher убран — диалог всегда запускает Full Pipeline (v0.7+). Старый symbolic branch оставлен как dead-code reference для будущего re-integration (пользователь явно сказал "use as parts").
+- TypeScript компилируется чисто — можно pull и сразу тестировать без Rust recompile.
+- НЕ изменено: EpsilonClimaxDto, SvoTripletDto, ParadoxDto, ChapterBreakdownDto, ParadoxReportDto (camelCase Rust DTOs) и соответствующие consumer'ы в PolerPanel.tsx / ConflictGraphDialog.tsx / NerDialog.tsx.
