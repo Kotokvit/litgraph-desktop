@@ -391,3 +391,58 @@ Stage Summary:
 - Mode switcher убран — диалог всегда запускает Full Pipeline (v0.7+). Старый symbolic branch оставлен как dead-code reference для будущего re-integration (пользователь явно сказал "use as parts").
 - TypeScript компилируется чисто — можно pull и сразу тестировать без Rust recompile.
 - НЕ изменено: EpsilonClimaxDto, SvoTripletDto, ParadoxDto, ChapterBreakdownDto, ParadoxReportDto (camelCase Rust DTOs) и соответствующие consumer'ы в PolerPanel.tsx / ConflictGraphDialog.tsx / NerDialog.tsx.
+
+---
+Task ID: engine-unification-plan
+Agent: Super Z (main)
+Task: План объединения движков (old Symbolic → parts для new ReasoningEngine)
+
+Context:
+Пользователь явно сказал: "ОБТЕДЕНИ ДВИЖКИ Я УЖЕ ГОВОРИЛ НЕ УДАЛЯТЬ СТАРЫЙ А ИСПОЛЬЗОВАТЬ ЕГО КАК ЗАПЧАСТИ".
+Сейчас в репо два движка:
+- OLD: src-tauri/src/reasoning/ (cycle.rs, state.rs, hypotheses.rs, constraints.rs, facts.rs, rules.rs, inference.rs, causality.rs, timeline.rs, memory.rs, planner.rs, llm_bridge.rs, paradox.rs, contradictions.rs)
+- NEW: litgraph-core/src/reasoning/engine.rs (7-stage pipeline: NER → Burn Scorer → SVO → Case Validation → POLER ε → Narrative Graph → Diagnostics)
+
+В UI (499d9a5) я убрал mode switcher — теперь всегда NEW. Но OLD код всё ещё в репо как мёртвый код.
+
+Plan (Sprint 3, после Sprint 2: Hypothesis Inbox + Subgraphs):
+Этапы рефакторинга — извлечь полезные части из OLD в NEW как дополнительные стадии:
+
+1. **state.rs::WorldState / StateTransition** → 8-я стадия NEW ReasoningEngine
+   - Tracker alive/dead для каждого персонажа (по SVO triplets с kill/die verbs)
+   - Tracker location (по SVO triplets с go/arrive verbs)
+   - Tracker possession (по owns/seeks edges из NEW edge types Sprint 1)
+   - Вывод: WorldSnapshot[] — таймлайн состояний
+
+2. **hypotheses.rs::Hypothesis / HypothesisLog** → 9-я стадия NEW ReasoningEngine
+   - Generation: парадоксы из conflict.paradoxes + temporal inconsistencies из WorldState
+   - Kinds: Paradox, Ambiguity, FlashbackSuggestion, DeadSpeaking, Teleportation
+   - Каждая Hypothesis имеет target_nodes и suggested_action
+   - Это база для HypothesisInbox.tsx (Sprint 2)
+
+3. **constraints.rs::ConstraintEngine** → 10-я стадия (опционально)
+   - Валидация графа на структуру (no orphan scenes, no cycles in flow)
+   - Вывод: ConstraintViolation[]
+
+4. **timeline.rs::Timeline / TemporalAnchor** → часть 8-й стадии
+   - Chronon-ноды (Sprint 1 онтология) → точки на Timeline
+   - Синхронизация параллельных сюжетных линий
+
+5. **facts.rs::Action / Event / Fact** → уже не нужны как отдельные сущности
+   - Их функцию выполняет ValidatedTriplet (NEW)
+   - УДАЛИТЬ после миграции
+
+6. **cycle.rs::ReasoningCycle** → УДАЛИТЬ
+   - Это был оркестратор OLD движка
+   - NEW ReasoningEngine::analyze() заменяет его полностью
+
+7. **rules.rs / inference.rs / causality.rs / planner.rs / llm_bridge.rs**
+   - Оценить каждый: если не используется — удалить
+   - Если используется — мигрировать в NEW как стадии 11-13
+
+Цель Sprint 3: один движок ReasoningEngine с 7+3=10 стадиями, OLD код полностью переработан.
+
+Stage Summary:
+- Текущий статус: OLD код в репо, не вызывается из UI (mode switcher убран в 499d9a5)
+- Sprint 2 (текущий): Hypothesis Inbox (на базе conflict.paradoxes из NEW) + Subgraphs + Timeline
+- Sprint 3 (следующий): рефакторинг OLD → parts для NEW (этапы выше)
