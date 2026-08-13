@@ -330,3 +330,27 @@ Stage Summary:
 - S1-B (Inspector.tsx) уже использует defensive `(s: any) => s.svoTriplets ?? []` — теперь slice существует, defensive-каст можно заменить на typed selector `useLitStore((s) => s.svoTriplets)` (опционально, defensive тоже продолжает работать).
 - Coordinator next actions: запустить `npx tsc --noEmit` для финальной проверки всех S1 правок. Если S1-B решит убрать `(s: any)` каст — заменить на `useLitStore((s) => s.svoTriplets)` или импортировать `SvoTriplet` из store.ts (теперь экспортируется). Smoke test в dev-режиме: импортировать .md → Reasoning → Full Pipeline → выбрать character-ноду → Inspector должен показать SVO-history (Субъект N / Объект N колонки).
 
+
+---
+Task ID: sprint-1-summary
+Agent: Super Z (main)
+Task: Sprint 1 — integration, verification, commit, push
+
+Work Log:
+- Запустил 4 параллельных sub-agent'а (S1-A/B/C/D) — каждый в своих файлах, без конфликтов
+- S1-A: +126 строк в types.ts (3 ноды + 7 типов связей)
+- S1-B: +205 строк в Inspector.tsx (DYNAMIS: epsilon + SVO-history + archetype/emotional)
+- S1-C: +53 строки в CanvasRenderer.tsx (confidence heatmap: dashed+alpha для edges, dimmed+badge для nodes)
+- S1-D: +39 строк в store.ts + +28 строк в ReasoningDialog.tsx (SvoTriplet slice + публикация triplets)
+- TypeScript: npx tsc --noEmit -> EXIT 0 (без ошибок)
+- Rust: НЕ компилировался в sandbox (нет gdk-3.0 dev пакетов) — пользователь должен проверить у себя
+- Commit: b4d9267 feat(sprint-1): DYNAMIS Inspector + Confidence Heatmap + ontology v0.5.0
+- Push: f48014c..b4d9267 main -> main (успешно)
+
+Stage Summary:
+- Sprint 1 доставлен: 6 файлов, +651 строка
+- 14 типов нод (было 11), 16 типов связей (было 9)
+- DYNAMIS-инспектор активен: ε, SVO-history, archetype, emotional vector
+- Confidence Heatmap на холсте: пунктир + alpha для low-conf
+- SVO-триплеты кэшируются в Zustand и доступны из Inspector
+- Следующий спринт (S2): Hypothesis Inbox + Subgraphs/Folding + Timeline-режим
