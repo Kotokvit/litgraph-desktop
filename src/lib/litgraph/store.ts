@@ -41,6 +41,32 @@ export interface ReaderTarget {
   currentIndex: number;
 }
 
+/**
+ * SVO triplet, опубликованный ReasoningEngine'ом в общий store.
+ *
+ * S1-D: ReasoningDialog публикует сюда case-validated triplets после
+ * запуска Full Pipeline (v0.7+), а Inspector.tsx (S1-B) читает их, чтобы
+ * показать SVO-history по выбранной ноде. Формат намеренно упрощён
+ * относительно Rust-side `ValidatedTriplet` (actor/target/confidence/caseValidation):
+ * здесь только то, что нужно UI — subject/verb/object + confidence +
+ * caseValid (boolean-проекция из CaseValidationResult.overall) +
+ * опциональное исходное предложение.
+ */
+export interface SvoTriplet {
+  /** кто действует (Rust: actor) */
+  subject: string;
+  /** что делает (Rust: verb) */
+  verb: string;
+  /** на ком/чём (Rust: target, может быть null) */
+  object: string;
+  /** 0..1, из Rust ValidatedTriplet.confidence */
+  confidence?: number;
+  /** прошла ли case-validation (true если caseValidation.overall === "Valid") */
+  caseValid?: boolean;
+  /** исходное предложение (опционально, Rust пока не заполняет) */
+  sentence?: string;
+}
+
 // Утилита: сгенерировать id
 function uid(prefix = "n"): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random()
@@ -204,6 +230,13 @@ interface LitStore {
   readerOpen: boolean;
   readerTarget: ReaderTarget | null;
 
+  // ====== S1-D: SVO triplets cache ======
+  // ReasoningDialog публикует сюда case-validated triplets из Full Pipeline
+  // (v0.7+), чтобы Inspector.tsx (S1-B) мог показать SVO-history без
+  // повторного вызова Tauri. НЕ персистится в localStorage — это
+  // runtime-кеш, пере-вычисляется при следующем запуске reasoning.
+  svoTriplets: SvoTriplet[];
+
   // ====== Действия ======
   addNode: (type: LitNodeType, position?: { x: number; y: number }) => string;
   updateNode: (id: string, patch: Partial<LitNode>) => void;
@@ -239,6 +272,8 @@ interface LitStore {
   openReader: (target: ReaderTarget) => void;
   closeReader: () => void;
   setReaderIndex: (index: number) => void;
+  // ====== S1-D: SVO triplets cache ======
+  setSvoTriplets: (t: SvoTriplet[]) => void;
   newProject: () => void;
   loadProject: (p: LitProject, sourceMarkdown?: string) => void;
   exportProject: () => LitProject;
@@ -272,6 +307,10 @@ export const useLitStore = create<LitStore>()(
       sourceMarkdown: "",
       readerOpen: false,
       readerTarget: null,
+
+      // ====== S1-D: SVO triplets cache ======
+      svoTriplets: [],
+      setSvoTriplets: (t) => set({ svoTriplets: t }),
 
       addNode: (type, position) => {
         const cfg = NODE_TYPES[type];

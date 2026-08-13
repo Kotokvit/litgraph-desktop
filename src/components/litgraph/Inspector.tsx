@@ -10,6 +10,164 @@ import { Label } from "@/components/ui/label";
 import type { LitNode, LitEdge } from "@/lib/litgraph/types";
 import { useState } from "react";
 
+// ====== DYNAMIS (Sprint 1) helpers ======
+// S1-D добавляет в store параллельно slice `svoTriplets` (SvoTriplet[]).
+// Чтобы Inspector компилировался и до, и после интеграции S1-D, объявляем
+// локальный интерфейс и читаем селектор defensive (fallback на []).
+interface SvoTriplet {
+  subject: string;       // кто действует
+  verb: string;          // что делает
+  object: string;        // на ком/чём
+  confidence?: number;   // 0..1
+  caseValid?: boolean;   // прошла ли case-validation
+  sentence?: string;     // исходное предложение
+}
+
+const ARCHETYPES = [
+  "—", "Hero", "Shadow", "Mentor", "Trickster", "Anima/Animus", "Wise Old Man/Woman",
+  "Threshold Guardian", "Herald", "Shapeshifter", "Fool", "Creator", "Destroyer",
+];
+
+const EMOTIONAL_VECTORS = [
+  "—", "Радость", "Страх", "Гнев", "Печаль", "Отвращение", "Удивление", "Доверие",
+  "Любопытство", "Вина", "Тревога", "Восторг", "Безразличие",
+];
+
+// ε (epsilon) — радиальный прогресс-бар 0..100.
+// Цвет: зелёный (<40) → жёлтый (40-70) → красный (>70).
+function DynamisEpsilon({ epsilon }: { epsilon: number | undefined }) {
+  if (epsilon === undefined || epsilon === null || Number.isNaN(epsilon)) {
+    return (
+      <div className="text-[10px] text-stone-400 italic">
+        ε (энергия) — не вычислена. Запустите Reasoning.
+      </div>
+    );
+  }
+  const v = Math.max(0, Math.min(100, epsilon));
+  const radius = 18;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - v / 100);
+  const color = v < 40 ? "#10B981" : v < 70 ? "#F59E0B" : "#EF4444";
+  return (
+    <div className="flex items-center gap-3">
+      <svg width="44" height="44" viewBox="0 0 44 44" className="shrink-0">
+        <circle cx="22" cy="22" r={radius} fill="none" stroke="#E7E5E4" strokeWidth="4" />
+        <circle
+          cx="22" cy="22" r={radius} fill="none" stroke={color} strokeWidth="4"
+          strokeDasharray={circumference} strokeDashoffset={offset}
+          strokeLinecap="round" transform="rotate(-90 22 22)"
+        />
+        <text x="22" y="26" textAnchor="middle" fontSize="10" fontWeight="700" fill={color}>
+          {Math.round(v)}
+        </text>
+      </svg>
+      <div className="flex-1">
+        <div className="text-[10px] uppercase tracking-wider text-stone-500">ε — энергия/значимость</div>
+        <div className="text-[10px] text-stone-400">
+          Низкая (&lt;40) · Средняя (40-70) · Высокая (&gt;70)
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// SVO-история: две колонки (Субъект / Объект), не больше 12 строк в каждой.
+function DynamisSvoHistory({
+  asSubject,
+  asObject,
+}: {
+  asSubject: Array<{ verb: string; object: string; confidence?: number }>;
+  asObject: Array<{ verb: string; subject: string; confidence?: number }>;
+}) {
+  if (asSubject.length === 0 && asObject.length === 0) {
+    return (
+      <div className="text-[10px] text-stone-400 italic">
+        SVO-история пуста. Запустите Reasoning для анализа.
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <div>
+        <div className="text-[9px] uppercase tracking-wider text-stone-500 mb-1">
+          Субъект ({asSubject.length})
+        </div>
+        <div className="space-y-0.5 max-h-24 overflow-y-auto lit-scroll">
+          {asSubject.slice(0, 12).map((t, i) => (
+            <div key={i} className="text-[10px] text-stone-600 leading-tight">
+              <span className="text-stone-400">→</span>{" "}
+              <span className="font-medium">{t.verb}</span>{" "}
+              <span className="text-stone-500">{t.object}</span>
+              {t.confidence !== undefined && t.confidence < 0.6 && (
+                <span className="ml-1 text-amber-600" title="низкая уверенность">⚠</span>
+              )}
+            </div>
+          ))}
+          {asSubject.length > 12 && (
+            <div className="text-[9px] text-stone-400">+{asSubject.length - 12} ещё…</div>
+          )}
+        </div>
+      </div>
+      <div>
+        <div className="text-[9px] uppercase tracking-wider text-stone-500 mb-1">
+          Объект ({asObject.length})
+        </div>
+        <div className="space-y-0.5 max-h-24 overflow-y-auto lit-scroll">
+          {asObject.slice(0, 12).map((t, i) => (
+            <div key={i} className="text-[10px] text-stone-600 leading-tight">
+              <span className="text-stone-400">←</span>{" "}
+              <span className="font-medium">{t.verb}</span>{" "}
+              <span className="text-stone-500">{t.subject}</span>
+              {t.confidence !== undefined && t.confidence < 0.6 && (
+                <span className="ml-1 text-amber-600" title="низкая уверенность">⚠</span>
+              )}
+            </div>
+          ))}
+          {asObject.length > 12 && (
+            <div className="text-[9px] text-stone-400">+{asObject.length - 12} ещё…</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Архетип + Эмоциональный вектор — два select'а, пишут в node.data.meta.
+function DynamisArchetypeAndEmotional({
+  archetype,
+  emotionalVector,
+  onChange,
+}: {
+  archetype: string | undefined;
+  emotionalVector: string | undefined;
+  onChange: (field: string, value: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <div className="space-y-1">
+        <label className="text-[9px] uppercase tracking-wider text-stone-500">Архетип</label>
+        <select
+          value={archetype ?? "—"}
+          onChange={(e) => onChange("archetype", e.target.value)}
+          className="w-full h-7 rounded-md border border-stone-200 bg-white px-1.5 text-[11px]"
+        >
+          {ARCHETYPES.map((a) => <option key={a} value={a}>{a}</option>)}
+        </select>
+      </div>
+      <div className="space-y-1">
+        <label className="text-[9px] uppercase tracking-wider text-stone-500">Эмоция</label>
+        <select
+          value={emotionalVector ?? "—"}
+          onChange={(e) => onChange("emotionalVector", e.target.value)}
+          className="w-full h-7 rounded-md border border-stone-200 bg-white px-1.5 text-[11px]"
+        >
+          {EMOTIONAL_VECTORS.map((e) => <option key={e} value={e}>{e}</option>)}
+        </select>
+      </div>
+    </div>
+  );
+}
+
 // ====== Инспектор ноды (keyed by id) ======
 function NodeInspector({ node, onFindInText }: { node: LitNode; onFindInText: (id: string) => void }) {
   const allNodes = useLitStore((s) => s.nodes);
@@ -18,6 +176,10 @@ function NodeInspector({ node, onFindInText }: { node: LitNode; onFindInText: (i
   const deleteNode = useLitStore((s) => s.deleteNode);
   const duplicateNode = useLitStore((s) => s.duplicateNode);
   const sourceMarkdown = useLitStore((s) => s.sourceMarkdown);
+  const updateNode = useLitStore((s) => s.updateNode);
+  // S1-D добавляет slice `svoTriplets` параллельно; defensive fallback на []
+  // чтобы Inspector компилировался и до, и после интеграции S1-D.
+  const svoTriplets: SvoTriplet[] = useLitStore((s: any) => s.svoTriplets ?? []) ?? [];
 
   const cfg = NODE_TYPES[node.type];
   const Icon = (Lucide as any)[cfg.icon] as Lucide.LucideIcon | undefined;
@@ -26,6 +188,16 @@ function NodeInspector({ node, onFindInText }: { node: LitNode; onFindInText: (i
   // связи этой ноды
   const incoming = allEdges.filter((e) => e.target === node.id);
   const outgoing = allEdges.filter((e) => e.source === node.id);
+
+  // DYNAMIS: SVO-история — фильтруем triplets по совпадению названия ноды
+  // с subject (нода действует) или object (нода подвергается действию).
+  const nodeTitle = node.data.title.toLowerCase();
+  const asSubject = svoTriplets
+    .filter((t) => t.subject.toLowerCase() === nodeTitle)
+    .map((t) => ({ verb: t.verb, object: t.object, confidence: t.confidence }));
+  const asObject = svoTriplets
+    .filter((t) => t.object.toLowerCase() === nodeTitle)
+    .map((t) => ({ verb: t.verb, subject: t.subject, confidence: t.confidence }));
 
   const nodeName = (id: string) =>
     allNodes.find((n) => n.id === id)?.data.title ?? "???";
@@ -118,6 +290,39 @@ function NodeInspector({ node, onFindInText }: { node: LitNode; onFindInText: (i
           </dl>
         </div>
       )}
+
+      {/* === DYNAMIS (Sprint 1) ===
+          Аналитический блок: ε (энергия/значимость), SVO-история по этой ноде,
+          архетип и эмоциональный вектор. Все данные выводятся из Reasoning Engine
+          (ε, SVO) или ручной разметки (archetype, emotionalVector). */}
+      <div className="space-y-3 rounded-md border border-stone-200 bg-stone-50 p-3">
+        <div className="flex items-center gap-1.5">
+          <Lucide.Activity className="w-3 h-3 text-violet-600" />
+          <span className="text-[10px] uppercase tracking-wider text-violet-700 font-semibold">
+            DYNAMIS
+          </span>
+        </div>
+
+        {/* ε (epsilon) — radial progress bar */}
+        <DynamisEpsilon epsilon={node.data.meta?.epsilon as number | undefined} />
+
+        {/* SVO-History — два столбца: субъект / объект */}
+        <DynamisSvoHistory asSubject={asSubject} asObject={asObject} />
+
+        {/* Archetype + Emotional Vector selects — пишут в node.data.meta */}
+        <DynamisArchetypeAndEmotional
+          archetype={node.data.meta?.archetype as string | undefined}
+          emotionalVector={node.data.meta?.emotionalVector as string | undefined}
+          onChange={(field, value) => {
+            updateNode(node.id, {
+              data: {
+                ...node.data,
+                meta: { ...(node.data.meta ?? {}), [field]: value },
+              },
+            });
+          }}
+        />
+      </div>
 
       {/* Connections */}
       {(incoming.length > 0 || outgoing.length > 0) && (

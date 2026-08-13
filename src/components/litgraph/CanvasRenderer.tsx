@@ -283,6 +283,15 @@ export function CanvasRenderer({
       const cp2x = tx - dx * 0.5;
       const cp2y = ty;
 
+      // Confidence Heatmap (S1-C): low-confidence edges get dashed line + reduced alpha.
+      // ReasoningEngine writes edge.data.confidence (0..1). Edges with confidence < 0.75
+      // are rendered with a [5,5] dash pattern and alpha = max(0.25, confidence) so the
+      // user can visually distinguish uncertain inferences from confirmed links.
+      const conf = edge.data?.confidence;
+      const isLowConf = typeof conf === "number" && conf < 0.75;
+
+      ctx.save();
+
       ctx.beginPath();
       ctx.moveTo(sx, sy);
       ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, tx, ty);
@@ -304,8 +313,18 @@ export function CanvasRenderer({
       } else {
         ctx.setLineDash([]);
       }
+      if (isLowConf) {
+        // Low-confidence override: dashed pattern + alpha = confidence (floor 0.25).
+        // Applied after the existing style setup so it wins over cfg.dashed and
+        // the inFocus/selection alpha. The label below is drawn outside this
+        // save/restore block so it keeps its own alpha logic.
+        ctx.setLineDash([5, 5]);
+        ctx.globalAlpha = Math.max(0.25, conf as number);
+      }
       ctx.stroke();
       ctx.setLineDash([]);
+
+      ctx.restore();
 
       // Label (только для видимых и не-dimmed)
       if (inFocus && viewport.zoom > 0.5) {
@@ -349,6 +368,16 @@ export function CanvasRenderer({
 
       if (nx + NODE_WIDTH < viewLeft || nx > viewRight || ny + h < viewTop || ny > viewBottom) continue;
 
+      // Confidence Heatmap (S1-C): low-confidence nodes are rendered dimmed.
+      // ReasoningEngine writes node.data.confidence (0..1). Nodes with confidence < 0.75
+      // get alpha = confidence * 0.5 + 0.5 (range 0.5..1.0) so they stay visible but
+      // visually distinct from confirmed nodes. An amber "?" badge is drawn in the
+      // top-right corner (see end of this block) to make the uncertainty explicit.
+      const nodeConf = node.data?.confidence;
+      const isLowConfNode = typeof nodeConf === "number" && nodeConf < 0.75;
+
+      ctx.save();
+
       // Тень
       if (isSelected || isHovered) {
         ctx.shadowColor = cfg.color + "60";
@@ -359,6 +388,10 @@ export function CanvasRenderer({
 
       // Фон ноды
       ctx.globalAlpha = inFocus ? 1 : 0.15;
+      if (isLowConfNode && inFocus) {
+        // Low-confidence override: dim but keep visible (0.5..1.0 range).
+        ctx.globalAlpha = (nodeConf as number) * 0.5 + 0.5;
+      }
       ctx.fillStyle = "#fff";
       ctx.beginPath();
       ctx.roundRect(nx, ny, NODE_WIDTH, h, 11);
@@ -492,6 +525,26 @@ export function CanvasRenderer({
       ctx.arc(nx + NODE_WIDTH, ny + h / 2, 6, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
+
+      // Confidence indicator badge (amber "?" in top-right corner).
+      // Only drawn for low-confidence nodes that are in focus, so the dimmed
+      // alpha still has a clearly-readable visual marker of uncertainty.
+      if (isLowConfNode && inFocus) {
+        ctx.save();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = "#F59E0B";
+        ctx.beginPath();
+        ctx.arc(nx + NODE_WIDTH - 8, ny + 8, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#FFFFFF";
+        ctx.font = "bold 8px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("?", nx + NODE_WIDTH - 8, ny + 8);
+        ctx.restore();
+      }
+
+      ctx.restore();
     }
 
     ctx.restore();

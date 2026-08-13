@@ -11,7 +11,11 @@ export type LitNodeType =
   | "chapter"      // Глава / Раздел
   | "theme"        // Тема / Мотив (сквозная идея)
   | "concept"      // v0.4.0: Концепт / абстракция (Бездна, Эхо, Архив-как-здание)
-  | "organization"; // v0.4.0: Организация / коллектив (Совет, Клан, Империя)
+  | "organization" // v0.4.0: Организация / коллектив (Совет, Клан, Империя)
+  // v0.5.0: Новые типы нод — артефакты, фракции, события
+  | "artifact"     // v0.5.0: Артефакт / Предмет (мечи, кольца, письма, MacGuffin'ы)
+  | "faction"      // v0.5.0: Фракция / Организация (гильдии, семьи, ордена)
+  | "event";       // v0.5.0: Событие (атомарный факт, отличающийся от «Сцены»)
 
 export interface LitNodeData {
   title: string;
@@ -77,7 +81,15 @@ export type EdgeKind =
   | "conflict"      // конфликт между сущностями
   | "foreshadow"    // предзнаменование
   | "alternative"   // альтернативная ветка
-  | "theme";        // тема/мотив присутствует в главе/сцене
+  | "theme"         // тема/мотив присутствует в главе/сцене
+  // v0.5.0: Новые типы связей — владение, поиск, уничтожение, членство, союзы, вражда, состояния
+  | "owns"          // v0.5.0: владеет (Character → Artifact)
+  | "seeks"         // v0.5.0: ищет (Character → Artifact)
+  | "destroys"      // v0.5.0: уничтожает (Character → Artifact или Character → Character)
+  | "member_of"     // v0.5.0: состоит в (Character → Faction)
+  | "allied_with"   // v0.5.0: союзник (Faction → Faction или Character → Character)
+  | "hostile_to"    // v0.5.0: враждует (Faction → Faction или Character → Character)
+  | "experiences";  // v0.5.0: испытывает (Character → State — на будущее)
 
 export interface LitProject {
   title: string;
@@ -326,6 +338,52 @@ export const NODE_TYPES: Record<LitNodeType, NodeTypeConfig> = {
       { key: "importance", label: "Важность", type: "select", options: ["low", "medium", "high"] },
     ],
   },
+  // v0.5.0: Новые типы нод — артефакты, фракции, события
+  artifact: {
+    type: "artifact",
+    label: "Артефакт",
+    singular: "Артефакт",
+    plural: "Артефакты",
+    description: "Важный предмет: оружие, письмо, кольцо, макгаффин. Часто — триггер сюжета.",
+    icon: "Sword",
+    color: "#EAB308",
+    accent: "#FACC15",
+    defaultBody: "Что это за предмет? Кто его владелец? Какую роль он играет в сюжете (MacGuffin, символ, оружие)?",
+    fields: [
+      { key: "importance", label: "Важность", type: "select", options: ["low", "medium", "high"] },
+      { key: "origin", label: "Происхождение", type: "text", placeholder: "Где/как появился, кто создал" },
+    ],
+  },
+  faction: {
+    type: "faction",
+    label: "Фракция",
+    singular: "Фракция",
+    plural: "Фракции",
+    description: "Группа, организация, семья, гильдия, орден. Может быть родительским контейнером для персонажей.",
+    icon: "Shield",
+    color: "#A855F7",
+    accent: "#C084FC",
+    defaultBody: "Название фракции. Цели? Лидер? Члены? Союзники и враги? Какие ресурсы контролирует?",
+    fields: [
+      { key: "importance", label: "Важность", type: "select", options: ["low", "medium", "high"] },
+      { key: "alignment", label: "Сторона", type: "select", options: ["Добро", "Нейтралитет", "Зло", "Сложная"] },
+    ],
+  },
+  event: {
+    type: "event",
+    label: "Событие",
+    singular: "Событие",
+    plural: "События",
+    description: "Атомарный факт: битва, предательство, смерть, встреча. Влияет на несколько сцен и персонажей одновременно.",
+    icon: "Zap",
+    color: "#F97316",
+    accent: "#FB923C",
+    defaultBody: "Что произошло? Когда? Кто участник? Как это изменило мир истории? Какие последствия?",
+    fields: [
+      { key: "importance", label: "Важность", type: "select", options: ["low", "medium", "high"] },
+      { key: "consequence", label: "Последствие", type: "textarea", placeholder: "К чему это привело?" },
+    ],
+  },
 };
 
 export const NODE_TYPE_ORDER: LitNodeType[] = [
@@ -336,10 +394,13 @@ export const NODE_TYPE_ORDER: LitNodeType[] = [
   "character",
   "dialogue",
   "location",
-  "organization",
-  "concept",
   "theme",
   "idea",
+  "concept",
+  "organization",
+  "artifact",
+  "faction",
+  "event",
 ];
 
 // ====== Конфигурация типов связей ======
@@ -423,6 +484,63 @@ export const EDGE_TYPES: Record<EdgeKind, EdgeTypeConfig> = {
     label: "Тема / мотив",
     description: "Тема проявляется в этой главе, сцене или через персонажа.",
     color: "#0D9488",
+    dashed: true,
+    animated: false,
+  },
+  // v0.5.0: Новые типы связей — владение, поиск, уничтожение, членство, союзы, вражда, состояния
+  owns: {
+    kind: "owns",
+    label: "Владеет",
+    description: "Персонаж владеет артефактом/предметом.",
+    color: "#EAB308",
+    dashed: false,
+    animated: false,
+  },
+  seeks: {
+    kind: "seeks",
+    label: "Ищет",
+    description: "Персонаж ищет артефакт/предмет.",
+    color: "#F59E0B",
+    dashed: true,
+    animated: true,
+  },
+  destroys: {
+    kind: "destroys",
+    label: "Уничтожает",
+    description: "Персонаж уничтожает артефакт или другое действующее лицо.",
+    color: "#DC2626",
+    dashed: false,
+    animated: false,
+  },
+  member_of: {
+    kind: "member_of",
+    label: "Состоит в",
+    description: "Персонаж — член фракции/организации.",
+    color: "#A855F7",
+    dashed: true,
+    animated: false,
+  },
+  allied_with: {
+    kind: "allied_with",
+    label: "Союзник",
+    description: "Союз между фракциями или персонажами.",
+    color: "#10B981",
+    dashed: false,
+    animated: false,
+  },
+  hostile_to: {
+    kind: "hostile_to",
+    label: "Враждует",
+    description: "Враждебные отношения между сущностями.",
+    color: "#EF4444",
+    dashed: false,
+    animated: true,
+  },
+  experiences: {
+    kind: "experiences",
+    label: "Испытывает",
+    description: "Персонаж испытывает состояние или эмоцию.",
+    color: "#14B8A6",
     dashed: true,
     animated: false,
   },

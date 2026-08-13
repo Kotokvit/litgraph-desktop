@@ -451,6 +451,10 @@ function ReasoningDialogInner({ open, text, onClose }: ReasoningDialogProps) {
   const [fullReport, setFullReport] = useState<ReasoningReport | null>(null);
 
   const exportProject = useLitStore((s) => s.exportProject);
+  // S1-D: publish case-validated triplets from ReasoningEngine (Full Pipeline v0.7+)
+  // into the shared Zustand store, so Inspector.tsx (S1-B) can render SVO-history
+  // without re-calling Tauri.
+  const setSvoTriplets = useLitStore((s) => s.setSvoTriplets);
 
   async function handleRunReasoning() {
     if (!text.trim()) {
@@ -470,6 +474,30 @@ function ReasoningDialogInner({ open, text, onClose }: ReasoningDialogProps) {
         const result = await reasoningRunFullPipeline(text, 1.0);
         console.log("[reasoning] full report:", result);
         setFullReport(result);
+        // S1-D: publish case-validated triplets to the shared Zustand store.
+        // Rust-side `ReasoningReport.triplets` is `ValidatedTriplet[]` with fields
+        // { actor, verb, target, instrument, location, polarity, confidence,
+        //   caseValidation: { overall: "Valid"|...|"Unknown" }, isActorCharacter,
+        //   isTargetCharacter }.
+        // Here we project to the simplified UI `SvoTriplet` shape expected by
+        // Inspector.tsx (subject/verb/object/confidence/caseValid/sentence).
+        if (result?.triplets && Array.isArray(result.triplets)) {
+          setSvoTriplets(
+            result.triplets.map((t) => ({
+              subject: t.actor ?? "",
+              verb: t.verb ?? "",
+              object: t.target ?? "",
+              confidence: typeof t.confidence === "number" ? t.confidence : undefined,
+              caseValid: t.caseValidation?.overall === "Valid",
+              // Rust-side `ValidatedTriplet` не несёт исходного предложения —
+              // оставляем sentence undefined (поле опциональное в SvoTriplet).
+            }))
+          );
+        } else {
+          // На случай пустого/сломанного отчёта — сбрасываем кеш, чтобы
+          // Inspector не показывал устаревшие triplets от предыдущего запуска.
+          setSvoTriplets([]);
+        }
       } else {
         // Symbolic engine (original).
         const project = exportProject();
