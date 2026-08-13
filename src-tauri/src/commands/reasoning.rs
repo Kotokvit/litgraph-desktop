@@ -438,7 +438,7 @@ pub async fn reasoning_run_full_pipeline(
 
     // 1. Загружаем weights.json (вкомпилирован в бинарник).
     const WEIGHTS_JSON: &str =
-        include_str!("../../litgraph-core/data/scorer_weights.json");
+        include_str!("../../../litgraph-core/data/scorer_weights.json");
 
     let weights_file = litgraph_core::scorer::WeightsFile::from_json(WEIGHTS_JSON)
         .map_err(|e| format!("Не удалось загрузить weights.json: {}", e))?;
